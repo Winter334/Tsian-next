@@ -7718,30 +7718,6 @@ const withModifiers = (fn, modifiers) => {
     return fn(event, ...args);
   }));
 };
-const keyNames = {
-  esc: "escape",
-  space: " ",
-  up: "arrow-up",
-  left: "arrow-left",
-  right: "arrow-right",
-  down: "arrow-down",
-  delete: "backspace"
-};
-const withKeys = (fn, modifiers) => {
-  const cache = fn._withKeys || (fn._withKeys = {});
-  const cacheKey = modifiers.join(".");
-  return cache[cacheKey] || (cache[cacheKey] = ((event) => {
-    if (!("key" in event)) {
-      return;
-    }
-    const eventKey = hyphenate(event.key);
-    if (modifiers.some(
-      (k) => k === eventKey || keyNames[k] === eventKey
-    )) {
-      return fn(event);
-    }
-  }));
-};
 const rendererOptions = /* @__PURE__ */ extend({ patchProp }, nodeOps);
 let renderer$1;
 function ensureRenderer() {
@@ -7882,12 +7858,12 @@ function useAtmosphere(canvasRef, options = {}) {
   onUnmounted(stop);
   return { density: /* @__PURE__ */ ref(density) };
 }
-const _hoisted_1$11 = {
+const _hoisted_1$X = {
   class: "atmosphere",
   "aria-hidden": "true"
 };
-const _hoisted_2$U = { class: "atm-ghost" };
-const _sfc_main$15 = /* @__PURE__ */ defineComponent({
+const _hoisted_2$O = { class: "atm-ghost" };
+const _sfc_main$$ = /* @__PURE__ */ defineComponent({
   __name: "AtmosphereLayer",
   props: {
     density: { default: 40 },
@@ -7899,10 +7875,10 @@ const _sfc_main$15 = /* @__PURE__ */ defineComponent({
     const canvasRef = /* @__PURE__ */ ref(null);
     useAtmosphere(canvasRef, { density: props.density, parallax: props.parallax });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$11, [
+      return openBlock(), createElementBlock("div", _hoisted_1$X, [
         _cache[0] || (_cache[0] = createBaseVNode("div", { class: "atm-radial" }, null, -1)),
         _cache[1] || (_cache[1] = createBaseVNode("div", { class: "atm-dots" }, null, -1)),
-        createBaseVNode("div", _hoisted_2$U, toDisplayString(__props.ghostText) + " " + toDisplayString(__props.ghostText) + " " + toDisplayString(__props.ghostText), 1),
+        createBaseVNode("div", _hoisted_2$O, toDisplayString(__props.ghostText) + " " + toDisplayString(__props.ghostText) + " " + toDisplayString(__props.ghostText), 1),
         createBaseVNode("canvas", {
           ref_key: "canvasRef",
           ref: canvasRef,
@@ -7920,12 +7896,12 @@ const _export_sfc = (sfc, props) => {
   }
   return target;
 };
-const AtmosphereLayer = /* @__PURE__ */ _export_sfc(_sfc_main$15, [["__scopeId", "data-v-0ae75165"]]);
-const _hoisted_1$10 = {
+const AtmosphereLayer = /* @__PURE__ */ _export_sfc(_sfc_main$$, [["__scopeId", "data-v-0ae75165"]]);
+const _hoisted_1$W = {
   class: "corner-brackets",
   "aria-hidden": "true"
 };
-const _sfc_main$14 = /* @__PURE__ */ defineComponent({
+const _sfc_main$_ = /* @__PURE__ */ defineComponent({
   __name: "CornerBrackets",
   props: {
     size: { default: 15 },
@@ -7936,7 +7912,7 @@ const _sfc_main$14 = /* @__PURE__ */ defineComponent({
       "eccf3a62": _ctx.inset + "px"
     }));
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$10, [
+      return openBlock(), createElementBlock("div", _hoisted_1$W, [
         (openBlock(), createElementBlock(Fragment, null, renderList(["top-left", "top-right", "bottom-left", "bottom-right"], (pos) => {
           return createBaseVNode("span", {
             key: pos,
@@ -7953,7 +7929,7 @@ const _sfc_main$14 = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const CornerBrackets = /* @__PURE__ */ _export_sfc(_sfc_main$14, [["__scopeId", "data-v-0aa4cd48"]]);
+const CornerBrackets = /* @__PURE__ */ _export_sfc(_sfc_main$_, [["__scopeId", "data-v-0aa4cd48"]]);
 function _assertThisInitialized(self2) {
   if (self2 === void 0) {
     throw new ReferenceError("this hasn't been initialised - super() hasn't been called");
@@ -11974,8 +11950,8 @@ _forEachName("x,y,z,top,right,bottom,left,width,height,fontSize,padding,margin,p
 gsap.registerPlugin(CSSPlugin);
 var gsapWithCSS = gsap.registerPlugin(CSSPlugin) || gsap;
 gsapWithCSS.core.Tween;
-const _hoisted_1$$ = ["width", "height"];
-const _sfc_main$13 = /* @__PURE__ */ defineComponent({
+const _hoisted_1$V = ["width", "height"];
+const _sfc_main$Z = /* @__PURE__ */ defineComponent({
   __name: "TsianLogo",
   props: {
     animated: { type: Boolean, default: true },
@@ -12126,11 +12102,11 @@ const _sfc_main$13 = /* @__PURE__ */ defineComponent({
             transform: "rotate(45 100 100)"
           }, null, 512)
         ], 512)
-      ], 10, _hoisted_1$$);
+      ], 10, _hoisted_1$V);
     };
   }
 });
-const TsianLogo = /* @__PURE__ */ _export_sfc(_sfc_main$13, [["__scopeId", "data-v-e77a07af"]]);
+const TsianLogo = /* @__PURE__ */ _export_sfc(_sfc_main$Z, [["__scopeId", "data-v-e77a07af"]]);
 const VERTEX_SHADER = `
 precision mediump float;
 varying vec2 vUv;
@@ -12399,7 +12375,7 @@ function initBurningGl(canvas, variant = "paper") {
 function easeInOut(t) {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
-const _sfc_main$12 = /* @__PURE__ */ defineComponent({
+const _sfc_main$Y = /* @__PURE__ */ defineComponent({
   __name: "BurningReveal",
   props: {
     duration: { default: 8e3 },
@@ -12519,15 +12495,15 @@ const _sfc_main$12 = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const BurningReveal = /* @__PURE__ */ _export_sfc(_sfc_main$12, [["__scopeId", "data-v-7bc4dd4f"]]);
-const _hoisted_1$_ = { class: "app-header" };
-const _hoisted_2$T = { class: "header-left" };
-const _hoisted_3$N = ["aria-label"];
-const _hoisted_4$I = ["title"];
-const _hoisted_5$A = { class: "header-right" };
-const _hoisted_6$s = { class: "turn-badge" };
-const _hoisted_7$n = ["aria-label"];
-const _sfc_main$11 = /* @__PURE__ */ defineComponent({
+const BurningReveal = /* @__PURE__ */ _export_sfc(_sfc_main$Y, [["__scopeId", "data-v-7bc4dd4f"]]);
+const _hoisted_1$U = { class: "app-header" };
+const _hoisted_2$N = { class: "header-left" };
+const _hoisted_3$G = ["aria-label"];
+const _hoisted_4$B = ["title"];
+const _hoisted_5$v = { class: "header-right" };
+const _hoisted_6$o = { class: "turn-badge" };
+const _hoisted_7$j = ["aria-label"];
+const _sfc_main$X = /* @__PURE__ */ defineComponent({
   __name: "AppHeader",
   props: {
     ready: { type: Boolean },
@@ -12541,8 +12517,8 @@ const _sfc_main$11 = /* @__PURE__ */ defineComponent({
     const emit2 = __emit;
     const turnLabel = computed(() => `第 ${props.turnCount} 轮`);
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("header", _hoisted_1$_, [
-        createBaseVNode("div", _hoisted_2$T, [
+      return openBlock(), createElementBlock("header", _hoisted_1$U, [
+        createBaseVNode("div", _hoisted_2$N, [
           createBaseVNode("button", {
             class: "nav-toggle status-toggle",
             "aria-label": __props.statusBarCollapsed ? "展开状态栏" : "折叠状态栏",
@@ -12551,7 +12527,7 @@ const _sfc_main$11 = /* @__PURE__ */ defineComponent({
             createBaseVNode("span", {
               class: normalizeClass(["toggle-icon", { collapsed: __props.statusBarCollapsed }])
             }, null, 2)
-          ], 8, _hoisted_3$N),
+          ], 8, _hoisted_3$G),
           createVNode(TsianLogo, {
             animated: false,
             size: 28
@@ -12559,10 +12535,10 @@ const _sfc_main$11 = /* @__PURE__ */ defineComponent({
           createBaseVNode("span", {
             class: normalizeClass(["status-dot", { connected: __props.ready }]),
             title: __props.ready ? "已连接" : "连接中…"
-          }, null, 10, _hoisted_4$I)
+          }, null, 10, _hoisted_4$B)
         ]),
-        createBaseVNode("div", _hoisted_5$A, [
-          createBaseVNode("span", _hoisted_6$s, toDisplayString(turnLabel.value), 1),
+        createBaseVNode("div", _hoisted_5$v, [
+          createBaseVNode("span", _hoisted_6$o, toDisplayString(turnLabel.value), 1),
           createBaseVNode("button", {
             class: "nav-toggle",
             "aria-label": __props.navCollapsed ? "展开导航" : "折叠导航",
@@ -12571,28 +12547,28 @@ const _sfc_main$11 = /* @__PURE__ */ defineComponent({
             createBaseVNode("span", {
               class: normalizeClass(["toggle-icon", { collapsed: __props.navCollapsed }])
             }, null, 2)
-          ], 8, _hoisted_7$n)
+          ], 8, _hoisted_7$j)
         ]),
         _cache[2] || (_cache[2] = createBaseVNode("span", { class: "scan-line" }, null, -1))
       ]);
     };
   }
 });
-const AppHeader = /* @__PURE__ */ _export_sfc(_sfc_main$11, [["__scopeId", "data-v-bfd22261"]]);
-const _hoisted_1$Z = ["title", "onClick"];
-const _hoisted_2$S = {
+const AppHeader = /* @__PURE__ */ _export_sfc(_sfc_main$X, [["__scopeId", "data-v-bfd22261"]]);
+const _hoisted_1$T = ["title", "onClick"];
+const _hoisted_2$M = {
   class: "nav-icon",
   viewBox: "0 0 24 24",
   fill: "none",
   stroke: "currentColor",
   "stroke-width": "1.5"
 };
-const _hoisted_3$M = ["d"];
-const _hoisted_4$H = {
+const _hoisted_3$F = ["d"];
+const _hoisted_4$A = {
   key: 0,
   class: "nav-label"
 };
-const _sfc_main$10 = /* @__PURE__ */ defineComponent({
+const _sfc_main$W = /* @__PURE__ */ defineComponent({
   __name: "AppNav",
   props: {
     current: {},
@@ -12644,21 +12620,21 @@ const _sfc_main$10 = /* @__PURE__ */ defineComponent({
             title: __props.collapsed ? "" : item.label,
             onClick: ($event) => onItemClick(item.key)
           }, [
-            (openBlock(), createElementBlock("svg", _hoisted_2$S, [
+            (openBlock(), createElementBlock("svg", _hoisted_2$M, [
               createBaseVNode("path", {
                 d: item.icon,
                 "stroke-linecap": "round",
                 "stroke-linejoin": "round"
-              }, null, 8, _hoisted_3$M)
+              }, null, 8, _hoisted_3$F)
             ])),
-            !__props.collapsed ? (openBlock(), createElementBlock("span", _hoisted_4$H, toDisplayString(item.label), 1)) : createCommentVNode("", true)
-          ], 10, _hoisted_1$Z);
+            !__props.collapsed ? (openBlock(), createElementBlock("span", _hoisted_4$A, toDisplayString(item.label), 1)) : createCommentVNode("", true)
+          ], 10, _hoisted_1$T);
         }), 64))
       ], 2);
     };
   }
 });
-const AppNav = /* @__PURE__ */ _export_sfc(_sfc_main$10, [["__scopeId", "data-v-f7bb0075"]]);
+const AppNav = /* @__PURE__ */ _export_sfc(_sfc_main$W, [["__scopeId", "data-v-f7bb0075"]]);
 const scriptRel = "modulepreload";
 const assetsURL = function(dep, importerUrl) {
   return new URL(dep, importerUrl).href;
@@ -12955,8 +12931,30 @@ function parseRuntime(raw) {
   };
 }
 const CHANNEL = "tsian.play-bridge.v1";
+function sessionReplacedError() {
+  return {
+    kind: "runtime",
+    code: "FRONTEND_ACTION_SESSION_REPLACED",
+    message: "The play bridge session was replaced."
+  };
+}
+function bridgeNotReadyError() {
+  return {
+    code: "REMOTE_BRIDGE_NOT_READY",
+    message: "The play bridge handshake is not complete."
+  };
+}
+function defaultAbortError() {
+  if (typeof DOMException === "function") {
+    return new DOMException("The operation was aborted.", "AbortError");
+  }
+  const error = new Error("The operation was aborted.");
+  error.name = "AbortError";
+  return error;
+}
 function createBridge() {
   let sessionId2 = null;
+  let acceptedParentOrigin = null;
   let nextReqId = 1;
   const pending = /* @__PURE__ */ new Map();
   let bridgeReady = false;
@@ -12966,77 +12964,147 @@ function createBridge() {
     onInteractionRequest: void 0,
     onTurnOptions: void 0
   };
-  function call(method, params) {
+  function targetParentOrigin() {
+    return acceptedParentOrigin && acceptedParentOrigin !== "null" ? acceptedParentOrigin : "*";
+  }
+  function settlePending(id, settle) {
+    const request = pending.get(id);
+    if (!request) return;
+    pending.delete(id);
+    request.cleanup();
+    settle(request);
+  }
+  function rejectSessionRequests(replacedSessionId) {
+    for (const [id, request] of pending) {
+      if (request.sessionId !== replacedSessionId) continue;
+      settlePending(id, (entry) => entry.reject(sessionReplacedError()));
+    }
+  }
+  function call(method, params, options) {
+    var _a2;
+    const requestSessionId = sessionId2;
+    if (!bridgeReady || !requestSessionId) {
+      return Promise.reject(bridgeNotReadyError());
+    }
+    if ((_a2 = options == null ? void 0 : options.signal) == null ? void 0 : _a2.aborted) {
+      return Promise.reject(defaultAbortError());
+    }
     const id = String(nextReqId++);
     return new Promise((resolve, reject) => {
+      const signal = options == null ? void 0 : options.signal;
+      const onAbort = () => {
+        var _a3;
+        try {
+          (_a3 = options == null ? void 0 : options.onAbort) == null ? void 0 : _a3.call(options);
+        } catch {
+        }
+      };
+      const cleanup = () => signal == null ? void 0 : signal.removeEventListener("abort", onAbort);
       pending.set(id, {
+        sessionId: requestSessionId,
         resolve,
-        reject
+        reject,
+        cleanup
       });
-      window.parent.postMessage(
-        {
-          channel: CHANNEL,
-          kind: "request",
-          sessionId: sessionId2,
-          id,
-          method,
-          params
-        },
-        "*"
-      );
+      signal == null ? void 0 : signal.addEventListener("abort", onAbort, { once: true });
+      try {
+        window.parent.postMessage(
+          {
+            channel: CHANNEL,
+            kind: "request",
+            sessionId: requestSessionId,
+            id,
+            method,
+            params
+          },
+          targetParentOrigin()
+        );
+      } catch (error) {
+        settlePending(id, (request) => request.reject(error));
+      }
     });
   }
-  window.addEventListener("message", (e) => {
+  window.addEventListener("message", (event) => {
     var _a2, _b, _c, _d;
-    const msg = e.data;
+    if (event.source !== window.parent) return;
+    const msg = event.data;
     if (!msg || msg.channel !== CHANNEL) return;
+    if (acceptedParentOrigin !== null && event.origin !== acceptedParentOrigin) return;
     if (msg.kind === "ready") {
-      sessionId2 = msg.sessionId ?? null;
+      if (typeof msg.sessionId !== "string" || !msg.sessionId) return;
+      if (acceptedParentOrigin === null) {
+        acceptedParentOrigin = event.origin;
+      }
+      const previousSessionId = sessionId2;
+      if (previousSessionId && previousSessionId !== msg.sessionId) {
+        sessionId2 = null;
+        bridgeReady = false;
+        rejectSessionRequests(previousSessionId);
+      }
+      sessionId2 = msg.sessionId;
       bridgeReady = true;
-      (_a2 = handlers.onReady) == null ? void 0 : _a2.call(handlers, sessionId2 ?? "");
+      (_a2 = handlers.onReady) == null ? void 0 : _a2.call(handlers, msg.sessionId);
       return;
     }
+    if (!bridgeReady || !sessionId2 || msg.sessionId !== sessionId2) return;
     if (msg.kind === "response") {
-      const cb = pending.get(msg.id ?? "");
-      if (!cb) return;
-      pending.delete(msg.id ?? "");
-      if (msg.ok) cb.resolve(msg.result);
-      else cb.reject(msg.error);
+      const id = msg.id ?? "";
+      const request = pending.get(id);
+      if (!request || request.sessionId !== msg.sessionId) return;
+      settlePending(id, (entry) => {
+        if (msg.ok) entry.resolve(msg.result);
+        else entry.reject(msg.error);
+      });
       return;
     }
     if (msg.kind === "event") {
       if (msg.event === "interaction-request" && msg.payload) {
-        const p2 = msg.payload;
-        if (p2.requestId && p2.question) {
-          (_b = handlers.onInteractionRequest) == null ? void 0 : _b.call(handlers, p2.requestId, p2.question, p2.options, p2.allowCustom);
+        const payload = msg.payload;
+        if (payload.requestId && payload.question) {
+          (_b = handlers.onInteractionRequest) == null ? void 0 : _b.call(
+            handlers,
+            payload.requestId,
+            payload.question,
+            payload.options,
+            payload.allowCustom
+          );
         }
       }
       if (msg.event === "turn-options" && msg.payload) {
-        const p2 = msg.payload;
-        if (typeof p2.turn === "number" && Array.isArray(p2.options)) {
-          (_c = handlers.onTurnOptions) == null ? void 0 : _c.call(handlers, p2.turn, p2.options);
+        const payload = msg.payload;
+        if (typeof payload.turn === "number" && Array.isArray(payload.options)) {
+          (_c = handlers.onTurnOptions) == null ? void 0 : _c.call(handlers, payload.turn, payload.options);
         }
       }
-      (_d = handlers.onEvent) == null ? void 0 : _d.call(handlers, msg.event, msg.payload);
-      return;
+      if (msg.event) {
+        (_d = handlers.onEvent) == null ? void 0 : _d.call(
+          handlers,
+          msg.event,
+          msg.payload
+        );
+      }
     }
   });
   window.parent.postMessage({ channel: CHANNEL, kind: "hello" }, "*");
   function respondInteraction(requestId, answer, cancelled) {
-    return call("interaction.respond", { requestId, answer, ...cancelled !== void 0 ? { cancelled } : {} }).then(() => void 0);
+    return call("interaction.respond", {
+      requestId,
+      answer,
+      ...cancelled !== void 0 ? { cancelled } : {}
+    }).then(() => void 0);
   }
   function stopInteraction() {
-    return call("interaction.stop", void 0).then(() => void 0);
+    return call("interaction.stop").then(() => void 0);
   }
   return {
     call,
     respondInteraction,
     stopInteraction,
-    on(h2) {
-      handlers.onReady = h2.onReady;
-      handlers.onEvent = h2.onEvent;
-      handlers.onInteractionRequest = h2.onInteractionRequest;
-      handlers.onTurnOptions = h2.onTurnOptions;
+    on(nextHandlers) {
+      handlers.onReady = nextHandlers.onReady;
+      handlers.onEvent = nextHandlers.onEvent;
+      handlers.onInteractionRequest = nextHandlers.onInteractionRequest;
+      handlers.onTurnOptions = nextHandlers.onTurnOptions;
     },
     get ready() {
       return bridgeReady;
@@ -13045,6 +13113,357 @@ function createBridge() {
       return sessionId2;
     }
   };
+}
+const FRONTEND_ACTION_JSON_MAX_BYTES = 1024 * 1024;
+const FRONTEND_ACTION_JSON_MAX_DEPTH = 64;
+const FRONTEND_ACTION_JSON_MAX_NODES = 1e5;
+const DEFAULT_LIMITS = {
+  maxBytes: FRONTEND_ACTION_JSON_MAX_BYTES,
+  maxDepth: FRONTEND_ACTION_JSON_MAX_DEPTH,
+  maxNodes: FRONTEND_ACTION_JSON_MAX_NODES
+};
+function resolveLimits(limits) {
+  const resolved = { ...DEFAULT_LIMITS, ...limits };
+  if (!Number.isInteger(resolved.maxBytes) || resolved.maxBytes < 0) {
+    throw new RangeError("maxBytes must be a non-negative integer.");
+  }
+  if (!Number.isInteger(resolved.maxDepth) || resolved.maxDepth < 0) {
+    throw new RangeError("maxDepth must be a non-negative integer.");
+  }
+  if (!Number.isInteger(resolved.maxNodes) || resolved.maxNodes < 1) {
+    throw new RangeError("maxNodes must be a positive integer.");
+  }
+  return resolved;
+}
+function jsonStringByteLength(value) {
+  let bytes = 2;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code === 34 || code === 92) {
+      bytes += 2;
+    } else if (code <= 31) {
+      bytes += code === 8 || code === 9 || code === 10 || code === 12 || code === 13 ? 2 : 6;
+    } else if (code <= 127) {
+      bytes += 1;
+    } else if (code <= 2047) {
+      bytes += 2;
+    } else if (code >= 55296 && code <= 56319) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 56320 && next <= 57343) {
+        bytes += 4;
+        index += 1;
+      } else {
+        bytes += 6;
+      }
+    } else if (code >= 56320 && code <= 57343) {
+      bytes += 6;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+function validateStrictJson(value, limits = {}) {
+  const resolved = resolveLimits(limits);
+  const activeObjects = /* @__PURE__ */ new WeakSet();
+  let byteLength = 0;
+  let nodeCount = 0;
+  let observedMaxDepth = 0;
+  const addBytes = (amount) => {
+    byteLength += amount;
+    return byteLength <= resolved.maxBytes;
+  };
+  const visit = (current, depth) => {
+    if (depth > resolved.maxDepth) return false;
+    observedMaxDepth = Math.max(observedMaxDepth, depth);
+    nodeCount += 1;
+    if (nodeCount > resolved.maxNodes) return false;
+    if (current === null) return addBytes(4);
+    switch (typeof current) {
+      case "string":
+        return addBytes(jsonStringByteLength(current));
+      case "boolean":
+        return addBytes(current ? 4 : 5);
+      case "number": {
+        if (!Number.isFinite(current)) return false;
+        return addBytes(JSON.stringify(current).length);
+      }
+      case "undefined":
+      case "bigint":
+      case "function":
+      case "symbol":
+        return false;
+      case "object":
+        break;
+      default:
+        return false;
+    }
+    const object = current;
+    if (activeObjects.has(object)) return false;
+    try {
+      const prototype = Object.getPrototypeOf(object);
+      const ownKeys = Reflect.ownKeys(object);
+      if (Array.isArray(object)) {
+        if (prototype !== Array.prototype) return false;
+        if (!addBytes(2 + Math.max(0, object.length - 1))) return false;
+        if (nodeCount + object.length > resolved.maxNodes) return false;
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(object, "length");
+        if (!lengthDescriptor || !("value" in lengthDescriptor) || lengthDescriptor.enumerable || lengthDescriptor.value !== object.length) {
+          return false;
+        }
+        const descriptors = /* @__PURE__ */ new Map();
+        for (const key of ownKeys) {
+          if (typeof key === "symbol") return false;
+          if (key === "length") continue;
+          const index = Number(key);
+          if (!Number.isInteger(index) || index < 0 || index >= object.length || String(index) !== key) {
+            return false;
+          }
+          const descriptor = Object.getOwnPropertyDescriptor(object, key);
+          if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+            return false;
+          }
+          descriptors.set(key, descriptor);
+        }
+        if (descriptors.size !== object.length) return false;
+        activeObjects.add(object);
+        try {
+          for (let index = 0; index < object.length; index += 1) {
+            const descriptor = descriptors.get(String(index));
+            if (!descriptor || !visit(descriptor.value, depth + 1)) return false;
+          }
+        } finally {
+          activeObjects.delete(object);
+        }
+        return true;
+      }
+      if (prototype !== Object.prototype && prototype !== null) return false;
+      if (!addBytes(2 + Math.max(0, ownKeys.length - 1))) return false;
+      if (nodeCount + ownKeys.length > resolved.maxNodes) return false;
+      const properties = [];
+      for (const key of ownKeys) {
+        if (typeof key === "symbol") return false;
+        const descriptor = Object.getOwnPropertyDescriptor(object, key);
+        if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+          return false;
+        }
+        if (!addBytes(jsonStringByteLength(key) + 1)) return false;
+        properties.push(descriptor.value);
+      }
+      activeObjects.add(object);
+      try {
+        for (const propertyValue of properties) {
+          if (!visit(propertyValue, depth + 1)) return false;
+        }
+      } finally {
+        activeObjects.delete(object);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  try {
+    if (!visit(value, 0)) return { ok: false };
+  } catch {
+    return { ok: false };
+  }
+  return {
+    ok: true,
+    value,
+    byteLength,
+    maxDepth: observedMaxDepth,
+    nodeCount
+  };
+}
+const RUNTIME_ERROR_CODES = /* @__PURE__ */ new Set([
+  "FRONTEND_ACTION_NOT_FOUND",
+  "FRONTEND_ACTION_MANIFEST_INVALID",
+  "FRONTEND_ACTION_INPUT_INVALID",
+  "FRONTEND_ACTION_OUTPUT_INVALID",
+  "FRONTEND_ACTION_TIMEOUT",
+  "FRONTEND_ACTION_ABORTED",
+  "FRONTEND_ACTION_WORKSPACE_CONFLICT",
+  "FRONTEND_ACTION_EXECUTION_FAILED",
+  "FRONTEND_ACTION_SESSION_REPLACED"
+]);
+const PUBLIC_ERROR_FIELDS = /* @__PURE__ */ new Set([
+  "kind",
+  "code",
+  "message",
+  "details",
+  "correlationId"
+]);
+const PUBLIC_ERROR_MAX_MESSAGE_LENGTH = 500;
+const DOMAIN_ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
+const DOMAIN_ERROR_MAX_DETAILS_BYTES = 64 * 1024;
+const DOMAIN_ERROR_MAX_DETAILS_DEPTH = 16;
+const CORRELATION_ID_MAX_LENGTH = 128;
+const CORRELATION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,126}[A-Za-z0-9])?$/;
+class FrontendActionError extends Error {
+  constructor(error) {
+    super(error.message);
+    this.name = "FrontendActionError";
+    this.kind = error.kind;
+    this.code = error.code;
+    this.details = error.details;
+    this.correlationId = error.correlationId;
+  }
+}
+function executionFailedError() {
+  return new FrontendActionError({
+    kind: "runtime",
+    code: "FRONTEND_ACTION_EXECUTION_FAILED",
+    message: "The Frontend Action could not be completed."
+  });
+}
+function inputInvalidError() {
+  return new FrontendActionError({
+    kind: "runtime",
+    code: "FRONTEND_ACTION_INPUT_INVALID",
+    message: "Frontend Action input must satisfy the strict JSON transport limits."
+  });
+}
+function abortedError() {
+  return new FrontendActionError({
+    kind: "runtime",
+    code: "FRONTEND_ACTION_ABORTED",
+    message: "The Frontend Action was aborted."
+  });
+}
+function isValidCorrelationId(value) {
+  return typeof value === "string" && value.length <= CORRELATION_ID_MAX_LENGTH && CORRELATION_ID_PATTERN.test(value);
+}
+function toPublicError(value) {
+  try {
+    const envelopeValidation = validateStrictJson(value);
+    if (!envelopeValidation.ok || value === null || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const keys = Reflect.ownKeys(value);
+    if (!keys.every((key) => typeof key === "string" && PUBLIC_ERROR_FIELDS.has(key))) {
+      return null;
+    }
+    const fields = /* @__PURE__ */ new Map();
+    for (const key of keys) {
+      if (typeof key !== "string") return null;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return null;
+      fields.set(key, descriptor.value);
+    }
+    const kind = fields.get("kind");
+    const code = fields.get("code");
+    const message = fields.get("message");
+    if (!fields.has("kind") || !fields.has("code") || !fields.has("message") || typeof code !== "string" || typeof message !== "string" || message.length === 0 || message.length > PUBLIC_ERROR_MAX_MESSAGE_LENGTH) {
+      return null;
+    }
+    const hasCorrelationId = fields.has("correlationId");
+    const correlationId = fields.get("correlationId");
+    if (hasCorrelationId && !isValidCorrelationId(correlationId)) return null;
+    const hasDetails = fields.has("details");
+    const details = fields.get("details");
+    if (hasDetails && kind === "domain") {
+      const detailsValidation = validateStrictJson(details, {
+        maxBytes: DOMAIN_ERROR_MAX_DETAILS_BYTES,
+        maxDepth: DOMAIN_ERROR_MAX_DETAILS_DEPTH,
+        maxNodes: FRONTEND_ACTION_JSON_MAX_NODES
+      });
+      if (!detailsValidation.ok) return null;
+    }
+    const shared = {
+      code,
+      message,
+      ...hasDetails ? { details } : {},
+      ...hasCorrelationId ? { correlationId } : {}
+    };
+    if (kind === "runtime" && RUNTIME_ERROR_CODES.has(code)) {
+      return {
+        kind: "runtime",
+        ...shared,
+        code
+      };
+    }
+    if (kind === "domain" && DOMAIN_ERROR_CODE_PATTERN.test(code)) {
+      return { kind: "domain", ...shared };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function toFrontendActionError(value) {
+  if (value instanceof FrontendActionError) return value;
+  const publicError = toPublicError(value);
+  return publicError ? new FrontendActionError(publicError) : executionFailedError();
+}
+const MUTATION_EVENT_FIELDS = /* @__PURE__ */ new Set([
+  "invocationId",
+  "saveId",
+  "source",
+  "actionId",
+  "writtenPaths",
+  "deletedPaths"
+]);
+const INVOCATION_ID_MAX_LENGTH = 128;
+const INVOCATION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,126}[A-Za-z0-9])?$/;
+const ACTION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+function isCanonicalIdentifier(value) {
+  return typeof value === "string" && value.length > 0 && value.trim() === value;
+}
+function isInvocationId(value) {
+  return typeof value === "string" && value.length <= INVOCATION_ID_MAX_LENGTH && INVOCATION_ID_PATTERN.test(value);
+}
+function isActionId(value) {
+  return typeof value === "string" && ACTION_ID_PATTERN.test(value);
+}
+function isCanonicalPathArray(value) {
+  if (!Array.isArray(value)) return false;
+  let previous;
+  for (const path of value) {
+    if (typeof path !== "string" || path.length === 0 || path.trim() !== path || previous !== void 0 && previous >= path) {
+      return false;
+    }
+    previous = path;
+  }
+  return true;
+}
+function parseWorkspaceMutationEvent(value) {
+  try {
+    const validation = validateStrictJson(value);
+    if (!validation.ok || value === null || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== MUTATION_EVENT_FIELDS.size || !keys.every((key) => typeof key === "string" && MUTATION_EVENT_FIELDS.has(key))) {
+      return null;
+    }
+    const fields = /* @__PURE__ */ new Map();
+    for (const key of keys) {
+      if (typeof key !== "string") return null;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return null;
+      fields.set(key, descriptor.value);
+    }
+    const invocationId = fields.get("invocationId");
+    const saveId = fields.get("saveId");
+    const source = fields.get("source");
+    const actionId = fields.get("actionId");
+    const writtenPaths = fields.get("writtenPaths");
+    const deletedPaths = fields.get("deletedPaths");
+    if (!isInvocationId(invocationId) || !isCanonicalIdentifier(saveId) || source !== "frontend-action" || !isActionId(actionId) || !isCanonicalPathArray(writtenPaths) || !isCanonicalPathArray(deletedPaths) || writtenPaths.length === 0 && deletedPaths.length === 0) {
+      return null;
+    }
+    return {
+      invocationId,
+      saveId,
+      source,
+      actionId,
+      writtenPaths,
+      deletedPaths
+    };
+  } catch {
+    return null;
+  }
 }
 function createInvocationId() {
   var _a2;
@@ -13080,6 +13499,7 @@ function createTsian() {
   const toolCallbacks = /* @__PURE__ */ new Set();
   const askCallbacks = /* @__PURE__ */ new Set();
   const agentInvocationCallbacks = /* @__PURE__ */ new Set();
+  const workspaceMutationCallbacks = /* @__PURE__ */ new Set();
   bridge.on({
     onEvent(event, payload) {
       handleEvent(event, payload);
@@ -13115,13 +13535,15 @@ function createTsian() {
         return;
       }
       if (event === "turn-tool" && payload && "callId" in payload && "name" in payload) {
+        const displayName = payload.displayName;
         const tool = {
           agentId: payload.agentId ?? "",
           round: payload.round ?? 0,
           callId: payload.callId ?? "",
           name: payload.name ?? "",
+          ...typeof displayName === "string" && displayName.trim().length > 0 ? { displayName } : {},
           status: payload.status ?? "loading",
-          ...payload && "output" in payload ? { output: payload.output } : {}
+          ...payload && "presentation" in payload ? { presentation: payload.presentation } : {}
         };
         for (const cb of toolCallbacks) {
           try {
@@ -13155,6 +13577,18 @@ function createTsian() {
             cb(invocationEvent);
           } catch (err) {
             console.error("[tsian] onAgentInvocation callback threw", err);
+          }
+        }
+        return;
+      }
+      if (event === "workspace-mutation") {
+        const mutationEvent = parseWorkspaceMutationEvent(payload);
+        if (!mutationEvent) return;
+        for (const cb of workspaceMutationCallbacks) {
+          try {
+            cb(mutationEvent);
+          } catch (err) {
+            console.error("[tsian] onWorkspaceMutation callback threw", err);
           }
         }
         return;
@@ -13256,6 +13690,12 @@ function createTsian() {
       agentInvocationCallbacks.add(cb);
       return () => {
         agentInvocationCallbacks.delete(cb);
+      };
+    },
+    onWorkspaceMutation(cb) {
+      workspaceMutationCallbacks.add(cb);
+      return () => {
+        workspaceMutationCallbacks.delete(cb);
       };
     },
     async answer(requestId, text, cancelled) {
@@ -13382,6 +13822,41 @@ function createTsian() {
     card: {
       async entrypoints() {
         return bridge.call("card.getEntrypoints", {});
+      },
+      async runAction(actionId, input, options) {
+        if (!validateStrictJson(input).ok) {
+          throw inputInvalidError();
+        }
+        const invocationId = createInvocationId();
+        const signal = options == null ? void 0 : options.signal;
+        if (signal == null ? void 0 : signal.aborted) {
+          throw abortedError();
+        }
+        const sendAbort = () => {
+          void bridge.call("card.abortAction", { invocationId }).catch(() => {
+          });
+        };
+        try {
+          const output = await bridge.call(
+            "card.runAction",
+            { invocationId, actionId, input },
+            {
+              ...signal ? { signal } : {},
+              onAbort: sendAbort
+            }
+          );
+          const outputValidation = validateStrictJson(output);
+          if (!outputValidation.ok) {
+            throw {
+              kind: "runtime",
+              code: "FRONTEND_ACTION_OUTPUT_INVALID",
+              message: "Frontend Action output did not satisfy the strict JSON transport limits."
+            };
+          }
+          return outputValidation.value;
+        } catch (error) {
+          throw toFrontendActionError(error);
+        }
       }
     },
     async query(resource, params) {
@@ -13395,7 +13870,7 @@ function createTsian() {
 const syncPhase = /* @__PURE__ */ ref("idle");
 let activeInvocationId$2 = null;
 let syncedTimer = null;
-let invocationSubscribed$1 = false;
+let invocationSubscribed$2 = false;
 let onSyncedCallback = null;
 function setOnSynced(cb) {
   onSyncedCallback = cb;
@@ -13423,7 +13898,7 @@ async function runSyncInvocation(tsian, input, invocationId, purpose) {
   }
   const agentId = (_a2 = entrypoints.postTurnMaintenance) == null ? void 0 : _a2.trim();
   if (!agentId) return;
-  ensureInvocationSubscription$1(tsian);
+  ensureInvocationSubscription$2(tsian);
   activeInvocationId$2 = invocationId;
   syncPhase.value = "syncing";
   try {
@@ -13443,9 +13918,9 @@ async function runSyncInvocation(tsian, input, invocationId, purpose) {
     console.error("[useSyncAfterTurn] invokeAgent failed:", err);
   }
 }
-function ensureInvocationSubscription$1(tsian) {
-  if (invocationSubscribed$1) return;
-  invocationSubscribed$1 = true;
+function ensureInvocationSubscription$2(tsian) {
+  if (invocationSubscribed$2) return;
+  invocationSubscribed$2 = true;
   tsian.onAgentInvocation((event) => {
     if (!activeInvocationId$2) return;
     if (event.invocationId !== activeInvocationId$2) return;
@@ -13509,7 +13984,7 @@ function getNumber(obj, key) {
   const v = obj[key];
   return typeof v === "number" && Number.isFinite(v) ? v : void 0;
 }
-function isRecord$4(v) {
+function isRecord$5(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 function formatRuntimeBlock(runtime) {
@@ -13666,7 +14141,7 @@ function formatProtagonistBlock(characterJson, characterRef) {
   if (Array.isArray(traits) && traits.length > 0) {
     const traitLines = [];
     for (const t of traits) {
-      if (!isRecord$4(t)) continue;
+      if (!isRecord$5(t)) continue;
       const tName = getString(t, "name") ?? getString(t, "id");
       if (!tName) continue;
       const description = getString(t, "description");
@@ -13702,6 +14177,19 @@ function formatProtagonistBlock(characterJson, characterRef) {
       lines.push(...goalLines);
     }
   }
+  const history = characterJson["history"];
+  if (Array.isArray(history) && history.length > 0) {
+    const historyLines = [];
+    for (const item of history) {
+      if (!isRecord$5(item)) continue;
+      const event = getString(item, "event");
+      if (event) historyLines.push(`  · ${event}`);
+    }
+    if (historyLines.length > 0) {
+      lines.push("- 履历：");
+      lines.push(...historyLines);
+    }
+  }
   return lines.join("\n");
 }
 async function buildContextInjection(input) {
@@ -13722,7 +14210,7 @@ async function buildContextInjection(input) {
   }
   const messages = [];
   messages.push({
-    role: "system",
+    role: "user",
     content: formatRuntimeBlock(runtime),
     position: "before-input"
   });
@@ -13750,7 +14238,7 @@ async function buildContextInjection(input) {
       return { status: "blocked", reason: "scene-load-failed", detail: ref2 };
     }
     messages.push({
-      role: "system",
+      role: "user",
       content: formatSceneBlock(parsed, ref2),
       position: "before-input"
     });
@@ -13778,7 +14266,7 @@ async function buildContextInjection(input) {
       return { status: "blocked", reason: "protagonist-load-failed", detail: ref2 };
     }
     messages.push({
-      role: "system",
+      role: "user",
       content: formatProtagonistBlock(parsed, ref2),
       position: "before-input"
     });
@@ -13803,10 +14291,10 @@ const lastSendError = /* @__PURE__ */ ref(null);
 let subscribed = false;
 const unsubscribers = [];
 let historyLoaded = false;
-function displayAssistantContent$1(item) {
+function displayAssistantContent(item) {
   return item.displayContent ?? item.content;
 }
-function projectedChoices$1(item) {
+function projectedChoices(item) {
   var _a2;
   const choices = (_a2 = item.projections) == null ? void 0 : _a2.choices;
   return Array.isArray(choices) ? choices.filter((choice2) => typeof choice2 === "string") : [];
@@ -13817,7 +14305,7 @@ function createFallbackAssistantFromStream() {
 }
 function createAssistantStreamItem(item, id) {
   var _a2;
-  const content = displayAssistantContent$1(item);
+  const content = displayAssistantContent(item);
   if (!content.trim()) return null;
   return {
     kind: "assistant",
@@ -13831,7 +14319,7 @@ function pushAssistantItem(item, id) {
   if (streamItem) stream.value.push(streamItem);
 }
 function applyAssistantChoices(item) {
-  turnOptions.value = item ? projectedChoices$1(item) : [];
+  turnOptions.value = item ? projectedChoices(item) : [];
 }
 function subscribe() {
   if (subscribed) return;
@@ -14266,7 +14754,7 @@ const VALID_TONES = /* @__PURE__ */ new Set([
   "danger",
   "muted"
 ]);
-function isRecord$3(v) {
+function isRecord$4(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 function asString$1(v) {
@@ -14276,7 +14764,7 @@ function asNumber$1(v) {
   return typeof v === "number" && Number.isFinite(v) ? v : void 0;
 }
 function parseIdentity(raw) {
-  if (!isRecord$3(raw)) return void 0;
+  if (!isRecord$4(raw)) return void 0;
   const out = {};
   const age = raw.age;
   if (typeof age === "string" && age.length > 0) out.age = age;
@@ -14295,7 +14783,7 @@ function parseGauges(raw) {
   if (!Array.isArray(raw)) return void 0;
   const out = [];
   for (const item of raw) {
-    if (!isRecord$3(item)) continue;
+    if (!isRecord$4(item)) continue;
     const id = asString$1(item.id);
     const name = asString$1(item.name);
     const value = asNumber$1(item.value);
@@ -14316,7 +14804,7 @@ function parseGauges(raw) {
   return out.length > 0 ? out : void 0;
 }
 function parseAttributes(raw) {
-  if (!isRecord$3(raw)) return void 0;
+  if (!isRecord$4(raw)) return void 0;
   const out = {};
   for (const [key, v] of Object.entries(raw)) {
     if (typeof v === "number" && Number.isFinite(v)) out[key] = v;
@@ -14327,7 +14815,7 @@ function parseStatus$1(raw) {
   if (!Array.isArray(raw)) return void 0;
   const out = [];
   for (const item of raw) {
-    if (!isRecord$3(item)) continue;
+    if (!isRecord$4(item)) continue;
     const id = asString$1(item.id);
     if (!id) continue;
     const s = { id };
@@ -14347,7 +14835,7 @@ function parseTraits(raw) {
   if (!Array.isArray(raw)) return void 0;
   const out = [];
   for (const item of raw) {
-    if (!isRecord$3(item)) continue;
+    if (!isRecord$4(item)) continue;
     const id = asString$1(item.id);
     if (!id) continue;
     const t = { id };
@@ -14369,7 +14857,7 @@ function parseTraits(raw) {
   return out.length > 0 ? out : void 0;
 }
 function parseGoals(raw) {
-  if (!isRecord$3(raw)) return void 0;
+  if (!isRecord$4(raw)) return void 0;
   const out = {};
   const current = asString$1(raw.current);
   if (current) out.current = current;
@@ -14378,16 +14866,6 @@ function parseGoals(raw) {
   const longTerm = asString$1(raw.longTerm);
   if (longTerm) out.longTerm = longTerm;
   return Object.keys(out).length > 0 ? out : void 0;
-}
-function parseHistory(raw) {
-  if (!Array.isArray(raw)) return void 0;
-  const out = [];
-  for (const item of raw) {
-    if (!isRecord$3(item)) continue;
-    const event = asString$1(item.event);
-    if (event) out.push({ event });
-  }
-  return out.length > 0 ? out : void 0;
 }
 function parseAliases(raw) {
   if (!Array.isArray(raw)) return void 0;
@@ -14402,7 +14880,7 @@ function parseContainers(raw) {
   if (!Array.isArray(raw)) return void 0;
   const out = [];
   for (const item of raw) {
-    if (!isRecord$3(item)) continue;
+    if (!isRecord$4(item)) continue;
     const ref2 = asString$1(item.ref);
     if (!ref2) continue;
     const entry = { ref: ref2 };
@@ -14413,7 +14891,7 @@ function parseContainers(raw) {
   return out.length > 0 ? out : void 0;
 }
 function parsePortrait(raw) {
-  if (!isRecord$3(raw)) return void 0;
+  if (!isRecord$4(raw)) return void 0;
   const path = asString$1(raw.path);
   if (!path) return void 0;
   const out = { path };
@@ -14426,7 +14904,7 @@ function parsePortrait(raw) {
   return out;
 }
 function parseCharacter(raw) {
-  if (!isRecord$3(raw)) return null;
+  if (!isRecord$4(raw)) return null;
   const id = asString$1(raw.id);
   const name = asString$1(raw.name);
   const brief = asString$1(raw.brief);
@@ -14452,13 +14930,11 @@ function parseCharacter(raw) {
   if (goals) entity.goals = goals;
   const background = asString$1(raw.background);
   if (background) entity.background = background;
-  const history = parseHistory(raw.history);
-  if (history) entity.history = history;
   const containers = parseContainers(raw.containers);
   if (containers) entity.containers = containers;
   const portrait = parsePortrait(raw.portrait);
   if (portrait) entity.portrait = portrait;
-  if (isRecord$3(raw.extensions)) {
+  if (isRecord$4(raw.extensions)) {
     entity.extensions = raw.extensions;
   }
   const updatedAtTurn = asNumber$1(raw.updatedAtTurn);
@@ -14469,13 +14945,13 @@ function parseCharacter(raw) {
   return entity;
 }
 function parseRelationships(raw) {
-  if (!isRecord$3(raw)) return null;
+  if (!isRecord$4(raw)) return null;
   const subject = asString$1(raw.subject);
   const edgesRaw = raw.edges;
   if (!subject || !Array.isArray(edgesRaw)) return null;
   const edges = [];
   for (const item of edgesRaw) {
-    if (!isRecord$3(item)) continue;
+    if (!isRecord$4(item)) continue;
     const to = asString$1(item.to);
     const type = asString$1(item.type);
     if (!to || !type) continue;
@@ -14514,19 +14990,19 @@ function pickDefaultAvatarUrl(entity) {
   var _a2;
   return defaultAvatarUrlForGender(((_a2 = entity.identity) == null ? void 0 : _a2.gender) ?? entity.gender);
 }
-const _hoisted_1$Y = { class: "sb-scene" };
-const _hoisted_2$R = { class: "scene-main" };
-const _hoisted_3$L = { class: "scene-location" };
-const _hoisted_4$G = {
+const _hoisted_1$S = { class: "sb-scene" };
+const _hoisted_2$L = { class: "scene-main" };
+const _hoisted_3$E = { class: "scene-location" };
+const _hoisted_4$z = {
   key: 0,
   class: "scene-sub"
 };
-const _hoisted_5$z = { class: "scene-facts" };
-const _hoisted_6$r = { class: "scene-fact" };
-const _hoisted_7$m = { class: "fact-value" };
-const _hoisted_8$f = { class: "scene-fact" };
-const _hoisted_9$d = { class: "fact-value" };
-const _sfc_main$$ = /* @__PURE__ */ defineComponent({
+const _hoisted_5$u = { class: "scene-facts" };
+const _hoisted_6$n = { class: "scene-fact" };
+const _hoisted_7$i = { class: "fact-value" };
+const _hoisted_8$c = { class: "scene-fact" };
+const _hoisted_9$a = { class: "fact-value" };
+const _sfc_main$V = /* @__PURE__ */ defineComponent({
   __name: "StatusBarScene",
   props: {
     runtime: {}
@@ -14566,59 +15042,59 @@ const _sfc_main$$ = /* @__PURE__ */ defineComponent({
       return typeof w === "string" && w.trim().length > 0 ? w : "天象未明";
     });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("section", _hoisted_1$Y, [
+      return openBlock(), createElementBlock("section", _hoisted_1$S, [
         _cache[2] || (_cache[2] = createBaseVNode("header", { class: "section-title-row" }, [
           createBaseVNode("h3", { class: "section-title" }, "天时地利"),
           createBaseVNode("span", { class: "section-line" })
         ], -1)),
-        createBaseVNode("div", _hoisted_2$R, [
-          createBaseVNode("p", _hoisted_3$L, toDisplayString(locationName.value), 1),
-          sceneName.value ? (openBlock(), createElementBlock("p", _hoisted_4$G, toDisplayString(sceneName.value), 1)) : createCommentVNode("", true)
+        createBaseVNode("div", _hoisted_2$L, [
+          createBaseVNode("p", _hoisted_3$E, toDisplayString(locationName.value), 1),
+          sceneName.value ? (openBlock(), createElementBlock("p", _hoisted_4$z, toDisplayString(sceneName.value), 1)) : createCommentVNode("", true)
         ]),
-        createBaseVNode("div", _hoisted_5$z, [
-          createBaseVNode("span", _hoisted_6$r, [
+        createBaseVNode("div", _hoisted_5$u, [
+          createBaseVNode("span", _hoisted_6$n, [
             _cache[0] || (_cache[0] = createBaseVNode("span", { class: "fact-label" }, "时", -1)),
-            createBaseVNode("span", _hoisted_7$m, toDisplayString(worldTime.value), 1)
+            createBaseVNode("span", _hoisted_7$i, toDisplayString(worldTime.value), 1)
           ]),
-          createBaseVNode("span", _hoisted_8$f, [
+          createBaseVNode("span", _hoisted_8$c, [
             _cache[1] || (_cache[1] = createBaseVNode("span", { class: "fact-label" }, "象", -1)),
-            createBaseVNode("span", _hoisted_9$d, toDisplayString(weather.value), 1)
+            createBaseVNode("span", _hoisted_9$a, toDisplayString(weather.value), 1)
           ])
         ])
       ]);
     };
   }
 });
-const StatusBarScene = /* @__PURE__ */ _export_sfc(_sfc_main$$, [["__scopeId", "data-v-697e02c7"]]);
-const _hoisted_1$X = ["aria-label"];
-const _hoisted_2$Q = { class: "collapsed-portrait" };
-const _hoisted_3$K = ["src"];
-const _hoisted_4$F = {
+const StatusBarScene = /* @__PURE__ */ _export_sfc(_sfc_main$V, [["__scopeId", "data-v-697e02c7"]]);
+const _hoisted_1$R = ["aria-label"];
+const _hoisted_2$K = { class: "collapsed-portrait" };
+const _hoisted_3$D = ["src"];
+const _hoisted_4$y = {
   key: 1,
   class: "collapsed-glyph"
 };
-const _hoisted_5$y = ["aria-label"];
-const _hoisted_6$q = { class: "hero-wrap" };
-const _hoisted_7$l = { class: "hero-portrait" };
-const _hoisted_8$e = ["src", "alt"];
-const _hoisted_9$c = {
+const _hoisted_5$t = ["aria-label"];
+const _hoisted_6$m = { class: "hero-wrap" };
+const _hoisted_7$h = { class: "hero-portrait" };
+const _hoisted_8$b = ["src", "alt"];
+const _hoisted_9$9 = {
   key: 1,
   class: "hero-glyph"
 };
-const _hoisted_10$9 = { class: "char-name" };
-const _hoisted_11$7 = {
+const _hoisted_10$7 = { class: "char-name" };
+const _hoisted_11$6 = {
   key: 0,
   class: "char-brief"
 };
-const _hoisted_12$7 = {
+const _hoisted_12$6 = {
   key: 1,
   class: "char-brief muted"
 };
-const _hoisted_13$7 = {
+const _hoisted_13$6 = {
   key: 2,
   class: "char-brief muted"
 };
-const _sfc_main$_ = /* @__PURE__ */ defineComponent({
+const _sfc_main$U = /* @__PURE__ */ defineComponent({
   __name: "StatusBarCharacter",
   props: {
     character: {},
@@ -14644,18 +15120,18 @@ const _sfc_main$_ = /* @__PURE__ */ defineComponent({
           class: "collapsed-orbit",
           "aria-hidden": "true"
         }, null, -1)),
-        createBaseVNode("span", _hoisted_2$Q, [
+        createBaseVNode("span", _hoisted_2$K, [
           __props.portraitSrc ? (openBlock(), createElementBlock("img", {
             key: 0,
             src: __props.portraitSrc,
             alt: ""
-          }, null, 8, _hoisted_3$K)) : (openBlock(), createElementBlock("span", _hoisted_4$F, "?"))
+          }, null, 8, _hoisted_3$D)) : (openBlock(), createElementBlock("span", _hoisted_4$y, "?"))
         ]),
         _cache[3] || (_cache[3] = createBaseVNode("span", {
           class: "collapsed-dot",
           "aria-hidden": "true"
         }, null, -1))
-      ], 10, _hoisted_1$X)) : (openBlock(), createElementBlock("button", {
+      ], 10, _hoisted_1$R)) : (openBlock(), createElementBlock("button", {
         key: 1,
         class: normalizeClass(["sb-char-expanded", { empty: !__props.hasCharacter }]),
         "aria-label": __props.hasCharacter ? `查看角色卡 — ${__props.name}` : "未设定角色",
@@ -14665,38 +15141,38 @@ const _sfc_main$_ = /* @__PURE__ */ defineComponent({
           createBaseVNode("span", { class: "section-title" }, "玩家概要"),
           createBaseVNode("span", { class: "section-line" })
         ], -1)),
-        createBaseVNode("span", _hoisted_6$q, [
+        createBaseVNode("span", _hoisted_6$m, [
           _cache[4] || (_cache[4] = createBaseVNode("span", {
             class: "hero-aura",
             "aria-hidden": "true"
           }, null, -1)),
-          createBaseVNode("span", _hoisted_7$l, [
+          createBaseVNode("span", _hoisted_7$h, [
             __props.portraitSrc ? (openBlock(), createElementBlock("img", {
               key: 0,
               src: __props.portraitSrc,
               alt: __props.hasCharacter ? __props.name : "未设定角色"
-            }, null, 8, _hoisted_8$e)) : (openBlock(), createElementBlock("span", _hoisted_9$c, "?"))
+            }, null, 8, _hoisted_8$b)) : (openBlock(), createElementBlock("span", _hoisted_9$9, "?"))
           ])
         ]),
-        createBaseVNode("span", _hoisted_10$9, toDisplayString(__props.hasCharacter ? __props.name : "未设定角色"), 1),
-        __props.hasCharacter && __props.brief ? (openBlock(), createElementBlock("span", _hoisted_11$7, toDisplayString(__props.brief), 1)) : __props.loading ? (openBlock(), createElementBlock("span", _hoisted_12$7, "读取角色档案…")) : __props.entityError ? (openBlock(), createElementBlock("span", _hoisted_13$7, "角色档案暂不可读")) : createCommentVNode("", true)
-      ], 10, _hoisted_5$y));
+        createBaseVNode("span", _hoisted_10$7, toDisplayString(__props.hasCharacter ? __props.name : "未设定角色"), 1),
+        __props.hasCharacter && __props.brief ? (openBlock(), createElementBlock("span", _hoisted_11$6, toDisplayString(__props.brief), 1)) : __props.loading ? (openBlock(), createElementBlock("span", _hoisted_12$6, "读取角色档案…")) : __props.entityError ? (openBlock(), createElementBlock("span", _hoisted_13$6, "角色档案暂不可读")) : createCommentVNode("", true)
+      ], 10, _hoisted_5$t));
     };
   }
 });
-const StatusBarCharacter = /* @__PURE__ */ _export_sfc(_sfc_main$_, [["__scopeId", "data-v-5659a095"]]);
-const _hoisted_1$W = { class: "sb-identity" };
-const _hoisted_2$P = {
+const StatusBarCharacter = /* @__PURE__ */ _export_sfc(_sfc_main$U, [["__scopeId", "data-v-5659a095"]]);
+const _hoisted_1$Q = { class: "sb-identity" };
+const _hoisted_2$J = {
   key: 0,
   class: "identity-grid"
 };
-const _hoisted_3$J = { class: "identity-label" };
-const _hoisted_4$E = { class: "identity-value" };
-const _hoisted_5$x = {
+const _hoisted_3$C = { class: "identity-label" };
+const _hoisted_4$x = { class: "identity-value" };
+const _hoisted_5$s = {
   key: 1,
   class: "sb-empty"
 };
-const _sfc_main$Z = /* @__PURE__ */ defineComponent({
+const _sfc_main$T = /* @__PURE__ */ defineComponent({
   __name: "StatusBarIdentity",
   props: {
     entity: {}
@@ -14717,27 +15193,27 @@ const _sfc_main$Z = /* @__PURE__ */ defineComponent({
     });
     const isEmpty = computed(() => rows.value.length === 0);
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("section", _hoisted_1$W, [
+      return openBlock(), createElementBlock("section", _hoisted_1$Q, [
         _cache[0] || (_cache[0] = createBaseVNode("header", { class: "section-title-row" }, [
           createBaseVNode("h3", { class: "section-title" }, "个人信息"),
           createBaseVNode("span", { class: "section-line" })
         ], -1)),
-        !isEmpty.value ? (openBlock(), createElementBlock("div", _hoisted_2$P, [
+        !isEmpty.value ? (openBlock(), createElementBlock("div", _hoisted_2$J, [
           (openBlock(true), createElementBlock(Fragment, null, renderList(rows.value, (row) => {
             return openBlock(), createElementBlock("div", {
               key: row.key,
               class: normalizeClass(["identity-row", { wide: row.wide }])
             }, [
-              createBaseVNode("span", _hoisted_3$J, toDisplayString(row.label), 1),
-              createBaseVNode("span", _hoisted_4$E, toDisplayString(row.value), 1)
+              createBaseVNode("span", _hoisted_3$C, toDisplayString(row.label), 1),
+              createBaseVNode("span", _hoisted_4$x, toDisplayString(row.value), 1)
             ], 2);
           }), 128))
-        ])) : (openBlock(), createElementBlock("p", _hoisted_5$x, "暂无记录"))
+        ])) : (openBlock(), createElementBlock("p", _hoisted_5$s, "暂无记录"))
       ]);
     };
   }
 });
-const StatusBarIdentity = /* @__PURE__ */ _export_sfc(_sfc_main$Z, [["__scopeId", "data-v-3146dfb4"]]);
+const StatusBarIdentity = /* @__PURE__ */ _export_sfc(_sfc_main$T, [["__scopeId", "data-v-3146dfb4"]]);
 const STORAGE_KEY = "tsian.statusBarPins";
 const CURRENT_VERSION = 1;
 function isPinPathKind(v) {
@@ -14933,36 +15409,36 @@ function readPinValue(entity, target) {
     }
   }
 }
-const _hoisted_1$V = {
+const _hoisted_1$P = {
   key: 0,
   class: "sb-pinned"
 };
-const _hoisted_2$O = { class: "pin-list" };
-const _hoisted_3$I = ["title"];
-const _hoisted_4$D = { class: "pin-status-name" };
-const _hoisted_5$w = {
+const _hoisted_2$I = { class: "pin-list" };
+const _hoisted_3$B = ["title"];
+const _hoisted_4$w = { class: "pin-status-name" };
+const _hoisted_5$r = {
   key: 1,
   class: "pin-attribute-row"
 };
-const _hoisted_6$p = { class: "pin-attr-label" };
-const _hoisted_7$k = { class: "pin-attr-value" };
-const _hoisted_8$d = {
+const _hoisted_6$l = { class: "pin-attr-label" };
+const _hoisted_7$g = { class: "pin-attr-value" };
+const _hoisted_8$a = {
   key: 2,
   class: "pin-gauge-row"
 };
-const _hoisted_9$b = { class: "pin-gauge-head" };
-const _hoisted_10$8 = { class: "pin-gauge-label" };
-const _hoisted_11$6 = { class: "pin-gauge-value" };
-const _hoisted_12$6 = {
+const _hoisted_9$8 = { class: "pin-gauge-head" };
+const _hoisted_10$6 = { class: "pin-gauge-label" };
+const _hoisted_11$5 = { class: "pin-gauge-value" };
+const _hoisted_12$5 = {
   key: 1,
   class: "pin-gauge-unit"
 };
-const _hoisted_13$6 = {
+const _hoisted_13$5 = {
   key: 3,
   class: "pin-chip"
 };
-const _hoisted_14$6 = { class: "pin-chip-label" };
-const _hoisted_15$6 = { class: "pin-chip-value" };
+const _hoisted_14$5 = { class: "pin-chip-label" };
+const _hoisted_15$5 = { class: "pin-chip-value" };
 const _hoisted_16$5 = ["title"];
 const _hoisted_17$5 = {
   key: 5,
@@ -14970,12 +15446,12 @@ const _hoisted_17$5 = {
 };
 const _hoisted_18$4 = { class: "pin-chip-label" };
 const _hoisted_19$4 = { class: "pin-chip-value" };
-const _hoisted_20$4 = {
+const _hoisted_20$3 = {
   key: 6,
   class: "pin-missing"
 };
 const _hoisted_21$3 = { class: "pin-missing-label" };
-const _sfc_main$Y = /* @__PURE__ */ defineComponent({
+const _sfc_main$S = /* @__PURE__ */ defineComponent({
   __name: "StatusBarPinned",
   props: {
     protagonistRef: {}
@@ -15012,12 +15488,12 @@ const _sfc_main$Y = /* @__PURE__ */ defineComponent({
       return `${v.kind}:${v.name}:${idx}`;
     }
     return (_ctx, _cache) => {
-      return unref(pins).length > 0 ? (openBlock(), createElementBlock("section", _hoisted_1$V, [
+      return unref(pins).length > 0 ? (openBlock(), createElementBlock("section", _hoisted_1$P, [
         _cache[3] || (_cache[3] = createBaseVNode("header", { class: "sb-section-head" }, [
           createBaseVNode("h3", { class: "sb-section-title" }, "钉选"),
           createBaseVNode("span", { class: "sb-section-line" })
         ], -1)),
-        createBaseVNode("ul", _hoisted_2$O, [
+        createBaseVNode("ul", _hoisted_2$I, [
           (openBlock(true), createElementBlock(Fragment, null, renderList(pinValues.value, (v, idx) => {
             return openBlock(), createElementBlock("li", {
               key: itemKey(v, idx),
@@ -15028,23 +15504,23 @@ const _sfc_main$Y = /* @__PURE__ */ defineComponent({
                 class: "pin-status-chip",
                 title: v.description
               }, [
-                createBaseVNode("span", _hoisted_4$D, toDisplayString(v.name), 1),
+                createBaseVNode("span", _hoisted_4$w, toDisplayString(v.name), 1),
                 v.polarity ? (openBlock(), createElementBlock("span", {
                   key: 0,
                   class: normalizeClass(["pin-status-polarity", `polarity-${v.polarity}`])
                 }, toDisplayString(v.polarity), 3)) : createCommentVNode("", true)
-              ], 8, _hoisted_3$I)) : v.kind === "attribute" ? (openBlock(), createElementBlock("div", _hoisted_5$w, [
-                createBaseVNode("span", _hoisted_6$p, toDisplayString(v.label), 1),
-                createBaseVNode("span", _hoisted_7$k, toDisplayString(v.value), 1)
-              ])) : v.kind === "gauge" ? (openBlock(), createElementBlock("div", _hoisted_8$d, [
-                createBaseVNode("div", _hoisted_9$b, [
-                  createBaseVNode("span", _hoisted_10$8, toDisplayString(v.name), 1),
-                  createBaseVNode("span", _hoisted_11$6, [
+              ], 8, _hoisted_3$B)) : v.kind === "attribute" ? (openBlock(), createElementBlock("div", _hoisted_5$r, [
+                createBaseVNode("span", _hoisted_6$l, toDisplayString(v.label), 1),
+                createBaseVNode("span", _hoisted_7$g, toDisplayString(v.value), 1)
+              ])) : v.kind === "gauge" ? (openBlock(), createElementBlock("div", _hoisted_8$a, [
+                createBaseVNode("div", _hoisted_9$8, [
+                  createBaseVNode("span", _hoisted_10$6, toDisplayString(v.name), 1),
+                  createBaseVNode("span", _hoisted_11$5, [
                     createTextVNode(toDisplayString(v.value), 1),
                     typeof v.max === "number" ? (openBlock(), createElementBlock(Fragment, { key: 0 }, [
                       createTextVNode("/" + toDisplayString(v.max), 1)
                     ], 64)) : createCommentVNode("", true),
-                    v.unit ? (openBlock(), createElementBlock("span", _hoisted_12$6, toDisplayString(v.unit), 1)) : createCommentVNode("", true)
+                    v.unit ? (openBlock(), createElementBlock("span", _hoisted_12$5, toDisplayString(v.unit), 1)) : createCommentVNode("", true)
                   ])
                 ]),
                 gaugePercent(v.value, v.max) !== null ? (openBlock(), createElementBlock("div", {
@@ -15056,10 +15532,10 @@ const _sfc_main$Y = /* @__PURE__ */ defineComponent({
                     style: normalizeStyle({ width: `${gaugePercent(v.value, v.max)}%` })
                   }, null, 4)
                 ], 2)) : createCommentVNode("", true)
-              ])) : v.kind === "identity" ? (openBlock(), createElementBlock("div", _hoisted_13$6, [
-                createBaseVNode("span", _hoisted_14$6, toDisplayString(v.label), 1),
+              ])) : v.kind === "identity" ? (openBlock(), createElementBlock("div", _hoisted_13$5, [
+                createBaseVNode("span", _hoisted_14$5, toDisplayString(v.label), 1),
                 _cache[0] || (_cache[0] = createBaseVNode("span", { class: "pin-chip-sep" }, "：", -1)),
-                createBaseVNode("span", _hoisted_15$6, toDisplayString(v.value), 1)
+                createBaseVNode("span", _hoisted_15$5, toDisplayString(v.value), 1)
               ])) : v.kind === "appearance" ? (openBlock(), createElementBlock("div", {
                 key: 4,
                 class: "pin-appearance",
@@ -15068,7 +15544,7 @@ const _sfc_main$Y = /* @__PURE__ */ defineComponent({
                 createBaseVNode("span", _hoisted_18$4, toDisplayString(v.label), 1),
                 _cache[1] || (_cache[1] = createBaseVNode("span", { class: "pin-chip-sep" }, "：", -1)),
                 createBaseVNode("span", _hoisted_19$4, toDisplayString(v.value), 1)
-              ])) : (openBlock(), createElementBlock("div", _hoisted_20$4, [
+              ])) : (openBlock(), createElementBlock("div", _hoisted_20$3, [
                 createBaseVNode("span", _hoisted_21$3, toDisplayString(v.label), 1),
                 _cache[2] || (_cache[2] = createBaseVNode("span", { class: "pin-missing-sep" }, "—", -1))
               ]))
@@ -15079,24 +15555,24 @@ const _sfc_main$Y = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const StatusBarPinned = /* @__PURE__ */ _export_sfc(_sfc_main$Y, [["__scopeId", "data-v-5c811ce0"]]);
-const _hoisted_1$U = { class: "sb-metrics" };
-const _hoisted_2$N = {
+const StatusBarPinned = /* @__PURE__ */ _export_sfc(_sfc_main$S, [["__scopeId", "data-v-5c811ce0"]]);
+const _hoisted_1$O = { class: "sb-metrics" };
+const _hoisted_2$H = {
   key: 0,
   class: "metric-list"
 };
-const _hoisted_3$H = { class: "metric-head" };
-const _hoisted_4$C = { class: "metric-label" };
-const _hoisted_5$v = { class: "metric-value" };
-const _hoisted_6$o = {
+const _hoisted_3$A = { class: "metric-head" };
+const _hoisted_4$v = { class: "metric-label" };
+const _hoisted_5$q = { class: "metric-value" };
+const _hoisted_6$k = {
   key: 0,
   class: "metric-bar-track"
 };
-const _hoisted_7$j = {
+const _hoisted_7$f = {
   key: 1,
   class: "sb-empty"
 };
-const _sfc_main$X = /* @__PURE__ */ defineComponent({
+const _sfc_main$R = /* @__PURE__ */ defineComponent({
   __name: "StatusBarMetrics",
   props: {
     gauges: {},
@@ -15157,22 +15633,22 @@ const _sfc_main$X = /* @__PURE__ */ defineComponent({
       return `tone-${tone}`;
     }
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("section", _hoisted_1$U, [
+      return openBlock(), createElementBlock("section", _hoisted_1$O, [
         _cache[1] || (_cache[1] = createBaseVNode("header", { class: "section-title-row" }, [
           createBaseVNode("h3", { class: "section-title" }, "数值"),
           createBaseVNode("span", { class: "section-line" })
         ], -1)),
-        !isEmpty.value ? (openBlock(), createElementBlock("ul", _hoisted_2$N, [
+        !isEmpty.value ? (openBlock(), createElementBlock("ul", _hoisted_2$H, [
           (openBlock(true), createElementBlock(Fragment, null, renderList(rows.value, (row) => {
             return openBlock(), createElementBlock("li", {
               key: row.key,
               class: normalizeClass(["metric-row", [toneClass(row.tone), `source-${row.source}`]])
             }, [
-              createBaseVNode("div", _hoisted_3$H, [
-                createBaseVNode("span", _hoisted_4$C, toDisplayString(row.label), 1),
-                createBaseVNode("span", _hoisted_5$v, toDisplayString(row.valueText), 1)
+              createBaseVNode("div", _hoisted_3$A, [
+                createBaseVNode("span", _hoisted_4$v, toDisplayString(row.label), 1),
+                createBaseVNode("span", _hoisted_5$q, toDisplayString(row.valueText), 1)
               ]),
-              row.percent !== null ? (openBlock(), createElementBlock("div", _hoisted_6$o, [
+              row.percent !== null ? (openBlock(), createElementBlock("div", _hoisted_6$k, [
                 createBaseVNode("div", {
                   class: "metric-bar-fill",
                   style: normalizeStyle({ width: `${row.percent}%` })
@@ -15185,23 +15661,23 @@ const _sfc_main$X = /* @__PURE__ */ defineComponent({
               ])) : createCommentVNode("", true)
             ], 2);
           }), 128))
-        ])) : (openBlock(), createElementBlock("p", _hoisted_7$j, "暂无记录"))
+        ])) : (openBlock(), createElementBlock("p", _hoisted_7$f, "暂无记录"))
       ]);
     };
   }
 });
-const StatusBarMetrics = /* @__PURE__ */ _export_sfc(_sfc_main$X, [["__scopeId", "data-v-c0f01c47"]]);
-const _hoisted_1$T = {
+const StatusBarMetrics = /* @__PURE__ */ _export_sfc(_sfc_main$R, [["__scopeId", "data-v-c0f01c47"]]);
+const _hoisted_1$N = {
   key: 0,
   class: "sb-refs"
 };
-const _hoisted_2$M = { class: "ref-list" };
-const _hoisted_3$G = { class: "ref-label" };
-const _hoisted_4$B = {
+const _hoisted_2$G = { class: "ref-list" };
+const _hoisted_3$z = { class: "ref-label" };
+const _hoisted_4$u = {
   key: 0,
   class: "ref-name"
 };
-const _sfc_main$W = /* @__PURE__ */ defineComponent({
+const _sfc_main$Q = /* @__PURE__ */ defineComponent({
   __name: "StatusBarRefs",
   props: {
     refs: {}
@@ -15217,19 +15693,19 @@ const _sfc_main$W = /* @__PURE__ */ defineComponent({
     });
     const hasContent = computed(() => rows.value.length > 0);
     return (_ctx, _cache) => {
-      return hasContent.value ? (openBlock(), createElementBlock("section", _hoisted_1$T, [
+      return hasContent.value ? (openBlock(), createElementBlock("section", _hoisted_1$N, [
         _cache[0] || (_cache[0] = createBaseVNode("header", { class: "sb-section-head" }, [
           createBaseVNode("h3", { class: "sb-section-title" }, "关联"),
           createBaseVNode("span", { class: "sb-section-line" })
         ], -1)),
-        createBaseVNode("ul", _hoisted_2$M, [
+        createBaseVNode("ul", _hoisted_2$G, [
           (openBlock(true), createElementBlock(Fragment, null, renderList(rows.value, (r, idx) => {
             return openBlock(), createElementBlock("li", {
               key: `ref-${idx}`,
               class: "ref-row"
             }, [
-              createBaseVNode("span", _hoisted_3$G, toDisplayString(r.label), 1),
-              r.name ? (openBlock(), createElementBlock("span", _hoisted_4$B, toDisplayString(r.name), 1)) : createCommentVNode("", true)
+              createBaseVNode("span", _hoisted_3$z, toDisplayString(r.label), 1),
+              r.name ? (openBlock(), createElementBlock("span", _hoisted_4$u, toDisplayString(r.name), 1)) : createCommentVNode("", true)
             ]);
           }), 128))
         ])
@@ -15237,22 +15713,22 @@ const _sfc_main$W = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const StatusBarRefs = /* @__PURE__ */ _export_sfc(_sfc_main$W, [["__scopeId", "data-v-b0eeede4"]]);
-const _hoisted_1$S = {
+const StatusBarRefs = /* @__PURE__ */ _export_sfc(_sfc_main$Q, [["__scopeId", "data-v-b0eeede4"]]);
+const _hoisted_1$M = {
   key: 0,
   class: "sb-loading"
 };
-const _hoisted_2$L = {
+const _hoisted_2$F = {
   key: 1,
   class: "sb-fatal"
 };
-const _hoisted_3$F = {
+const _hoisted_3$y = {
   key: 1,
   class: "sb-expanded-body"
 };
 const STATUS_BAR_EXPANDED_WIDTH = 312;
 const STATUS_BAR_COLLAPSED_WIDTH = 48;
-const _sfc_main$V = /* @__PURE__ */ defineComponent({
+const _sfc_main$P = /* @__PURE__ */ defineComponent({
   __name: "StatusBar",
   props: {
     collapsed: { type: Boolean }
@@ -15467,9 +15943,9 @@ const _sfc_main$V = /* @__PURE__ */ defineComponent({
         ref: barRef,
         class: normalizeClass(["status-bar", { collapsed: __props.collapsed }])
       }, [
-        showLoading.value ? (openBlock(), createElementBlock("div", _hoisted_1$S, [..._cache[4] || (_cache[4] = [
+        showLoading.value ? (openBlock(), createElementBlock("div", _hoisted_1$M, [..._cache[4] || (_cache[4] = [
           createBaseVNode("span", { class: "sb-loading-text" }, "载入中…", -1)
-        ])])) : showFatalError.value ? (openBlock(), createElementBlock("div", _hoisted_2$L, [..._cache[5] || (_cache[5] = [
+        ])])) : showFatalError.value ? (openBlock(), createElementBlock("div", _hoisted_2$F, [..._cache[5] || (_cache[5] = [
           createBaseVNode("span", { class: "sb-fatal-text" }, "状态暂不可用", -1)
         ])])) : (openBlock(), createElementBlock(Fragment, { key: 2 }, [
           __props.collapsed ? (openBlock(), createBlock(StatusBarCharacter, {
@@ -15484,7 +15960,7 @@ const _sfc_main$V = /* @__PURE__ */ defineComponent({
             "entity-error": entityError.value,
             onToggle: _cache[0] || (_cache[0] = ($event) => emit2("toggle")),
             onOpenCharacter: _cache[1] || (_cache[1] = ($event) => emit2("open-character"))
-          }, null, 8, ["character", "has-character", "name", "brief", "portrait-src", "loading", "entity-error"])) : (openBlock(), createElementBlock("div", _hoisted_3$F, [
+          }, null, 8, ["character", "has-character", "name", "brief", "portrait-src", "loading", "entity-error"])) : (openBlock(), createElementBlock("div", _hoisted_3$y, [
             createVNode(StatusBarScene, { runtime: runtime.value }, null, 8, ["runtime"]),
             createVNode(StatusBarCharacter, {
               character: characterSnapshot.value,
@@ -15514,10 +15990,10 @@ const _sfc_main$V = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const StatusBar = /* @__PURE__ */ _export_sfc(_sfc_main$V, [["__scopeId", "data-v-6d10d5eb"]]);
-const _hoisted_1$R = { class: "msg-head" };
-const _hoisted_2$K = { class: "msg-body" };
-const _sfc_main$U = /* @__PURE__ */ defineComponent({
+const StatusBar = /* @__PURE__ */ _export_sfc(_sfc_main$P, [["__scopeId", "data-v-6d10d5eb"]]);
+const _hoisted_1$L = { class: "msg-head" };
+const _hoisted_2$E = { class: "msg-body" };
+const _sfc_main$O = /* @__PURE__ */ defineComponent({
   __name: "UserMessage",
   props: {
     content: {},
@@ -15530,7 +16006,7 @@ const _sfc_main$U = /* @__PURE__ */ defineComponent({
       return openBlock(), createElementBlock("div", {
         class: normalizeClass(["user-msg", { editable: __props.editable }])
       }, [
-        createBaseVNode("div", _hoisted_1$R, [
+        createBaseVNode("div", _hoisted_1$L, [
           _cache[2] || (_cache[2] = createBaseVNode("span", {
             class: "dash",
             "aria-hidden": "true"
@@ -15561,12 +16037,12 @@ const _sfc_main$U = /* @__PURE__ */ defineComponent({
             ], -1)
           ])])) : createCommentVNode("", true)
         ]),
-        createBaseVNode("div", _hoisted_2$K, toDisplayString(__props.content), 1)
+        createBaseVNode("div", _hoisted_2$E, toDisplayString(__props.content), 1)
       ], 2);
     };
   }
 });
-const UserMessage = /* @__PURE__ */ _export_sfc(_sfc_main$U, [["__scopeId", "data-v-17e4ab76"]]);
+const UserMessage = /* @__PURE__ */ _export_sfc(_sfc_main$O, [["__scopeId", "data-v-17e4ab76"]]);
 function _getDefaults() {
   return {
     async: false,
@@ -17730,7 +18206,7 @@ marked.use({ renderer });
 function renderMarkdown(text) {
   return marked.parse(text, { async: false });
 }
-const _sfc_main$T = /* @__PURE__ */ defineComponent({
+const _sfc_main$N = /* @__PURE__ */ defineComponent({
   __name: "EmberForge",
   props: {
     variant: { default: "inline" },
@@ -17894,9 +18370,9 @@ const _sfc_main$T = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const EmberForge = /* @__PURE__ */ _export_sfc(_sfc_main$T, [["__scopeId", "data-v-395c7f88"]]);
-const _hoisted_1$Q = ["innerHTML"];
-const _sfc_main$S = /* @__PURE__ */ defineComponent({
+const EmberForge = /* @__PURE__ */ _export_sfc(_sfc_main$N, [["__scopeId", "data-v-395c7f88"]]);
+const _hoisted_1$K = ["innerHTML"];
+const _sfc_main$M = /* @__PURE__ */ defineComponent({
   __name: "NarrativeMessage",
   props: {
     content: {},
@@ -17912,7 +18388,7 @@ const _sfc_main$S = /* @__PURE__ */ defineComponent({
         createBaseVNode("div", {
           class: "msg-body prose",
           innerHTML: html2.value
-        }, null, 8, _hoisted_1$Q),
+        }, null, 8, _hoisted_1$K),
         __props.streaming ? (openBlock(), createBlock(EmberForge, {
           key: 0,
           variant: "inline"
@@ -17921,7 +18397,7 @@ const _sfc_main$S = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const NarrativeMessage = /* @__PURE__ */ _export_sfc(_sfc_main$S, [["__scopeId", "data-v-f89ae464"]]);
+const NarrativeMessage = /* @__PURE__ */ _export_sfc(_sfc_main$M, [["__scopeId", "data-v-f89ae464"]]);
 function createContext(providerComponentName, contextName) {
   const symbolDescription = typeof providerComponentName === "string" && !contextName ? `${providerComponentName}Context` : contextName;
   const injectionKey = Symbol(symbolDescription);
@@ -20047,31 +20523,31 @@ var DialogTitle_vue_vue_type_script_setup_true_lang_default = /* @__PURE__ */ de
   }
 });
 var DialogTitle_default = DialogTitle_vue_vue_type_script_setup_true_lang_default;
-const _hoisted_1$P = {
+const _hoisted_1$J = {
   key: 0,
   class: "agent-tag"
 };
-const _hoisted_2$J = {
+const _hoisted_2$D = {
   key: 1,
   class: "glyph"
 };
-const _hoisted_3$E = { class: "node-kind" };
-const _hoisted_4$A = {
+const _hoisted_3$x = { class: "node-kind" };
+const _hoisted_4$t = {
   key: 2,
   class: "node-summary"
 };
-const _hoisted_5$u = {
+const _hoisted_5$p = {
   key: 3,
   class: "node-name"
 };
-const _hoisted_6$n = {
+const _hoisted_6$j = {
   key: 4,
   class: "node-preview"
 };
-const _hoisted_7$i = { class: "process-body" };
-const _hoisted_8$c = { class: "tool-item-name" };
-const _hoisted_9$a = { class: "tool-item-status" };
-const _sfc_main$R = /* @__PURE__ */ defineComponent({
+const _hoisted_7$e = { class: "process-body" };
+const _hoisted_8$9 = { class: "tool-item-name" };
+const _hoisted_9$7 = { class: "tool-item-status" };
+const _sfc_main$L = /* @__PURE__ */ defineComponent({
   __name: "ProcessNode",
   props: {
     node: {}
@@ -20141,10 +20617,10 @@ const _sfc_main$R = /* @__PURE__ */ defineComponent({
           }, [
             createVNode(unref(CollapsibleTrigger_default), { class: "process-head" }, {
               default: withCtx(() => [
-                __props.node.agentId ? (openBlock(), createElementBlock("span", _hoisted_1$P, toDisplayString(__props.node.agentId), 1)) : createCommentVNode("", true),
-                __props.node.agentId ? (openBlock(), createElementBlock("span", _hoisted_2$J, "·")) : createCommentVNode("", true),
-                createBaseVNode("span", _hoisted_3$E, toDisplayString(kindLabel[__props.node.kind]), 1),
-                __props.node.kind === "tool-group" ? (openBlock(), createElementBlock("span", _hoisted_4$A, toDisplayString(groupSummary.value), 1)) : __props.node.kind === "tool" && __props.node.name ? (openBlock(), createElementBlock("span", _hoisted_5$u, toDisplayString(__props.node.name), 1)) : preview.value ? (openBlock(), createElementBlock("span", _hoisted_6$n, toDisplayString(preview.value), 1)) : createCommentVNode("", true),
+                __props.node.agentId ? (openBlock(), createElementBlock("span", _hoisted_1$J, toDisplayString(__props.node.agentId), 1)) : createCommentVNode("", true),
+                __props.node.agentId ? (openBlock(), createElementBlock("span", _hoisted_2$D, "·")) : createCommentVNode("", true),
+                createBaseVNode("span", _hoisted_3$x, toDisplayString(kindLabel[__props.node.kind]), 1),
+                __props.node.kind === "tool-group" ? (openBlock(), createElementBlock("span", _hoisted_4$t, toDisplayString(groupSummary.value), 1)) : __props.node.kind === "tool" && __props.node.name ? (openBlock(), createElementBlock("span", _hoisted_5$p, toDisplayString(__props.node.name), 1)) : preview.value ? (openBlock(), createElementBlock("span", _hoisted_6$j, toDisplayString(preview.value), 1)) : createCommentVNode("", true),
                 _cache[1] || (_cache[1] = createBaseVNode("svg", {
                   class: "chevron",
                   viewBox: "0 0 24 24",
@@ -20164,14 +20640,14 @@ const _sfc_main$R = /* @__PURE__ */ defineComponent({
             }),
             createVNode(unref(CollapsibleContent_default), { class: "collapsible-body" }, {
               default: withCtx(() => [
-                createBaseVNode("div", _hoisted_7$i, [
+                createBaseVNode("div", _hoisted_7$e, [
                   __props.node.kind === "tool-group" && __props.node.tools ? (openBlock(true), createElementBlock(Fragment, { key: 0 }, renderList(__props.node.tools, (t, i) => {
                     return openBlock(), createElementBlock("div", {
                       key: i,
                       class: "tool-item"
                     }, [
-                      createBaseVNode("span", _hoisted_8$c, toDisplayString(t.name), 1),
-                      createBaseVNode("span", _hoisted_9$a, toDisplayString(t.status), 1)
+                      createBaseVNode("span", _hoisted_8$9, toDisplayString(t.name), 1),
+                      createBaseVNode("span", _hoisted_9$7, toDisplayString(t.status), 1)
                     ]);
                   }), 128)) : __props.node.text ? (openBlock(), createElementBlock(Fragment, { key: 1 }, [
                     createTextVNode(toDisplayString(__props.node.text), 1)
@@ -20191,13 +20667,13 @@ const _sfc_main$R = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const ProcessNode = /* @__PURE__ */ _export_sfc(_sfc_main$R, [["__scopeId", "data-v-62f4f56c"]]);
-const _hoisted_1$O = {
+const ProcessNode = /* @__PURE__ */ _export_sfc(_sfc_main$L, [["__scopeId", "data-v-62f4f56c"]]);
+const _hoisted_1$I = {
   key: 0,
   class: "rp-summary"
 };
-const _hoisted_2$I = { class: "rp-inner" };
-const _sfc_main$Q = /* @__PURE__ */ defineComponent({
+const _hoisted_2$C = { class: "rp-inner" };
+const _sfc_main$K = /* @__PURE__ */ defineComponent({
   __name: "RoundProcess",
   props: {
     nodes: {},
@@ -20251,13 +20727,13 @@ const _sfc_main$Q = /* @__PURE__ */ defineComponent({
                   })
                 ], -1)),
                 _cache[2] || (_cache[2] = createBaseVNode("span", { class: "rp-label" }, "推演过程", -1)),
-                summary.value ? (openBlock(), createElementBlock("span", _hoisted_1$O, toDisplayString(summary.value), 1)) : createCommentVNode("", true)
+                summary.value ? (openBlock(), createElementBlock("span", _hoisted_1$I, toDisplayString(summary.value), 1)) : createCommentVNode("", true)
               ]),
               _: 1
             }),
             createVNode(unref(CollapsibleContent_default), { class: "rp-body" }, {
               default: withCtx(() => [
-                createBaseVNode("div", _hoisted_2$I, [
+                createBaseVNode("div", _hoisted_2$C, [
                   (openBlock(true), createElementBlock(Fragment, null, renderList(__props.nodes, (n) => {
                     return openBlock(), createBlock(ProcessNode, {
                       key: n.id,
@@ -20275,7 +20751,7 @@ const _sfc_main$Q = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const RoundProcess = /* @__PURE__ */ _export_sfc(_sfc_main$Q, [["__scopeId", "data-v-f67d6d63"]]);
+const RoundProcess = /* @__PURE__ */ _export_sfc(_sfc_main$K, [["__scopeId", "data-v-f67d6d63"]]);
 function useTurnState(scrollEl, turnActive) {
   const elapsedMs = /* @__PURE__ */ ref(0);
   const userPinnedToBottom = /* @__PURE__ */ ref(true);
@@ -20337,8 +20813,8 @@ function formatTokens(n) {
   if (n < 1e6) return `${(n / 1e3).toFixed(1)}k`;
   return `${(n / 1e6).toFixed(1)}M`;
 }
-const _hoisted_1$N = { class: "turn-meta" };
-const _sfc_main$P = /* @__PURE__ */ defineComponent({
+const _hoisted_1$H = { class: "turn-meta" };
+const _sfc_main$J = /* @__PURE__ */ defineComponent({
   __name: "TurnMeta",
   props: {
     elapsedMs: {},
@@ -20353,16 +20829,16 @@ const _sfc_main$P = /* @__PURE__ */ defineComponent({
       return `· ${parts.join(" · ")}`;
     });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("p", _hoisted_1$N, toDisplayString(text.value), 1);
+      return openBlock(), createElementBlock("p", _hoisted_1$H, toDisplayString(text.value), 1);
     };
   }
 });
-const TurnMeta = /* @__PURE__ */ _export_sfc(_sfc_main$P, [["__scopeId", "data-v-9ba924a0"]]);
-const _hoisted_1$M = { class: "story-options" };
-const _hoisted_2$H = ["disabled", "onClick"];
-const _hoisted_3$D = { class: "opt-num" };
-const _hoisted_4$z = { class: "opt-text" };
-const _sfc_main$O = /* @__PURE__ */ defineComponent({
+const TurnMeta = /* @__PURE__ */ _export_sfc(_sfc_main$J, [["__scopeId", "data-v-9ba924a0"]]);
+const _hoisted_1$G = { class: "story-options" };
+const _hoisted_2$B = ["disabled", "onClick"];
+const _hoisted_3$w = { class: "opt-num" };
+const _hoisted_4$s = { class: "opt-text" };
+const _sfc_main$I = /* @__PURE__ */ defineComponent({
   __name: "StoryOptions",
   props: {
     options: {},
@@ -20372,7 +20848,7 @@ const _sfc_main$O = /* @__PURE__ */ defineComponent({
   setup(__props, { emit: __emit }) {
     const emit2 = __emit;
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$M, [
+      return openBlock(), createElementBlock("div", _hoisted_1$G, [
         (openBlock(true), createElementBlock(Fragment, null, renderList(__props.options, (opt, i) => {
           return openBlock(), createElementBlock("button", {
             key: i,
@@ -20380,17 +20856,17 @@ const _sfc_main$O = /* @__PURE__ */ defineComponent({
             disabled: __props.disabled,
             onClick: ($event) => emit2("select", opt)
           }, [
-            createBaseVNode("span", _hoisted_3$D, toDisplayString(i + 1), 1),
-            createBaseVNode("span", _hoisted_4$z, toDisplayString(opt), 1)
-          ], 8, _hoisted_2$H);
+            createBaseVNode("span", _hoisted_3$w, toDisplayString(i + 1), 1),
+            createBaseVNode("span", _hoisted_4$s, toDisplayString(opt), 1)
+          ], 8, _hoisted_2$B);
         }), 128))
       ]);
     };
   }
 });
-const StoryOptions = /* @__PURE__ */ _export_sfc(_sfc_main$O, [["__scopeId", "data-v-a29f4c85"]]);
-const _hoisted_1$L = { class: "label" };
-const _sfc_main$N = /* @__PURE__ */ defineComponent({
+const StoryOptions = /* @__PURE__ */ _export_sfc(_sfc_main$I, [["__scopeId", "data-v-a29f4c85"]]);
+const _hoisted_1$F = { class: "label" };
+const _sfc_main$H = /* @__PURE__ */ defineComponent({
   __name: "SyncToast",
   props: {
     phase: {}
@@ -20408,7 +20884,7 @@ const _sfc_main$N = /* @__PURE__ */ defineComponent({
           class: "mark",
           "aria-hidden": "true"
         }, null, -1)),
-        createBaseVNode("span", _hoisted_1$L, toDisplayString(__props.phase === "syncing" ? "本回合整理中" : __props.phase === "synced" ? "已整理" : "整理失败"), 1),
+        createBaseVNode("span", _hoisted_1$F, toDisplayString(__props.phase === "syncing" ? "本回合整理中" : __props.phase === "synced" ? "已整理" : "整理失败"), 1),
         __props.phase === "sync-failed" ? (openBlock(), createElementBlock("button", {
           key: 0,
           class: "retry",
@@ -20419,9 +20895,9 @@ const _sfc_main$N = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const SyncToast = /* @__PURE__ */ _export_sfc(_sfc_main$N, [["__scopeId", "data-v-012de1f2"]]);
-const _hoisted_1$K = { class: "label" };
-const _sfc_main$M = /* @__PURE__ */ defineComponent({
+const SyncToast = /* @__PURE__ */ _export_sfc(_sfc_main$H, [["__scopeId", "data-v-012de1f2"]]);
+const _hoisted_1$E = { class: "label" };
+const _sfc_main$G = /* @__PURE__ */ defineComponent({
   __name: "FrontierToast",
   props: {
     phase: {}
@@ -20439,7 +20915,7 @@ const _sfc_main$M = /* @__PURE__ */ defineComponent({
           class: "mark",
           "aria-hidden": "true"
         }, null, -1)),
-        createBaseVNode("span", _hoisted_1$K, toDisplayString(__props.phase === "advancing" ? "正在拓展素材边界…" : __props.phase === "succeeded" ? "已拓展素材边界" : "素材边界拓展失败"), 1),
+        createBaseVNode("span", _hoisted_1$E, toDisplayString(__props.phase === "advancing" ? "正在拓展素材边界…" : __props.phase === "succeeded" ? "已拓展素材边界" : "素材边界拓展失败"), 1),
         __props.phase === "failed" ? (openBlock(), createElementBlock("button", {
           key: 0,
           class: "retry",
@@ -20450,19 +20926,19 @@ const _sfc_main$M = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const FrontierToast = /* @__PURE__ */ _export_sfc(_sfc_main$M, [["__scopeId", "data-v-1494a777"]]);
-const _hoisted_1$J = { class: "composer-wrap" };
-const _hoisted_2$G = ["disabled", "placeholder"];
-const _hoisted_3$C = ["disabled"];
-const _hoisted_4$y = {
+const FrontierToast = /* @__PURE__ */ _export_sfc(_sfc_main$G, [["__scopeId", "data-v-1494a777"]]);
+const _hoisted_1$D = { class: "composer-wrap" };
+const _hoisted_2$A = ["disabled", "placeholder"];
+const _hoisted_3$v = ["disabled"];
+const _hoisted_4$r = {
   class: "ink-line",
   "aria-hidden": "true"
 };
-const _hoisted_5$t = {
+const _hoisted_5$o = {
   key: 0,
   class: "ink-sweep"
 };
-const _sfc_main$L = /* @__PURE__ */ defineComponent({
+const _sfc_main$F = /* @__PURE__ */ defineComponent({
   __name: "Composer",
   props: {
     ready: { type: Boolean },
@@ -20509,7 +20985,7 @@ const _sfc_main$L = /* @__PURE__ */ defineComponent({
     }
     __expose({ setText });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$J, [
+      return openBlock(), createElementBlock("div", _hoisted_1$D, [
         createBaseVNode("div", {
           class: normalizeClass(["composer", { streaming: __props.streaming, "sync-disabled": __props.syncing, focused: focused.value, "has-content": hasContent.value }])
         }, [
@@ -20525,7 +21001,7 @@ const _sfc_main$L = /* @__PURE__ */ defineComponent({
             onInput: autoGrow,
             onFocus: _cache[1] || (_cache[1] = ($event) => focused.value = true),
             onBlur: _cache[2] || (_cache[2] = ($event) => focused.value = false)
-          }, null, 40, _hoisted_2$G), [
+          }, null, 40, _hoisted_2$A), [
             [vModelText, text.value]
           ]),
           !__props.streaming ? (openBlock(), createElementBlock("button", {
@@ -20551,7 +21027,7 @@ const _sfc_main$L = /* @__PURE__ */ defineComponent({
               class: "btn-ring",
               "aria-hidden": "true"
             }, null, -1)
-          ])], 8, _hoisted_3$C)) : (openBlock(), createElementBlock("button", {
+          ])], 8, _hoisted_3$v)) : (openBlock(), createElementBlock("button", {
             key: 1,
             class: "stop-btn",
             onClick: _cache[3] || (_cache[3] = ($event) => emit2("stop"))
@@ -20571,17 +21047,17 @@ const _sfc_main$L = /* @__PURE__ */ defineComponent({
               })
             ], -1)
           ])])),
-          createBaseVNode("span", _hoisted_4$y, [
-            __props.streaming ? (openBlock(), createElementBlock("span", _hoisted_5$t)) : createCommentVNode("", true)
+          createBaseVNode("span", _hoisted_4$r, [
+            __props.streaming ? (openBlock(), createElementBlock("span", _hoisted_5$o)) : createCommentVNode("", true)
           ])
         ], 2)
       ]);
     };
   }
 });
-const Composer = /* @__PURE__ */ _export_sfc(_sfc_main$L, [["__scopeId", "data-v-b385d279"]]);
-const _hoisted_1$I = { class: "label" };
-const _sfc_main$K = /* @__PURE__ */ defineComponent({
+const Composer = /* @__PURE__ */ _export_sfc(_sfc_main$F, [["__scopeId", "data-v-b385d279"]]);
+const _hoisted_1$C = { class: "label" };
+const _sfc_main$E = /* @__PURE__ */ defineComponent({
   __name: "CheckpointMark",
   props: {
     turn: {}
@@ -20608,20 +21084,20 @@ const _sfc_main$K = /* @__PURE__ */ defineComponent({
           class: "line line-right",
           "aria-hidden": "true"
         }, null, -1)),
-        createBaseVNode("span", _hoisted_1$I, "第 " + toDisplayString(__props.turn) + " 回", 1)
+        createBaseVNode("span", _hoisted_1$C, "第 " + toDisplayString(__props.turn) + " 回", 1)
       ]);
     };
   }
 });
-const CheckpointMark = /* @__PURE__ */ _export_sfc(_sfc_main$K, [["__scopeId", "data-v-7d8c6d46"]]);
-const _hoisted_1$H = { class: "warn" };
-const _hoisted_2$F = {
+const CheckpointMark = /* @__PURE__ */ _export_sfc(_sfc_main$E, [["__scopeId", "data-v-7d8c6d46"]]);
+const _hoisted_1$B = { class: "warn" };
+const _hoisted_2$z = {
   key: 0,
   class: "restore-error"
 };
-const _hoisted_3$B = { class: "restore-actions" };
-const _hoisted_4$x = ["disabled"];
-const _sfc_main$J = /* @__PURE__ */ defineComponent({
+const _hoisted_3$u = { class: "restore-actions" };
+const _hoisted_4$q = ["disabled"];
+const _sfc_main$D = /* @__PURE__ */ defineComponent({
   __name: "RestoreDialog",
   props: {
     open: { type: Boolean },
@@ -20711,13 +21187,13 @@ const _sfc_main$J = /* @__PURE__ */ defineComponent({
                       _cache[2] || (_cache[2] = createTextVNode(" 恢复到 ", -1)),
                       createBaseVNode("strong", null, "第 " + toDisplayString(__props.turn) + " 回", 1),
                       _cache[3] || (_cache[3] = createTextVNode("，此后 ", -1)),
-                      createBaseVNode("span", _hoisted_1$H, toDisplayString(__props.turnsAfter) + " 轮", 1),
+                      createBaseVNode("span", _hoisted_1$B, toDisplayString(__props.turnsAfter) + " 轮", 1),
                       _cache[4] || (_cache[4] = createTextVNode(" 对话将被抹去。 此操作不可撤销。 ", -1))
                     ]),
                     _: 1
                   }),
-                  error.value ? (openBlock(), createElementBlock("p", _hoisted_2$F, toDisplayString(error.value), 1)) : createCommentVNode("", true),
-                  createBaseVNode("div", _hoisted_3$B, [
+                  error.value ? (openBlock(), createElementBlock("p", _hoisted_2$z, toDisplayString(error.value), 1)) : createCommentVNode("", true),
+                  createBaseVNode("div", _hoisted_3$u, [
                     createVNode(unref(DialogClose_default), { class: "cancel-btn" }, {
                       default: withCtx(() => [..._cache[5] || (_cache[5] = [
                         createTextVNode("取消", -1)
@@ -20728,7 +21204,7 @@ const _sfc_main$J = /* @__PURE__ */ defineComponent({
                       class: "confirm-btn",
                       disabled: restoring.value,
                       onClick: onConfirm
-                    }, toDisplayString(restoring.value ? "恢复中…" : "恢复"), 9, _hoisted_4$x)
+                    }, toDisplayString(restoring.value ? "恢复中…" : "恢复"), 9, _hoisted_4$q)
                   ])
                 ]),
                 _: 1
@@ -20742,12 +21218,12 @@ const _sfc_main$J = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const RestoreDialog = /* @__PURE__ */ _export_sfc(_sfc_main$J, [["__scopeId", "data-v-d7db5b74"]]);
+const RestoreDialog = /* @__PURE__ */ _export_sfc(_sfc_main$D, [["__scopeId", "data-v-d7db5b74"]]);
 const phase = /* @__PURE__ */ ref("idle");
 const lastError = /* @__PURE__ */ ref(null);
 let isInFlight = false;
 let activeInvocationId$1 = null;
-let invocationSubscribed = false;
+let invocationSubscribed$1 = false;
 let succeededTimer = null;
 let manualRetry = false;
 const RUNTIME_PATH$1 = "save/playthrough/runtime.json";
@@ -20858,7 +21334,7 @@ async function checkFrontierAdvance() {
   lastError.value = null;
   activeInvocationId$1 = `frontier-${plotOrder}-${Date.now().toString(36)}`;
   const invocationId = activeInvocationId$1;
-  ensureInvocationSubscription(tsian);
+  ensureInvocationSubscription$1(tsian);
   await saveTriggerState(tsian, triggerState);
   try {
     await tsian.invokeAgent(FRONTIER_ADVANCE_AGENT, FRONTIER_ADVANCE_INPUT, {
@@ -20884,9 +21360,9 @@ async function retryFrontierAdvance() {
   manualRetry = true;
   await checkFrontierAdvance();
 }
-function ensureInvocationSubscription(tsian) {
-  if (invocationSubscribed) return;
-  invocationSubscribed = true;
+function ensureInvocationSubscription$1(tsian) {
+  if (invocationSubscribed$1) return;
+  invocationSubscribed$1 = true;
   tsian.onAgentInvocation((event) => {
     var _a2;
     if (!activeInvocationId$1) return;
@@ -20968,20 +21444,20 @@ const useFrontierAdvance$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Objec
   retryFrontierAdvance,
   useFrontierAdvance
 }, Symbol.toStringTag, { value: "Module" }));
-const _hoisted_1$G = { class: "story-view" };
-const _hoisted_2$E = { class: "story-inner" };
-const _hoisted_3$A = {
+const _hoisted_1$A = { class: "story-view" };
+const _hoisted_2$y = { class: "story-inner" };
+const _hoisted_3$t = {
   key: 4,
   class: "empty-state"
 };
-const _hoisted_4$w = {
+const _hoisted_4$p = {
   key: 3,
   class: "send-error-banner",
   role: "status",
   "aria-live": "polite"
 };
-const _hoisted_5$s = { class: "label" };
-const _hoisted_6$m = {
+const _hoisted_5$n = { class: "label" };
+const _hoisted_6$i = {
   key: 4,
   class: "restore-curtain",
   "aria-hidden": "true"
@@ -20989,7 +21465,7 @@ const _hoisted_6$m = {
 const INITIAL_VISIBLE_TURNS = 40;
 const LOAD_OLDER_TURNS = 20;
 const TOP_LOAD_THRESHOLD = 120;
-const _sfc_main$I = /* @__PURE__ */ defineComponent({
+const _sfc_main$C = /* @__PURE__ */ defineComponent({
   __name: "StoryView",
   setup(__props) {
     const {
@@ -21253,14 +21729,14 @@ const _sfc_main$I = /* @__PURE__ */ defineComponent({
     }
     return (_ctx, _cache) => {
       var _a2, _b;
-      return openBlock(), createElementBlock("section", _hoisted_1$G, [
+      return openBlock(), createElementBlock("section", _hoisted_1$A, [
         createBaseVNode("div", {
           class: "story-scroll",
           ref_key: "storyRef",
           ref: storyRef,
           onScroll: onStoryScroll
         }, [
-          createBaseVNode("div", _hoisted_2$E, [
+          createBaseVNode("div", _hoisted_2$y, [
             hasOlderTurns.value ? (openBlock(), createElementBlock("div", {
               key: 0,
               class: normalizeClass(["history-loader", { loading: loadingOlderTurns.value }]),
@@ -21320,7 +21796,7 @@ const _sfc_main$I = /* @__PURE__ */ defineComponent({
               disabled: streaming.value,
               onSelect: onSelectOption
             }, null, 8, ["options", "disabled"])) : createCommentVNode("", true),
-            unref(stream2).length === 0 && !streaming.value ? (openBlock(), createElementBlock("div", _hoisted_3$A, [..._cache[2] || (_cache[2] = [
+            unref(stream2).length === 0 && !streaming.value ? (openBlock(), createElementBlock("div", _hoisted_3$t, [..._cache[2] || (_cache[2] = [
               createBaseVNode("p", { class: "empty-title" }, "故事尚未开始", -1),
               createBaseVNode("p", { class: "empty-hint" }, "在下方写下你的行动…", -1)
             ])])) : createCommentVNode("", true)
@@ -21348,12 +21824,12 @@ const _sfc_main$I = /* @__PURE__ */ defineComponent({
           phase: unref(frontierPhase),
           onRetry: unref(retryFrontierAdvance2)
         }, null, 8, ["phase", "onRetry"])) : createCommentVNode("", true),
-        lastSendErrorText.value ? (openBlock(), createElementBlock("div", _hoisted_4$w, [
+        lastSendErrorText.value ? (openBlock(), createElementBlock("div", _hoisted_4$p, [
           _cache[4] || (_cache[4] = createBaseVNode("span", {
             class: "mark",
             "aria-hidden": "true"
           }, null, -1)),
-          createBaseVNode("span", _hoisted_5$s, "上下文未就绪：" + toDisplayString(lastSendErrorText.value), 1)
+          createBaseVNode("span", _hoisted_5$n, "上下文未就绪：" + toDisplayString(lastSendErrorText.value), 1)
         ])) : createCommentVNode("", true),
         createVNode(Composer, {
           ref_key: "composerRef",
@@ -21371,7 +21847,7 @@ const _sfc_main$I = /* @__PURE__ */ defineComponent({
           "onUpdate:open": _cache[0] || (_cache[0] = (v) => restoreOpen.value = v),
           onConfirm: onRestoreConfirm
         }, null, 8, ["open", "turn", "turns-after"]),
-        restoring.value && !curtainReplaced.value ? (openBlock(), createElementBlock("div", _hoisted_6$m)) : createCommentVNode("", true),
+        restoring.value && !curtainReplaced.value ? (openBlock(), createElementBlock("div", _hoisted_6$i)) : createCommentVNode("", true),
         restoring.value ? (openBlock(), createBlock(BurningReveal, {
           key: 5,
           variant: "scroll",
@@ -21384,14 +21860,13 @@ const _sfc_main$I = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const StoryView = /* @__PURE__ */ _export_sfc(_sfc_main$I, [["__scopeId", "data-v-f149e040"]]);
+const StoryView = /* @__PURE__ */ _export_sfc(_sfc_main$C, [["__scopeId", "data-v-f149e040"]]);
 const SOURCE_MANIFEST_PATH = "save/source/manifest.json";
 const CHAPTER_INDEX_PATH = "save/source/chapters.index.json";
 const INITIAL_SUMMARY_PATH = "save/playthrough/understanding-summary.json";
 const RUNTIME_PATH = "save/playthrough/runtime.json";
 const FRONTIER_PATH = "save/playthrough/frontier.json";
 const SETUP_SUMMARY_PATH = "save/playthrough/setup-summary.json";
-const CHARACTER_ENTITIES_ROOT = "save/entities/character/";
 function isSetupSummary(value) {
   return typeof value === "object" && value !== null && (value.status === "pending" || value.status === "complete");
 }
@@ -21403,10 +21878,7 @@ function safeJsonParse(text) {
   }
 }
 function isSourceManifest(value) {
-  return typeof value === "object" && value !== null && value.status === "ready";
-}
-function isOpeningUnderstandingSummary(value) {
-  return typeof value === "object" && value !== null && value.status === "ready" && typeof value.title === "string" && Array.isArray(value.candidateCharacters);
+  return typeof value === "object" && value !== null && value.status === "ready" && typeof value.title === "string" && Boolean(value.title.trim()) && typeof value.importedAt === "string" && typeof value.normalizationVersion === "string" && Number.isSafeInteger(value.chapterCount) && Number(value.chapterCount) > 0;
 }
 function formatNumber(num) {
   return new Intl.NumberFormat("zh-CN").format(num || 0);
@@ -21425,37 +21897,6 @@ function excerptText(text, limit = 1100) {
   const cleaned = text.replace(/^#\s+.*\n+/, "").replace(/\n{3,}/g, "\n\n").trim();
   if (cleaned.length <= limit) return cleaned;
   return `${cleaned.slice(0, limit).trimEnd()}……`;
-}
-function buildPlaySetupPrompt(title, character) {
-  const isOriginal = (character == null ? void 0 : character.ref.startsWith("original-")) ?? false;
-  const characterDesc = character ? `${character.name}（${isOriginal ? "原创角色" : "原著角色"}，ref: ${character.ref}）` : "未设定";
-  return [
-    "玩家已完成小说导入、初始理解和角色设定，现在进入游玩设定对话阶段。",
-    "请作为 world-architect 使用 Skill《游玩设定》引导玩家补充本局特别设定，确认后落盘并生成开局正文。",
-    "",
-    `书名：${title}`,
-    `玩家角色：${characterDesc}`,
-    "现在请开始第一轮对话，向玩家介绍本阶段并引导其说出需求。"
-  ].join("\n");
-}
-function buildOpeningInitializationPrompt(manifest2, index) {
-  const chapterCount = (index == null ? void 0 : index.chapters.length) ?? manifest2.chapterCount;
-  return [
-    "玩家已经完成小说导入并确认切分结果。请作为 world-architect 使用 Skill《开局建模》完成真实开局资料抽取与初始世界建模。",
-    "",
-    "要求：",
-    "1. 用 `inspect_source_opening` 和 `read_opening_slice` 读源文本；用 `commit_*` 脚本写入开局产物，按 Skill《开局建模》的步骤执行。",
-    "2. 连续阅读开头剧情；是否继续阅读以剧情是否足够支撑开局为准。",
-    "3. 建模顺序：`commit_entities` 先写实体；再 `commit_scenes_and_relationships` 写场景与关系；再 `commit_runtime_and_frontier` 写 runtime 与 frontier。",
-    "4. 无依赖的 commit 脚本可在一轮内同时调用。例如 `commit_understanding_summary` 与 `commit_runtime_and_frontier` 互不依赖，可并行发出工具调用，框架串行执行后一并返回。",
-    "5. 保持未来剧情 spoiler-safe；只使用开头窗口中读到的内容。",
-    "6. 如果写入遇到格式或校验错误，请按错误修正后重试，直到写入成功或明确失败。",
-    "",
-    `书名：${manifest2.title}`,
-    `章节数：${chapterCount}`,
-    `文本量：${manifest2.totalCharacters} 字`,
-    "完成后用中文简短告诉前端已经写入哪些开局资料。"
-  ].join("\n");
 }
 function WorkerWrapper(options) {
   return new Worker(
@@ -21499,12 +21940,12 @@ function buildSourceCorpusInWorker(input, onProgress) {
     worker.postMessage({ id, input });
   });
 }
-function isRecord$2(value) {
+function isRecord$3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function shardedSourceFor(chapter) {
-  const source = isRecord$2(chapter) ? chapter.source : null;
-  if (!isRecord$2(source) || source.kind !== "shard") return null;
+  const source = isRecord$3(chapter) ? chapter.source : null;
+  if (!isRecord$3(source) || source.kind !== "shard") return null;
   if (typeof source.path !== "string" || typeof source.start !== "number" || typeof source.end !== "number") return null;
   return { path: source.path, start: source.start, end: source.end };
 }
@@ -21535,79 +21976,348 @@ async function loadSourceChapterPreview(tsian, chapter, cache = /* @__PURE__ */ 
   const content = await readSourceChapter(tsian, chapter, cache);
   return excerptText(content) || "暂无可预览内容。";
 }
+const OPENING_CONTROL_PATH = "save/playthrough/opening-interview.json";
+const OPENING_TURN_SCHEMA = "novel-airp.opening-turn.v1";
+const OPENING_CONTROL_SCHEMA = "novel-airp.opening-interview.v1";
+const STATE_BLOCK_RE = /\[\[开局会话\]\]\s*([\s\S]*?)\s*\[\[\/开局会话\]\]/g;
+const CHOICES_BLOCK_RE = /\[\[开局选项\]\]\s*([\s\S]*?)\s*\[\[\/开局选项\]\]/g;
+const OPENING_HIDDEN_MARKERS = ["[[开局会话]]", "[[/开局会话]]", "[[开局选项]]", "[[/开局选项]]"];
+const START_MARKER_RE = /^opening-interview:start:([a-z0-9-]+)$/;
+const ANSWER_MARKER_RE = /^opening-interview:answer:([a-z0-9-]+)\n([\s\S]*)$/;
+const SOURCE_HASH_RE = /^[a-f0-9]{8}$/;
+const SESSION_ID_RE = /^opening-[a-f0-9]{8}$/;
+const SESSION_SLOT_RE = /^opening-interview-[a-f0-9]{8}$/;
+function isRecord$2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function hasOnlyKeys$1(value, allowed) {
+  const allowedSet = new Set(allowed);
+  return Object.keys(value).every((key) => allowedSet.has(key));
+}
+function cleanString(value, maxLength) {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return text && text.length <= maxLength ? text : null;
+}
+function hashText(input) {
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+function openingInputHash(input) {
+  return hashText(input);
+}
+function openingSourceIdentity(manifest2) {
+  const base = {
+    importedAt: manifest2.importedAt,
+    normalizationVersion: manifest2.normalizationVersion,
+    title: manifest2.title,
+    chapterCount: manifest2.chapterCount
+  };
+  return {
+    ...base,
+    hash: hashText(JSON.stringify(base))
+  };
+}
+function openingSession(identity) {
+  const id = `opening-${identity.hash}`;
+  const slot = `opening-interview-${identity.hash}`;
+  return {
+    id,
+    slot,
+    contextPath: `save/agents/world-architect/context-${slot}.json`
+  };
+}
+function createOpeningControl(manifest2, branch) {
+  const source = openingSourceIdentity(manifest2);
+  const session = openingSession(source);
+  return {
+    schema: OPENING_CONTROL_SCHEMA,
+    source,
+    session: { id: session.id, slot: session.slot, revision: 0 },
+    branch,
+    status: "interviewing"
+  };
+}
+function openingBootstrapMarker(sessionId2) {
+  return `opening-interview:start:${sessionId2}`;
+}
+function openingAnswerMarker(attemptId, input) {
+  return `opening-interview:answer:${attemptId}
+${input}`;
+}
+function parseOpeningUser(content) {
+  const start = START_MARKER_RE.exec(content);
+  if (start == null ? void 0 : start[1]) return { kind: "start", sessionId: start[1] };
+  const answer = ANSWER_MARKER_RE.exec(content);
+  if ((answer == null ? void 0 : answer[1]) !== void 0 && answer[2] !== void 0) {
+    const answerContent = cleanString(answer[2], 4e3);
+    if (!answerContent) return null;
+    return { kind: "answer", attemptId: answer[1], content: answerContent };
+  }
+  return null;
+}
+function parseStringRecord(value, kind) {
+  if (!isRecord$2(value) || Object.keys(value).length > 48) return null;
+  const result = {};
+  for (const [rawKey, rawItem] of Object.entries(value)) {
+    const key = cleanString(rawKey, 80);
+    if (!key || key !== rawKey || !isRecord$2(rawItem)) return null;
+    if (kind === "decisions") {
+      if (!hasOnlyKeys$1(rawItem, ["value", "evidenceRefs"])) return null;
+      const decisionValue = cleanString(rawItem.value, 800);
+      if (!decisionValue) return null;
+      let refs = [];
+      if (rawItem.evidenceRefs !== void 0) {
+        if (!Array.isArray(rawItem.evidenceRefs) || rawItem.evidenceRefs.length > 16) return null;
+        const seenRefs = /* @__PURE__ */ new Set();
+        for (const rawRef of rawItem.evidenceRefs) {
+          const ref2 = cleanString(rawRef, 240);
+          if (!ref2 || seenRefs.has(ref2)) return null;
+          seenRefs.add(ref2);
+          refs.push(ref2);
+        }
+      }
+      result[key] = { value: decisionValue, ...refs.length > 0 ? { evidenceRefs: refs } : {} };
+    } else {
+      if (!hasOnlyKeys$1(rawItem, ["reason"])) return null;
+      const reason = cleanString(rawItem.reason, 800);
+      if (!reason) return null;
+      result[key] = { reason };
+    }
+  }
+  return result;
+}
+function parseOpeningTurnState(value) {
+  if (!isRecord$2(value) || value.schema !== OPENING_TURN_SCHEMA || !hasOnlyKeys$1(value, ["schema", "sessionId", "sourceHash", "branch", "revision", "processedAttemptId", "readSlices", "protagonist", "decisions", "unresolved", "phase"])) return null;
+  const sessionId2 = cleanString(value.sessionId, 80);
+  const sourceHash = cleanString(value.sourceHash, 32);
+  const branch = value.branch === "canon" || value.branch === "original" ? value.branch : null;
+  const revision = typeof value.revision === "number" && Number.isSafeInteger(value.revision) && value.revision > 0 && value.revision <= 999999 ? value.revision : null;
+  const processedAttemptId = cleanString(value.processedAttemptId, 100);
+  const phase2 = value.phase === "interviewing" || value.phase === "ready-to-commit" || value.phase === "complete" ? value.phase : null;
+  if (!sessionId2 || !SESSION_ID_RE.test(sessionId2) || !sourceHash || !SOURCE_HASH_RE.test(sourceHash) || !branch || revision === null || !processedAttemptId || processedAttemptId !== "start" && !/^attempt-[a-z0-9-]+$/.test(processedAttemptId) || !phase2) return null;
+  if (!Array.isArray(value.readSlices) || value.readSlices.length > 48) return null;
+  const readSlices = [];
+  for (const rawSlice of value.readSlices) {
+    if (!isRecord$2(rawSlice) || !hasOnlyKeys$1(rawSlice, ["ref", "start", "end", "purpose"])) return null;
+    const ref2 = cleanString(rawSlice.ref, 240);
+    const purpose = cleanString(rawSlice.purpose, 500);
+    if (!ref2 || !purpose) return null;
+    const start = typeof rawSlice.start === "number" && Number.isSafeInteger(rawSlice.start) && rawSlice.start >= 0 ? rawSlice.start : void 0;
+    const end = typeof rawSlice.end === "number" && Number.isSafeInteger(rawSlice.end) && rawSlice.end >= 0 ? rawSlice.end : void 0;
+    if (start !== void 0 && end !== void 0 && end < start) return null;
+    readSlices.push({ ref: ref2, ...start !== void 0 ? { start } : {}, ...end !== void 0 ? { end } : {}, purpose });
+  }
+  const decisions = parseStringRecord(value.decisions, "decisions");
+  const unresolved = parseStringRecord(value.unresolved, "unresolved");
+  if (!decisions || !unresolved) return null;
+  let protagonist;
+  if (value.protagonist !== void 0) {
+    if (!isRecord$2(value.protagonist) || !hasOnlyKeys$1(value.protagonist, ["mode", "ref", "name"]) || value.protagonist.mode !== branch) return null;
+    const ref2 = value.protagonist.ref === void 0 ? void 0 : cleanString(value.protagonist.ref, 120);
+    const name = value.protagonist.name === void 0 ? void 0 : cleanString(value.protagonist.name, 120);
+    if (value.protagonist.ref !== void 0 && !ref2) return null;
+    if (value.protagonist.name !== void 0 && !name) return null;
+    protagonist = { mode: branch, ...ref2 ? { ref: ref2 } : {}, ...name ? { name } : {} };
+  }
+  return {
+    schema: OPENING_TURN_SCHEMA,
+    sessionId: sessionId2,
+    sourceHash,
+    branch,
+    revision,
+    processedAttemptId,
+    readSlices,
+    ...protagonist ? { protagonist } : {},
+    decisions,
+    unresolved,
+    phase: phase2
+  };
+}
+function parseOpeningAssistant(content) {
+  var _a2, _b;
+  if (content.length > 8e4) return null;
+  const stateMatches = [...content.matchAll(STATE_BLOCK_RE)];
+  if (stateMatches.length !== 1) return null;
+  const stateSource = (_a2 = stateMatches[0]) == null ? void 0 : _a2[1];
+  if (!stateSource || stateSource.length > 24e3) return null;
+  let stateValue;
+  try {
+    stateValue = JSON.parse(stateSource);
+  } catch {
+    return null;
+  }
+  const state = parseOpeningTurnState(stateValue);
+  if (!state) return null;
+  const choicesMatches = [...content.matchAll(CHOICES_BLOCK_RE)];
+  if (choicesMatches.length > 1) return null;
+  const choices = (((_b = choicesMatches[0]) == null ? void 0 : _b[1]) ?? "").split(/\r?\n/).map((line) => line.replace(/^\s*[-*+]\s*/, "").trim()).filter(Boolean);
+  if (choices.length > 12 || choices.some((choice2) => choice2.length > 300)) return null;
+  const displayContent = sanitizeOpeningDisplay(content);
+  if (displayContent.length > 12e3 || !displayContent && state.phase !== "complete") return null;
+  return { displayContent, choices, state };
+}
+function sanitizeOpeningDisplay(content) {
+  const cutAt = OPENING_HIDDEN_MARKERS.map((marker) => content.indexOf(marker)).filter((index) => index >= 0).sort((a, b) => a - b)[0];
+  let visible = cutAt === void 0 ? content : content.slice(0, cutAt);
+  for (let prefixLength = Math.min(visible.length, Math.max(...OPENING_HIDDEN_MARKERS.map((marker) => marker.length)) - 1); prefixLength > 0; prefixLength -= 1) {
+    const suffix = visible.slice(-prefixLength);
+    if (OPENING_HIDDEN_MARKERS.some((marker) => marker.startsWith(suffix))) {
+      visible = visible.slice(0, -prefixLength);
+      break;
+    }
+  }
+  return visible.replace(STATE_BLOCK_RE, "").replace(CHOICES_BLOCK_RE, "").trim();
+}
+function openingRevisionContinues(previousRevision, nextRevision) {
+  return previousRevision === null ? nextRevision === 1 : nextRevision === previousRevision + 1;
+}
+function parseOpeningControl(value) {
+  if (!isRecord$2(value) || value.schema !== OPENING_CONTROL_SCHEMA || !hasOnlyKeys$1(value, ["schema", "source", "session", "branch", "status", "attempt", "receipt"]) || !isRecord$2(value.source) || !hasOnlyKeys$1(value.source, ["importedAt", "normalizationVersion", "title", "chapterCount", "hash"]) || !isRecord$2(value.session) || !hasOnlyKeys$1(value.session, ["id", "slot", "revision"])) return null;
+  const importedAt = cleanString(value.source.importedAt, 80);
+  const normalizationVersion = cleanString(value.source.normalizationVersion, 80);
+  const title = cleanString(value.source.title, 300);
+  const hash = cleanString(value.source.hash, 32);
+  const chapterCount = typeof value.source.chapterCount === "number" && Number.isSafeInteger(value.source.chapterCount) && value.source.chapterCount > 0 ? value.source.chapterCount : null;
+  const id = cleanString(value.session.id, 80);
+  const slot = cleanString(value.session.slot, 100);
+  const revision = typeof value.session.revision === "number" && Number.isSafeInteger(value.session.revision) && value.session.revision >= 0 ? value.session.revision : null;
+  const branch = value.branch === "canon" || value.branch === "original" ? value.branch : null;
+  const status = value.status === "interviewing" || value.status === "complete" ? value.status : null;
+  if (!importedAt || !normalizationVersion || !title || !hash || !SOURCE_HASH_RE.test(hash) || chapterCount === null || !id || !SESSION_ID_RE.test(id) || !slot || !SESSION_SLOT_RE.test(slot) || revision === null || !branch || !status) return null;
+  const expectedHash = hashText(JSON.stringify({ importedAt, normalizationVersion, title, chapterCount }));
+  if (hash !== expectedHash || id !== `opening-${hash}` || slot !== `opening-interview-${hash}`) return null;
+  const control = {
+    schema: OPENING_CONTROL_SCHEMA,
+    source: { importedAt, normalizationVersion, title, chapterCount, hash },
+    session: { id, slot, revision },
+    branch,
+    status
+  };
+  if (value.attempt !== void 0) {
+    if (!isRecord$2(value.attempt) || !hasOnlyKeys$1(value.attempt, ["id", "input", "inputHash", "basedOnRevision", "status", "createdAt"])) return null;
+    const attemptId = cleanString(value.attempt.id, 100);
+    const input = cleanString(value.attempt.input, 4e3);
+    const inputHash = cleanString(value.attempt.inputHash, 32);
+    const basedOnRevision = typeof value.attempt.basedOnRevision === "number" && Number.isSafeInteger(value.attempt.basedOnRevision) && value.attempt.basedOnRevision >= 0 ? value.attempt.basedOnRevision : null;
+    const attemptStatus = value.attempt.status === "submitted" || value.attempt.status === "failed" ? value.attempt.status : null;
+    const createdAt = cleanString(value.attempt.createdAt, 80);
+    if (!attemptId || !/^attempt-[a-z0-9-]+$/.test(attemptId) || !input || !inputHash || inputHash !== openingInputHash(input) || basedOnRevision === null || basedOnRevision !== revision || !attemptStatus || !createdAt || status !== "interviewing") return null;
+    control.attempt = { id: attemptId, input, inputHash, basedOnRevision, status: attemptStatus, createdAt };
+  }
+  if (value.receipt !== void 0) {
+    if (!isRecord$2(value.receipt) || !hasOnlyKeys$1(value.receipt, ["revision", "payloadHash", "committedAt"])) return null;
+    const receiptRevision = typeof value.receipt.revision === "number" && Number.isSafeInteger(value.receipt.revision) && value.receipt.revision > 0 ? value.receipt.revision : null;
+    const payloadHash = cleanString(value.receipt.payloadHash, 128);
+    const committedAt = cleanString(value.receipt.committedAt, 80);
+    if (!receiptRevision || !payloadHash || !/^[a-f0-9]{64}$/.test(payloadHash) || !committedAt) return null;
+    control.receipt = { revision: receiptRevision, payloadHash, committedAt };
+  }
+  if (status === "complete" && (!control.receipt || control.attempt || revision !== control.receipt.revision)) return null;
+  if (status === "interviewing" && control.receipt) return null;
+  return control;
+}
+function serializeOpeningControl(control) {
+  return `${JSON.stringify(control, null, 2)}
+`;
+}
+function openingControlMatchesManifest(control, manifest2) {
+  const identity = openingSourceIdentity(manifest2);
+  return control.source.hash === identity.hash && control.source.importedAt === identity.importedAt && control.source.normalizationVersion === identity.normalizationVersion && control.source.title === identity.title && control.source.chapterCount === identity.chapterCount;
+}
+function openingControlMatchesSession(control, manifest2) {
+  if (!openingControlMatchesManifest(control, manifest2)) return false;
+  const expected = openingSession(openingSourceIdentity(manifest2));
+  return control.session.id === expected.id && control.session.slot === expected.slot;
+}
+function createAttemptId() {
+  var _a2, _b;
+  const uuid = (_b = (_a2 = globalThis.crypto) == null ? void 0 : _a2.randomUUID) == null ? void 0 : _b.call(_a2);
+  return (uuid ? `attempt-${uuid}` : `attempt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`).toLowerCase();
+}
+function buildOpeningInjection(control) {
+  var _a2, _b;
+  return [
+    "执行《开局建模》Skill，主持本次开局访谈。",
+    "会话不变量如下；不得改写 branch/source/session：",
+    JSON.stringify({
+      sessionId: control.session.id,
+      sourceHash: control.source.hash,
+      source: {
+        importedAt: control.source.importedAt,
+        normalizationVersion: control.source.normalizationVersion,
+        title: control.source.title,
+        chapterCount: control.source.chapterCount
+      },
+      branch: control.branch,
+      basedOnRevision: ((_a2 = control.attempt) == null ? void 0 : _a2.basedOnRevision) ?? control.session.revision,
+      attemptId: ((_b = control.attempt) == null ? void 0 : _b.id) ?? "start"
+    })
+  ].join("\n");
+}
 const step = /* @__PURE__ */ ref(1);
 const subView = /* @__PURE__ */ ref("choose");
-const understandingStatus = /* @__PURE__ */ ref("idle");
 const manifest = /* @__PURE__ */ ref(null);
 const chapterIndex = /* @__PURE__ */ ref(null);
 const selectedChapter = /* @__PURE__ */ ref(0);
-const understandingSummary = /* @__PURE__ */ ref(null);
 const busy = /* @__PURE__ */ ref(false);
 const statusText = /* @__PURE__ */ ref("等待选择导入方式");
 const errorText = /* @__PURE__ */ ref("");
 const sourcePreviewCache = /* @__PURE__ */ new Map();
 const characterBranch = /* @__PURE__ */ ref(null);
-const selectedCharacter = /* @__PURE__ */ ref(null);
-const characterSetupStatus = /* @__PURE__ */ ref("selecting");
 const playSetupStatus = /* @__PURE__ */ ref("idle");
 const playSetupMessages = /* @__PURE__ */ ref([]);
 const playSetupError = /* @__PURE__ */ ref("");
 const playSetupStreamingText = /* @__PURE__ */ ref("");
-let activeInvocationId = null;
-let playSetupInvocationSubscribed = false;
 const playSetupSummary = /* @__PURE__ */ ref(null);
 const initializing = /* @__PURE__ */ ref(true);
 const initialized = /* @__PURE__ */ ref(false);
-const understandingStage = /* @__PURE__ */ ref(0);
-let understandingActiveInvocationId = null;
-let understandingInvocationSubscribed = false;
-function ensurePlaySetupInvocationSubscription(tsian) {
-  if (playSetupInvocationSubscribed) return;
-  playSetupInvocationSubscribed = true;
+let activeInvocationId = null;
+let invocationSubscribed = false;
+let rawStreamingText = "";
+let dialogMessageSeq = 0;
+let openingStartPending = false;
+function nextDialogId() {
+  dialogMessageSeq += 1;
+  return `opening-dialog-${dialogMessageSeq}`;
+}
+function isRecord$1(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function ensureInvocationSubscription(tsian) {
+  if (invocationSubscribed) return;
+  invocationSubscribed = true;
   tsian.onAgentInvocation((event) => {
     if (!activeInvocationId || event.invocationId !== activeInvocationId) return;
     if (event.type === "delta" && event.kind === "content" && event.agentId === "world-architect") {
-      playSetupStreamingText.value += event.delta;
+      rawStreamingText += event.delta;
+      playSetupStreamingText.value = sanitizeOpeningDisplay(rawStreamingText);
     }
   });
-}
-function ensureUnderstandingInvocationSubscription(tsian) {
-  if (understandingInvocationSubscribed) return;
-  understandingInvocationSubscribed = true;
-  tsian.onAgentInvocation((event) => {
-    if (!understandingActiveInvocationId || event.invocationId !== understandingActiveInvocationId) return;
-    if (event.type === "tool") {
-      understandingStage.value = Math.max(understandingStage.value, mapToolToStage(event));
-    }
-  });
-}
-function mapToolToStage(event) {
-  if (event.status !== "success" && event.status !== "running") return understandingStage.value;
-  const name = event.name;
-  if (name === "write" || name === "edit" || name === "copy" || name === "move" || name === "delete") return 2;
-  if (name === "read" || name === "list" || name === "search" || name === "glob" || name === "diff" || name === "use_skill") return 1;
-  return understandingStage.value;
 }
 async function loadSourceManifest(tsian) {
   const file = await tsian.workspace.read(SOURCE_MANIFEST_PATH);
-  if (!(file == null ? void 0 : file.content)) return null;
+  if (!file) return null;
+  if (!file.content) throw new Error("小说来源清单为空。");
   const data = safeJsonParse(file.content);
-  return isSourceManifest(data) ? data : null;
+  if (isRecord$1(data) && data.status === "pending" && data.importedAt === null && data.chapterCount === 0) return null;
+  if (!isSourceManifest(data)) throw new Error("小说来源清单格式无效。");
+  return data;
 }
 async function loadChapterIndex(tsian) {
   const file = await tsian.workspace.read(CHAPTER_INDEX_PATH);
-  if (!(file == null ? void 0 : file.content)) return null;
+  if (!(file == null ? void 0 : file.content)) throw new Error("小说章节索引缺失。");
   const data = safeJsonParse(file.content);
-  if (!isRecord$1(data) || !Array.isArray(data.chapters)) {
-    return null;
-  }
+  if (!isRecord$1(data) || !Array.isArray(data.chapters)) throw new Error("小说章节索引格式无效。");
   if (data.version === 2) {
     const chapters2 = data.chapters.flatMap((chapter) => {
       if (!isRecord$1(chapter) || !isRecord$1(chapter.source)) return [];
       const source = chapter.source;
-      if (source.kind !== "shard" || typeof source.shardId !== "string" || typeof source.path !== "string" || typeof source.start !== "number" || typeof source.end !== "number") {
-        return [];
-      }
+      if (source.kind !== "shard" || typeof source.shardId !== "string" || typeof source.path !== "string" || typeof source.start !== "number" || typeof source.end !== "number") return [];
       const index = typeof chapter.index === "number" ? chapter.index : 0;
       if (index <= 0 || typeof chapter.title !== "string") return [];
       return [{
@@ -21615,19 +22325,12 @@ async function loadChapterIndex(tsian) {
         ref: typeof chapter.ref === "string" && chapter.ref.trim() ? chapter.ref : `source:chapter-${String(index).padStart(4, "0")}`,
         title: chapter.title,
         characters: typeof chapter.characters === "number" ? chapter.characters : Math.max(0, source.end - source.start),
-        source: {
-          kind: "shard",
-          shardId: source.shardId,
-          path: source.path,
-          start: source.start,
-          end: source.end
-        }
+        source: { kind: "shard", shardId: source.shardId, path: source.path, start: source.start, end: source.end }
       }];
     });
+    if (chapters2.length !== data.chapters.length) throw new Error("小说章节索引包含无效章节。");
     const shards = Array.isArray(data.shards) ? data.shards.flatMap((shard) => {
-      if (!isRecord$1(shard) || typeof shard.id !== "string" || typeof shard.path !== "string" || typeof shard.startChapter !== "number" || typeof shard.endChapter !== "number" || typeof shard.characters !== "number") {
-        return [];
-      }
+      if (!isRecord$1(shard) || typeof shard.id !== "string" || typeof shard.path !== "string" || typeof shard.startChapter !== "number" || typeof shard.endChapter !== "number" || typeof shard.characters !== "number") return [];
       return [{ id: shard.id, path: shard.path, startChapter: shard.startChapter, endChapter: shard.endChapter, characters: shard.characters }];
     }) : [];
     const rawStorage = isRecord$1(data.storage) ? data.storage : {};
@@ -21643,45 +22346,29 @@ async function loadChapterIndex(tsian) {
     };
   }
   const chapters = data.chapters.flatMap((chapter) => {
-    if (!isRecord$1(chapter)) return [];
-    if (typeof chapter.title !== "string" || typeof chapter.path !== "string") return [];
-    return [{
-      title: chapter.title,
-      path: chapter.path,
-      ...typeof chapter.characters === "number" ? { characters: chapter.characters } : {}
-    }];
+    if (!isRecord$1(chapter) || typeof chapter.title !== "string" || typeof chapter.path !== "string") return [];
+    return [{ title: chapter.title, path: chapter.path, ...typeof chapter.characters === "number" ? { characters: chapter.characters } : {} }];
   });
+  if (chapters.length !== data.chapters.length) throw new Error("小说章节索引包含无效章节。");
   return { version: 1, chapters };
 }
-async function loadUnderstandingSummary(tsian) {
-  const file = await tsian.workspace.read(INITIAL_SUMMARY_PATH);
-  if (!(file == null ? void 0 : file.content)) return null;
-  const data = safeJsonParse(file.content);
-  return isOpeningUnderstandingSummary(data) ? data : null;
-}
 async function ensureChapterCharacters(tsian, index) {
-  if (!index || index.version === 2 || index.chapters.every((ch) => typeof ch.characters === "number")) return index;
-  const chapters = await Promise.all(
-    index.chapters.map(async (ch) => {
-      if (typeof ch.characters === "number") return ch;
-      const file = await tsian.workspace.read(ch.path);
-      return {
-        ...ch,
-        characters: excerptText((file == null ? void 0 : file.content) ?? "", Number.MAX_SAFE_INTEGER).length
-      };
-    })
-  );
+  if (!index || index.version === 2 || index.chapters.every((chapter) => typeof chapter.characters === "number")) return index;
+  const chapters = await Promise.all(index.chapters.map(async (chapter) => {
+    if (typeof chapter.characters === "number") return chapter;
+    const file = await tsian.workspace.read(chapter.path);
+    return { ...chapter, characters: excerptText((file == null ? void 0 : file.content) ?? "", Number.MAX_SAFE_INTEGER).length };
+  }));
   const updated = { version: 1, chapters };
   await tsian.workspace.write(CHAPTER_INDEX_PATH, `${JSON.stringify(updated, null, 2)}
 `);
   return updated;
 }
 async function writeCorpus(tsian, corpus, onProgress, onIndexWrite) {
-  const total = corpus.shards.length;
   for (let index = 0; index < corpus.shards.length; index += 1) {
     const shard = corpus.shards[index];
     await tsian.workspace.write(shard.path, shard.content);
-    onProgress == null ? void 0 : onProgress(index + 1, total);
+    onProgress == null ? void 0 : onProgress(index + 1, corpus.shards.length);
   }
   onIndexWrite == null ? void 0 : onIndexWrite();
   await tsian.workspace.write(CHAPTER_INDEX_PATH, `${JSON.stringify(corpus.chapterIndex, null, 2)}
@@ -21689,46 +22376,110 @@ async function writeCorpus(tsian, corpus, onProgress, onIndexWrite) {
   await tsian.workspace.write(SOURCE_MANIFEST_PATH, `${JSON.stringify(corpus.manifest, null, 2)}
 `);
 }
+async function loadSetupSummary(tsian, required = false) {
+  const file = await tsian.workspace.read(SETUP_SUMMARY_PATH);
+  if (!(file == null ? void 0 : file.content)) {
+    if (required) throw new Error("开局完成状态文件缺失。");
+    return null;
+  }
+  const data = safeJsonParse(file.content);
+  if (!isSetupSummary(data)) throw new Error("开局完成状态文件格式无效。");
+  return data;
+}
+async function loadOpeningControl(tsian) {
+  const file = await tsian.workspace.read(OPENING_CONTROL_PATH);
+  if (!file) return null;
+  if (!file.content) throw new Error("开局访谈控制文件为空。");
+  const control = parseOpeningControl(safeJsonParse(file.content));
+  if (!control) throw new Error("开局访谈控制文件格式无效。");
+  return control;
+}
+async function writeOpeningControl(tsian, control) {
+  await tsian.workspace.write(OPENING_CONTROL_PATH, serializeOpeningControl(control));
+}
+function hasOnlyKeys(value, keys) {
+  const expected = new Set(keys);
+  return Object.keys(value).length === expected.size && Object.keys(value).every((key) => expected.has(key));
+}
+function isInitialPendingRuntime(value) {
+  return isRecord$1(value) && hasOnlyKeys(value, ["turn", "worldTime", "plotOrder", "location", "weather", "activeSceneRefs", "protagonistRef", "extensions", "updatedAtTurn", "updatedBy"]) && value.turn === 0 && value.worldTime === "" && value.plotOrder === 1 && value.location === null && value.weather === "" && Array.isArray(value.activeSceneRefs) && value.activeSceneRefs.length === 0 && value.protagonistRef === null && isRecord$1(value.extensions) && Object.keys(value.extensions).length === 0 && value.updatedAtTurn === 0 && value.updatedBy === null;
+}
+function isInitialPendingFrontier(value) {
+  if (!isRecord$1(value) || !hasOnlyKeys(value, ["sourceWindow", "extractedThrough", "timeline", "notes"])) return false;
+  if (!isRecord$1(value.sourceWindow) || !hasOnlyKeys(value.sourceWindow, ["start", "end"])) return false;
+  if (value.sourceWindow.start !== null || value.sourceWindow.end !== null || value.extractedThrough !== null) return false;
+  if (typeof value.notes !== "string" || !Array.isArray(value.timeline) || value.timeline.length !== 1) return false;
+  const anchor = value.timeline[0];
+  return isRecord$1(anchor) && hasOnlyKeys(anchor, ["kind", "order", "chapter", "time", "label"]) && anchor.kind === "source" && anchor.order === 1 && anchor.chapter === 1 && anchor.time === "元年" && anchor.label === "开局";
+}
+function isInitialUnderstandingSummary(value) {
+  return isRecord$1(value) && value.status === "pending" && value.title === null && Array.isArray(value.candidateCharacters) && value.candidateCharacters.length === 0;
+}
+async function directoryContainsFormalData(tsian, path) {
+  const entries = await tsian.workspace.list(path);
+  return entries.some((entry) => entry.name !== "README.md" && entry.name !== ".keep");
+}
+async function hasLegacyOpeningState(tsian) {
+  const entrypoints = await tsian.card.entrypoints();
+  const playerTurnAgent = entrypoints.playerTurn;
+  if (typeof playerTurnAgent !== "string" || !playerTurnAgent.trim()) {
+    throw new Error("当前卡缺少正式玩家回合入口。");
+  }
+  const [
+    understanding,
+    understandingContext,
+    playSetupContext,
+    runtimeFile,
+    frontierFile,
+    legacyOpeningNarrative,
+    playerContext,
+    entityData,
+    sceneData,
+    relationshipData,
+    turnData
+  ] = await Promise.all([
+    tsian.workspace.read(INITIAL_SUMMARY_PATH),
+    tsian.workspace.read("save/agents/world-architect/context-understanding.json"),
+    tsian.workspace.read("save/agents/world-architect/context-play-setup.json"),
+    tsian.workspace.read(RUNTIME_PATH),
+    tsian.workspace.read(FRONTIER_PATH),
+    tsian.workspace.read("save/playthrough/opening-narrative.json"),
+    tsian.workspace.read(`save/agents/${playerTurnAgent}/context.json`),
+    directoryContainsFormalData(tsian, "save/entities"),
+    directoryContainsFormalData(tsian, "save/scenes"),
+    directoryContainsFormalData(tsian, "save/relationships"),
+    directoryContainsFormalData(tsian, "save/history/turns")
+  ]);
+  const understandingData = (understanding == null ? void 0 : understanding.content) ? safeJsonParse(understanding.content) : null;
+  if (!isInitialUnderstandingSummary(understandingData)) return true;
+  if (understandingContext || playSetupContext || legacyOpeningNarrative || playerContext) return true;
+  if (entityData || sceneData || relationshipData || turnData) return true;
+  const runtime = (runtimeFile == null ? void 0 : runtimeFile.content) ? safeJsonParse(runtimeFile.content) : null;
+  const frontier = (frontierFile == null ? void 0 : frontierFile.content) ? safeJsonParse(frontierFile.content) : null;
+  return !isInitialPendingRuntime(runtime) || !isInitialPendingFrontier(frontier);
+}
+function showFatalState(message) {
+  playSetupStatus.value = "recovering";
+  playSetupError.value = message;
+  setView("fatal-state");
+}
+function showInterviewRecovery(message) {
+  playSetupStatus.value = "recovering";
+  playSetupError.value = message;
+  setView("opening-interview");
+}
 function setView(view) {
   subView.value = view;
   errorText.value = "";
+  if (view === "choose" || view === "paste" || view === "file" || view === "review") step.value = 1;
+  else if (view === "opening-confirm") step.value = 3;
+  else step.value = 2;
   if (view === "choose") statusText.value = "等待选择导入方式";
-  step.value = view === "understanding" ? 2 : 1;
 }
 function goToStep(target) {
-  if (target <= 1) {
-    setView("choose");
-    return;
-  }
-  if (target === 2) {
-    if (understandingStatus.value === "ready") {
-      subView.value = "understanding";
-      step.value = 2;
-    } else {
-      setView("review");
-    }
-    return;
-  }
-  if (target === 3) {
-    subView.value = "character-setup";
-    step.value = 3;
-    errorText.value = "";
-    return;
-  }
-  if (target === 4) {
-    subView.value = "play-setup";
-    step.value = 4;
-    errorText.value = "";
-    if (playSetupStatus.value === "idle" && playSetupMessages.value.length === 0) {
-      void startPlaySetupDialog();
-    } else if (playSetupStatus.value === "failed") {
-      playSetupStatus.value = "idle";
-    }
-    return;
-  }
-  subView.value = "opening-confirm";
-  step.value = 5;
-  errorText.value = "";
+  if (target === 1) setView(manifest.value ? "review" : "choose");
+  else if (target === 2) setView(playSetupMessages.value.length > 0 ? "opening-interview" : "branch-choice");
+  else setView("opening-confirm");
 }
 async function startImport(mode, input) {
   var _a2;
@@ -21749,7 +22500,7 @@ async function startImport(mode, input) {
     }, (progress) => {
       statusText.value = progress.total && progress.current !== void 0 ? `${progress.message.replace(/…$/, "")} ${progress.current}/${progress.total}…` : progress.message;
     });
-    statusText.value = "写入源文本 0/" + corpus.shards.length + "…";
+    statusText.value = `写入源文本 0/${corpus.shards.length}…`;
     await writeCorpus(tsian, corpus, (current, total) => {
       statusText.value = `写入源文本 ${current}/${total}…`;
     }, () => {
@@ -21758,454 +22509,513 @@ async function startImport(mode, input) {
     manifest.value = corpus.manifest;
     chapterIndex.value = corpus.chapterIndex;
     selectedChapter.value = 0;
-    understandingStatus.value = "idle";
-    understandingSummary.value = null;
+    resetOpeningMemory();
     setView("review");
     statusText.value = "小说已导入";
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "导入失败";
-    errorText.value = message;
+  } catch (error) {
+    errorText.value = error instanceof Error ? error.message : "导入失败";
     statusText.value = "导入失败";
   } finally {
     busy.value = false;
   }
 }
 function confirmReimport() {
-  if (window.confirm("重新导入会覆盖当前小说文本与章节目录。确定要换源吗？")) {
-    manifest.value = null;
-    chapterIndex.value = null;
-    sourcePreviewCache.clear();
-    selectedChapter.value = 0;
-    understandingStatus.value = "idle";
-    understandingSummary.value = null;
-    statusText.value = "等待选择导入方式";
-    setView("choose");
-  }
-}
-async function startOpeningUnderstanding() {
-  if (!manifest.value || busy.value) return;
-  const tsian = getTsianClient();
-  busy.value = true;
-  errorText.value = "";
-  understandingStatus.value = "running";
-  understandingStage.value = 0;
-  setView("understanding");
-  const invocationId = `understanding-${Date.now().toString(36)}`;
-  understandingActiveInvocationId = invocationId;
-  ensureUnderstandingInvocationSubscription(tsian);
-  try {
-    const prompt = buildOpeningInitializationPrompt(manifest.value, chapterIndex.value);
-    const result = await tsian.invokeAgent("world-architect", prompt, {
-      invocationId,
-      purpose: "opening-understanding",
-      contextSlot: "understanding",
-      persist: false
-    });
-    const summary = await loadUnderstandingSummary(tsian);
-    if (!summary) {
-      throw new Error(result.response || "理解完成但写入存档失败，请重试。");
-    }
-    understandingSummary.value = summary;
-    understandingStatus.value = "ready";
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "初始理解失败";
-    errorText.value = message;
-    understandingStatus.value = "failed";
-  } finally {
-    understandingActiveInvocationId = null;
-    busy.value = false;
-  }
+  if (!window.confirm("重新导入会覆盖当前小说文本与章节目录。确定要换源吗？")) return;
+  manifest.value = null;
+  chapterIndex.value = null;
+  selectedChapter.value = 0;
+  sourcePreviewCache.clear();
+  resetOpeningMemory();
+  statusText.value = "等待选择导入方式";
+  setView("choose");
 }
 async function loadChapterPreview(chapter) {
+  return loadSourceChapterPreview(getTsianClient(), chapter, sourcePreviewCache);
+}
+async function showBranchChoice() {
+  if (!manifest.value) return;
   const tsian = getTsianClient();
-  return loadSourceChapterPreview(tsian, chapter, sourcePreviewCache);
-}
-function setCharacterBranch(branch) {
-  characterBranch.value = branch;
-  characterSetupStatus.value = "selecting";
-  selectedCharacter.value = null;
-  goToStep(3);
-}
-function backToBranchChoice() {
-  characterBranch.value = null;
-  selectedCharacter.value = null;
-  characterSetupStatus.value = "selecting";
-  if (understandingStatus.value === "ready") {
-    subView.value = "understanding";
-    step.value = 2;
-  }
-}
-async function confirmCanonCharacter(candidate) {
-  if (busy.value) return;
-  const tsian = getTsianClient();
-  busy.value = true;
-  errorText.value = "";
   try {
-    const ref2 = candidate.id || `character:${candidate.name}`;
-    const charInfo = { ref: ref2, name: candidate.name, brief: candidate.brief, ...candidate.gender ? { gender: candidate.gender } : {} };
-    await writePlayerCharacter(tsian, ref2, candidate.name);
-    selectedCharacter.value = charInfo;
-    characterSetupStatus.value = "confirmed";
-    statusText.value = `已选定角色：${candidate.name}`;
-  } catch (err) {
-    errorText.value = err instanceof Error ? err.message : "确认角色失败";
-  } finally {
-    busy.value = false;
-  }
-}
-async function confirmOriginalCharacter(form) {
-  var _a2, _b, _c, _d, _e;
-  if (busy.value) return;
-  const tsian = getTsianClient();
-  busy.value = true;
-  errorText.value = "";
-  try {
-    const localId = await ensureUniqueLocalId(tsian, form.name);
-    const ref2 = `character:${localId}`;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const entity = {
-      id: ref2,
-      name: form.name,
-      brief: form.brief,
-      sourceRefs: [],
-      updatedBy: "player-setup",
-      updatedAt: now
-    };
-    if ((_a2 = form.gender) == null ? void 0 : _a2.trim()) entity.gender = form.gender.trim();
-    if ((_b = form.appearance) == null ? void 0 : _b.trim()) entity.appearance = form.appearance.trim();
-    if ((_c = form.personality) == null ? void 0 : _c.trim()) entity.personality = form.personality.trim();
-    if ((_d = form.background) == null ? void 0 : _d.trim()) entity.background = form.background.trim();
-    await tsian.workspace.write(
-      `${CHARACTER_ENTITIES_ROOT}${localId}.json`,
-      `${JSON.stringify(entity, null, 2)}
-`
-    );
-    await writePlayerCharacter(tsian, ref2, form.name);
-    selectedCharacter.value = { ref: ref2, name: form.name, brief: form.brief, ...((_e = form.gender) == null ? void 0 : _e.trim()) ? { gender: form.gender.trim() } : {} };
-    characterSetupStatus.value = "confirmed";
-    statusText.value = `已创建角色：${form.name}`;
-  } catch (err) {
-    errorText.value = err instanceof Error ? err.message : "创建角色失败";
-  } finally {
-    busy.value = false;
-  }
-}
-function resetCharacterSetup() {
-  selectedCharacter.value = null;
-  characterSetupStatus.value = "selecting";
-}
-async function writePlayerCharacter(tsian, ref2, name) {
-  const file = await tsian.workspace.read(RUNTIME_PATH);
-  const runtime = (file == null ? void 0 : file.content) ? safeJsonParse(file.content) : null;
-  if (!runtime || typeof runtime !== "object") {
-    throw new Error("runtime.json 不存在或格式无效");
-  }
-  const updated = {
-    ...runtime,
-    protagonistRef: { ref: ref2, name }
-  };
-  await tsian.workspace.write(RUNTIME_PATH, `${JSON.stringify(updated, null, 2)}
-`);
-}
-function isRecord$1(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-async function projectAssistantMessage(tsian, content) {
-  const result = await tsian.runAction("reply-project", { text: content });
-  if (isRecord$1(result) && result.ok === false) {
-    const error = isRecord$1(result.error) ? result.error : null;
-    throw new Error(typeof (error == null ? void 0 : error.message) === "string" ? error.message : "reply projection failed");
-  }
-  const projected = isRecord$1(result) && isRecord$1(result.item) ? result.item : result;
-  if (isRecord$1(projected) && typeof projected.content === "string") {
-    return {
-      content: projected.content,
-      ...typeof projected.displayContent === "string" ? { displayContent: projected.displayContent } : {},
-      ...isRecord$1(projected.projections) ? { projections: projected.projections } : {}
-    };
-  }
-  return { content };
-}
-function displayAssistantContent(item) {
-  return item.displayContent ?? item.content;
-}
-function projectedChoices(item) {
-  var _a2;
-  const choices = (_a2 = item.projections) == null ? void 0 : _a2.choices;
-  return Array.isArray(choices) ? choices.filter((choice2) => typeof choice2 === "string") : [];
-}
-function normalizeWorkspaceListEntries(listResult) {
-  const rawEntries = Array.isArray(listResult) ? listResult : isRecord$1(listResult) && Array.isArray(listResult.entries) ? listResult.entries : null;
-  if (!rawEntries) {
-    throw new Error("workspace.list 返回格式无效");
-  }
-  return rawEntries.map((entry, index) => {
-    if (!isRecord$1(entry) || typeof entry.path !== "string") {
-      throw new Error(`workspace.list 返回条目格式无效：entries[${index}].path`);
-    }
-    if (typeof entry.name !== "string") {
-      throw new Error(`workspace.list 返回条目格式无效：entries[${index}].name`);
-    }
-    if (entry.kind !== "file" && entry.kind !== "directory") {
-      throw new Error(`workspace.list 返回条目格式无效：entries[${index}].kind`);
-    }
-    return {
-      path: entry.path,
-      name: entry.name,
-      kind: entry.kind,
-      ...typeof entry.updatedAt === "number" ? { updatedAt: entry.updatedAt } : {},
-      ...typeof entry.size === "number" ? { size: entry.size } : {},
-      ...typeof entry.childCount === "number" ? { childCount: entry.childCount } : {}
-    };
-  });
-}
-async function ensureUniqueLocalId(tsian, name) {
-  const base = `original-${name}`;
-  const listResult = await tsian.workspace.list(CHARACTER_ENTITIES_ROOT);
-  const existing = new Set(
-    normalizeWorkspaceListEntries(listResult).map((f) => {
-      var _a2;
-      return ((_a2 = f.path.split("/").pop()) == null ? void 0 : _a2.replace(/\.json$/, "")) ?? "";
-    })
-  );
-  if (!existing.has(base)) return base;
-  for (let i = 2; i < 100; i++) {
-    const candidate = `${base}-${i}`;
-    if (!existing.has(candidate)) return candidate;
-  }
-  return `${base}-${Date.now()}`;
-}
-async function loadPlayerCharacter(tsian) {
-  const file = await tsian.workspace.read(RUNTIME_PATH);
-  if (!(file == null ? void 0 : file.content)) return null;
-  const runtime = safeJsonParse(file.content);
-  if (!runtime || typeof runtime !== "object") return null;
-  const protagonist = runtime.protagonistRef;
-  if (!protagonist || typeof protagonist !== "object") return null;
-  const ref2 = protagonist.ref;
-  const name = protagonist.name;
-  if (typeof ref2 !== "string" || typeof name !== "string") return null;
-  const localId = ref2.startsWith("character:") ? ref2.slice("character:".length) : ref2;
-  const entityFile = await tsian.workspace.read(`${CHARACTER_ENTITIES_ROOT}${localId}.json`);
-  if (entityFile == null ? void 0 : entityFile.content) {
-    const entity = safeJsonParse(entityFile.content);
-    if (entity && typeof entity === "object") {
-      const brief = entity.brief;
-      const gender = entity.gender;
-      if (typeof brief === "string") {
-        return { ref: ref2, name, brief, ...typeof gender === "string" ? { gender } : {} };
-      }
-    }
-  }
-  return { ref: ref2, name, brief: "" };
-}
-let dialogMessageSeq = 0;
-function nextDialogId() {
-  dialogMessageSeq += 1;
-  return `dialog-${dialogMessageSeq}`;
-}
-async function loadSetupSummary(tsian) {
-  const file = await tsian.workspace.read(SETUP_SUMMARY_PATH);
-  if (!(file == null ? void 0 : file.content)) return null;
-  const data = safeJsonParse(file.content);
-  return isSetupSummary(data) ? data : null;
-}
-const PLAY_SETUP_CONTEXT_PATH = "save/agents/world-architect/context-play-setup.json";
-async function restorePlaySetupMessages(tsian) {
-  const file = await tsian.workspace.read(PLAY_SETUP_CONTEXT_PATH);
-  if (!(file == null ? void 0 : file.content)) return false;
-  const data = safeJsonParse(file.content);
-  if (!data || typeof data !== "object") return false;
-  const recentTurns = data.recentTurns;
-  if (!Array.isArray(recentTurns) || recentTurns.length === 0) return false;
-  const restored = [];
-  for (const entry of recentTurns) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const role = entry.role;
-    const content = entry.content;
-    if (typeof role !== "string" || typeof content !== "string") continue;
-    if (role === "user") {
-      restored.push({ id: nextDialogId(), role: "user", content });
-    } else if (role === "assistant") {
-      const projected = await projectAssistantMessage(tsian, content);
-      const choices = projectedChoices(projected);
-      const isLast = restored.filter((m) => m.role === "agent").length === recentTurns.filter((e) => typeof e === "object" && e !== null && e.role === "assistant").length - 1;
-      restored.push({
-        id: nextDialogId(),
-        role: "agent",
-        content: displayAssistantContent(projected),
-        ...isLast && choices.length > 0 ? { options: choices } : {}
-      });
-    }
-  }
-  if (restored.length === 0) return false;
-  playSetupMessages.value = restored;
-  return true;
-}
-async function startPlaySetupDialog() {
-  var _a2, _b;
-  if (playSetupStatus.value === "running" || playSetupStatus.value === "complete") return;
-  const tsian = getTsianClient();
-  const summary = await loadSetupSummary(tsian);
-  if ((summary == null ? void 0 : summary.status) === "complete") {
-    playSetupStatus.value = "complete";
-    playSetupSummary.value = summary.summary ?? null;
-    return;
-  }
-  if (playSetupMessages.value.length === 0) {
-    const restored = await restorePlaySetupMessages(tsian);
-    if (restored) {
-      playSetupStatus.value = "idle";
+    if (await hasLegacyOpeningState(tsian)) {
+      playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。";
+      setView("legacy-state");
       return;
     }
-  }
-  const title = ((_a2 = understandingSummary.value) == null ? void 0 : _a2.title) ?? ((_b = manifest.value) == null ? void 0 : _b.title) ?? "导入小说";
-  const character = selectedCharacter.value ? { ref: selectedCharacter.value.ref, name: selectedCharacter.value.name } : null;
-  const prompt = buildPlaySetupPrompt(title, character);
-  playSetupStatus.value = "running";
-  playSetupError.value = "";
-  const invocationId = `play-setup-${Date.now().toString(36)}`;
-  activeInvocationId = invocationId;
-  playSetupStreamingText.value = "";
-  ensurePlaySetupInvocationSubscription(tsian);
-  try {
-    const result = await tsian.invokeAgent("world-architect", prompt, {
-      invocationId,
-      purpose: "opening-play-setup",
-      contextSlot: "play-setup",
-      persist: true
-    });
-    handleAgentResponse(result.response);
-  } catch (err) {
-    playSetupStatus.value = "failed";
-    playSetupError.value = err instanceof Error ? err.message : "对话启动失败";
-  } finally {
-    playSetupStreamingText.value = "";
-    activeInvocationId = null;
+    setView("branch-choice");
+    statusText.value = "选择本局角色类型";
+  } catch (error) {
+    showFatalState(error instanceof Error ? `无法确认开局存档状态：${error.message}` : "无法确认开局存档状态。");
   }
 }
-async function sendPlaySetupMessage(input) {
-  if (playSetupStatus.value === "running" || playSetupStatus.value === "complete") return;
-  const tsian = getTsianClient();
-  const msgs = playSetupMessages.value;
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const msg = msgs[i];
-    if ((msg == null ? void 0 : msg.role) === "agent" && msg.options && msg.options.length > 0) {
-      msgs[i] = { ...msg, options: void 0 };
-      break;
-    }
-  }
-  playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: input });
-  playSetupStatus.value = "running";
-  playSetupError.value = "";
-  const invocationId = `play-setup-${Date.now().toString(36)}`;
-  activeInvocationId = invocationId;
-  playSetupStreamingText.value = "";
-  ensurePlaySetupInvocationSubscription(tsian);
-  try {
-    const result = await tsian.invokeAgent("world-architect", input, {
-      invocationId,
-      purpose: "opening-play-setup",
-      contextSlot: "play-setup",
-      persist: true
-    });
-    handleAgentResponse(result.response);
-  } catch (err) {
-    playSetupStatus.value = "failed";
-    playSetupError.value = err instanceof Error ? err.message : "对话失败，请重试";
-  } finally {
-    playSetupStreamingText.value = "";
-    activeInvocationId = null;
+function validateReadSliceRefs(state) {
+  const index = chapterIndex.value;
+  if (!index) throw new Error("小说章节索引尚未就绪，无法校验访谈阅读范围。");
+  const sourceRefs = new Set(index.chapters.map((chapter) => "ref" in chapter ? chapter.ref : chapter.path));
+  if (state.readSlices.some((slice) => !sourceRefs.has(slice.ref))) {
+    throw new Error("访谈回复包含不属于当前小说的阅读引用，已停止继续写入。");
   }
 }
-async function handleAgentResponse(response) {
-  const tsian = getTsianClient();
-  const projected = await projectAssistantMessage(tsian, response);
-  const choices = projectedChoices(projected);
+function validateTurnState(control, state, expectedAttemptId, expectedRevision) {
+  if (state.sessionId !== control.session.id || state.sourceHash !== control.source.hash || state.branch !== control.branch) {
+    throw new Error("访谈回复与当前小说会话不匹配，已停止继续写入。");
+  }
+  if (state.processedAttemptId !== expectedAttemptId || state.revision !== expectedRevision) {
+    throw new Error("访谈回复轮次无法确认，请重新读取会话状态。");
+  }
+  validateReadSliceRefs(state);
+}
+async function finishResolvedInvocation(tsian, response, control, expectedAttemptId, expectedRevision) {
+  const parsed = parseOpeningAssistant(response);
+  if (!parsed) throw new Error("访谈回复缺少有效的恢复信息。");
+  validateTurnState(control, parsed.state, expectedAttemptId, expectedRevision);
   playSetupStreamingText.value = "";
-  activeInvocationId = null;
+  rawStreamingText = "";
   playSetupMessages.value.push({
     id: nextDialogId(),
     role: "agent",
-    content: displayAssistantContent(projected),
-    ...choices.length > 0 ? { options: choices } : {}
+    content: parsed.displayContent,
+    ...parsed.choices.length > 0 ? { options: parsed.choices } : {}
   });
-  const summary = await loadSetupSummary(tsian);
+  const summary = await loadSetupSummary(tsian, true);
   if ((summary == null ? void 0 : summary.status) === "complete") {
     playSetupStatus.value = "complete";
     playSetupSummary.value = summary.summary ?? null;
-  } else {
-    playSetupStatus.value = "idle";
+    characterBranch.value = control.branch;
+    setView("opening-confirm");
+    statusText.value = "开局已准备完成";
+    return;
+  }
+  if (parsed.state.phase === "complete") {
+    throw new Error("Agent 已声明完成，但正式开局文件尚未提交。");
+  }
+  const latestControl = await loadOpeningControl(tsian);
+  const nextControl = (latestControl == null ? void 0 : latestControl.status) === "complete" ? latestControl : {
+    ...control,
+    session: { ...control.session, revision: parsed.state.revision },
+    status: "interviewing",
+    attempt: void 0
+  };
+  if (nextControl.status !== "complete") await writeOpeningControl(tsian, nextControl);
+  playSetupStatus.value = "ready";
+  playSetupError.value = "";
+  statusText.value = "等待你的回答";
+}
+async function invokeOpening(control, input, expectedAttemptId, expectedRevision) {
+  var _a2;
+  const tsian = getTsianClient();
+  playSetupStatus.value = "running";
+  playSetupError.value = "";
+  rawStreamingText = "";
+  playSetupStreamingText.value = "";
+  const invocationId = `opening-interview-${Date.now().toString(36)}`;
+  activeInvocationId = invocationId;
+  ensureInvocationSubscription(tsian);
+  let response;
+  try {
+    const result = await tsian.invokeAgent("world-architect", input, {
+      invocationId,
+      purpose: "opening-interview",
+      contextSlot: control.session.slot,
+      persist: true,
+      injection: [{ role: "user", position: "before-input", content: buildOpeningInjection(control) }]
+    });
+    response = result.response;
+  } catch (error) {
+    const invocationMessage = error instanceof Error ? error.message : "访谈调用失败，请重试。";
+    try {
+      const latest = await loadOpeningControl(tsian);
+      if (control.attempt) {
+        if (!latest || latest.status !== "interviewing" || ((_a2 = latest.attempt) == null ? void 0 : _a2.id) !== control.attempt.id) {
+          throw new Error("无法确认待重试回答仍是当前 attempt。");
+        }
+        await writeOpeningControl(tsian, { ...latest, attempt: { ...latest.attempt, status: "failed" } });
+      }
+      playSetupStatus.value = "failed";
+      playSetupError.value = invocationMessage;
+    } catch (persistenceError) {
+      playSetupStatus.value = "recovering";
+      const persistenceMessage = persistenceError instanceof Error ? persistenceError.message : "失败状态无法写入。";
+      playSetupError.value = `${invocationMessage} ${persistenceMessage}`;
+    }
+    return;
+  } finally {
+    activeInvocationId = null;
+    playSetupStreamingText.value = "";
+    rawStreamingText = "";
+  }
+  try {
+    await finishResolvedInvocation(tsian, response, control, expectedAttemptId, expectedRevision);
+  } catch (error) {
+    playSetupStatus.value = "recovering";
+    playSetupError.value = error instanceof Error ? error.message : "访谈已提交，但界面恢复失败。";
   }
 }
-function resetPlaySetupDialog() {
+async function startOpeningInterview(branch) {
+  if (!manifest.value || playSetupStatus.value === "running" || openingStartPending) return;
+  openingStartPending = true;
+  const tsian = getTsianClient();
+  try {
+    if (await hasLegacyOpeningState(tsian)) {
+      playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。";
+      setView("legacy-state");
+      return;
+    }
+    const control = createOpeningControl(manifest.value, branch);
+    await writeOpeningControl(tsian, control);
+    characterBranch.value = branch;
+    playSetupMessages.value = [];
+    setView("opening-interview");
+    statusText.value = "正在准备第一次问题…";
+    await invokeOpening(control, openingBootstrapMarker(control.session.id), "start", 1);
+  } catch (error) {
+    showFatalState(error instanceof Error ? `无法安全启动开局访谈：${error.message}` : "无法安全启动开局访谈。");
+  } finally {
+    openingStartPending = false;
+  }
+}
+function clearLastOptions() {
+  var _a2;
+  for (let index = playSetupMessages.value.length - 1; index >= 0; index -= 1) {
+    const message = playSetupMessages.value[index];
+    if ((message == null ? void 0 : message.role) === "agent" && ((_a2 = message.options) == null ? void 0 : _a2.length)) {
+      playSetupMessages.value[index] = { ...message, options: void 0 };
+      return;
+    }
+  }
+}
+async function sendPlaySetupMessage(input) {
+  const normalized = input.trim();
+  if (!normalized || playSetupStatus.value !== "ready") return;
+  playSetupStatus.value = "running";
+  playSetupError.value = "";
+  const tsian = getTsianClient();
+  let current;
+  try {
+    current = await loadOpeningControl(tsian);
+  } catch (error) {
+    showInterviewRecovery(error instanceof Error ? error.message : "无法读取当前访谈状态。");
+    return;
+  }
+  if (!current || current.status !== "interviewing" || !manifest.value || !openingControlMatchesManifest(current, manifest.value)) {
+    playSetupStatus.value = "recovering";
+    playSetupError.value = "当前访谈控制状态无效，无法安全发送。";
+    return;
+  }
+  const attempt = {
+    id: createAttemptId(),
+    input: normalized,
+    inputHash: openingInputHash(normalized),
+    basedOnRevision: current.session.revision,
+    status: "submitted",
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  const control = { ...current, attempt };
+  try {
+    await writeOpeningControl(tsian, control);
+  } catch (error) {
+    showInterviewRecovery(error instanceof Error ? `回答尚未发送：${error.message}` : "回答尚未发送，控制状态写入失败。");
+    return;
+  }
+  clearLastOptions();
+  playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: normalized });
+  await invokeOpening(control, openingAnswerMarker(attempt.id, attempt.input), attempt.id, attempt.basedOnRevision + 1);
+}
+async function retryPlaySetupDialog() {
+  if (playSetupStatus.value === "running") return;
+  playSetupStatus.value = "running";
+  playSetupError.value = "";
+  const tsian = getTsianClient();
+  try {
+    const summary = await loadSetupSummary(tsian, true);
+    if ((summary == null ? void 0 : summary.status) === "complete") {
+      playSetupStatus.value = "complete";
+      playSetupSummary.value = summary.summary ?? null;
+      setView("opening-confirm");
+      statusText.value = "开局已准备完成";
+      return;
+    }
+    let control = await loadOpeningControl(tsian);
+    if (!control || control.status !== "interviewing") {
+      showInterviewRecovery("无法读取当前访谈状态。");
+      return;
+    }
+    if (control.attempt) {
+      await restoreOpeningInterview(tsian, manifest.value);
+      control = await loadOpeningControl(tsian);
+      if (!control || control.status !== "interviewing") {
+        showInterviewRecovery("重新检查后无法确认当前访谈状态。");
+        return;
+      }
+      if (!control.attempt) return;
+      const submitted = { ...control, attempt: { ...control.attempt, status: "submitted" } };
+      await writeOpeningControl(tsian, submitted);
+      await invokeOpening(
+        submitted,
+        openingAnswerMarker(submitted.attempt.id, submitted.attempt.input),
+        submitted.attempt.id,
+        submitted.attempt.basedOnRevision + 1
+      );
+      return;
+    }
+    if (control.session.revision === 0) {
+      await invokeOpening(control, openingBootstrapMarker(control.session.id), "start", 1);
+      return;
+    }
+    await restoreOpeningInterview(tsian, manifest.value);
+  } catch (error) {
+    showInterviewRecovery(error instanceof Error ? error.message : "重新检查访谈状态失败。");
+  }
+}
+async function restoreOpeningInterview(tsian, currentManifest) {
+  var _a2, _b, _c;
+  if (!currentManifest) return false;
+  const identity = openingSourceIdentity(currentManifest);
+  const session = openingSession(identity);
+  const control = await loadOpeningControl(tsian);
+  const controlMatchesSource = control ? openingControlMatchesManifest(control, currentManifest) : false;
+  if (controlMatchesSource && control && !openingControlMatchesSession(control, currentManifest)) {
+    characterBranch.value = control.branch;
+    playSetupStatus.value = "recovering";
+    playSetupError.value = "访谈控制文件与当前小说会话不一致，请使用新存档重新开始。";
+    setView("opening-interview");
+    return true;
+  }
+  const contextFile = await tsian.workspace.read(session.contextPath);
+  if (!(contextFile == null ? void 0 : contextFile.content)) {
+    if (control && controlMatchesSource) {
+      characterBranch.value = control.branch;
+      if (control.status === "complete" || control.session.revision > 0) {
+        playSetupStatus.value = "recovering";
+        playSetupError.value = "访谈进度文件缺失，无法安全恢复。请使用新存档重新开始。";
+      } else {
+        playSetupStatus.value = "failed";
+        playSetupError.value = "第一次访谈尚未完成，可以原地重试。";
+      }
+      setView("opening-interview");
+      return true;
+    }
+    return false;
+  }
+  const snapshot = safeJsonParse(contextFile.content);
+  if (!isRecord$1(snapshot) || !Array.isArray(snapshot.recentTurns)) {
+    playSetupStatus.value = "recovering";
+    playSetupError.value = "访谈记录格式无效，请使用新存档重新开始。";
+    setView("opening-interview");
+    return true;
+  }
+  const messages = [];
+  const shownAttempts = /* @__PURE__ */ new Set();
+  const assistantTurns = /* @__PURE__ */ new Map();
+  const processedAttemptRevisions = /* @__PURE__ */ new Map();
+  let pendingUser = null;
+  let latestState = null;
+  let restoredBranch = null;
+  for (const entry of snapshot.recentTurns) {
+    if (!isRecord$1(entry) || typeof entry.role !== "string" || typeof entry.content !== "string") continue;
+    if (entry.role === "user") {
+      if (pendingUser) {
+        playSetupStatus.value = "recovering";
+        playSetupError.value = "访谈记录包含连续的玩家轮次，已停止继续发送。";
+        setView("opening-interview");
+        return true;
+      }
+      pendingUser = parseOpeningUser(entry.content);
+      if (!pendingUser || pendingUser.kind === "start" && pendingUser.sessionId !== session.id) {
+        playSetupStatus.value = "recovering";
+        playSetupError.value = "访谈记录包含无法识别的玩家轮次，请使用新存档重新开始。";
+        setView("opening-interview");
+        return true;
+      }
+      if ((pendingUser == null ? void 0 : pendingUser.kind) === "answer" && !shownAttempts.has(pendingUser.attemptId)) {
+        shownAttempts.add(pendingUser.attemptId);
+        messages.push({ id: nextDialogId(), role: "user", content: pendingUser.content });
+      }
+      continue;
+    }
+    if (entry.role !== "assistant") continue;
+    const parsed = parseOpeningAssistant(entry.content);
+    if (!parsed || parsed.state.sessionId !== session.id || parsed.state.sourceHash !== identity.hash) {
+      playSetupStatus.value = "recovering";
+      playSetupError.value = "访谈记录无法通过会话校验，请使用新存档重新开始。";
+      setView("opening-interview");
+      return true;
+    }
+    try {
+      validateReadSliceRefs(parsed.state);
+    } catch (error) {
+      playSetupStatus.value = "recovering";
+      playSetupError.value = error instanceof Error ? error.message : "访谈阅读范围无法校验，已停止继续发送。";
+      setView("opening-interview");
+      return true;
+    }
+    if (!pendingUser) {
+      playSetupStatus.value = "recovering";
+      playSetupError.value = "访谈回复缺少对应的玩家轮次，已停止继续发送。";
+      setView("opening-interview");
+      return true;
+    }
+    const expectedAttempt = (pendingUser == null ? void 0 : pendingUser.kind) === "answer" ? pendingUser.attemptId : "start";
+    if (parsed.state.processedAttemptId !== expectedAttempt) {
+      playSetupStatus.value = "recovering";
+      playSetupError.value = "访谈轮次无法确认，已停止继续发送。";
+      setView("opening-interview");
+      return true;
+    }
+    if (!latestState && pendingUser.kind !== "start" || latestState && pendingUser.kind === "start") {
+      playSetupStatus.value = "recovering";
+      playSetupError.value = "访谈 bootstrap 轮次位置无效，已停止继续发送。";
+      setView("opening-interview");
+      return true;
+    }
+    restoredBranch ?? (restoredBranch = parsed.state.branch);
+    if (restoredBranch !== parsed.state.branch) {
+      playSetupStatus.value = "recovering";
+      playSetupError.value = "访谈分支出现冲突，已停止继续发送。";
+      setView("opening-interview");
+      return true;
+    }
+    const turnKey = `${parsed.state.revision}:${parsed.state.processedAttemptId}`;
+    const turnSignature = JSON.stringify({ state: parsed.state, content: parsed.displayContent, choices: parsed.choices });
+    const previousSignature = assistantTurns.get(turnKey);
+    if (previousSignature !== void 0) {
+      if (previousSignature !== turnSignature || !latestState || latestState.revision !== parsed.state.revision || latestState.processedAttemptId !== parsed.state.processedAttemptId) {
+        playSetupStatus.value = "recovering";
+        playSetupError.value = "同一访谈轮次出现冲突回复，已停止继续发送。";
+        setView("opening-interview");
+        return true;
+      }
+      pendingUser = null;
+      continue;
+    }
+    if (!openingRevisionContinues((latestState == null ? void 0 : latestState.revision) ?? null, parsed.state.revision)) {
+      playSetupStatus.value = "recovering";
+      playSetupError.value = latestState ? "访谈 revision 不连续，已停止继续发送。" : "访谈首轮 revision 无效，已停止继续发送。";
+      setView("opening-interview");
+      return true;
+    }
+    const previousAttemptRevision = processedAttemptRevisions.get(parsed.state.processedAttemptId);
+    if (previousAttemptRevision !== void 0 && previousAttemptRevision !== parsed.state.revision) {
+      playSetupStatus.value = "recovering";
+      playSetupError.value = "同一 attemptId 被用于不同 revision，已停止继续发送。";
+      setView("opening-interview");
+      return true;
+    }
+    assistantTurns.set(turnKey, turnSignature);
+    processedAttemptRevisions.set(parsed.state.processedAttemptId, parsed.state.revision);
+    latestState = parsed.state;
+    messages.push({
+      id: nextDialogId(),
+      role: "agent",
+      content: parsed.displayContent,
+      ...parsed.choices.length > 0 ? { options: parsed.choices } : {}
+    });
+    pendingUser = null;
+  }
+  if (pendingUser) {
+    playSetupStatus.value = "recovering";
+    playSetupError.value = "访谈记录末尾存在无法确认的玩家轮次，已停止继续发送。";
+    setView("opening-interview");
+    return true;
+  }
+  if (!latestState || !restoredBranch) {
+    playSetupStatus.value = "recovering";
+    playSetupError.value = "访谈记录没有可恢复的有效回复，请使用新存档重新开始。";
+    setView("opening-interview");
+    return true;
+  }
+  if (latestState.phase === "complete") {
+    playSetupStatus.value = "recovering";
+    playSetupError.value = "访谈已声明完成，但正式开局完成信号缺失。请使用新存档重新开始。";
+    setView("opening-interview");
+    return true;
+  }
+  for (let index = 0; index < messages.length - 1; index += 1) {
+    if (((_a2 = messages[index]) == null ? void 0 : _a2.role) === "agent" && ((_b = messages[index]) == null ? void 0 : _b.options)) messages[index] = { ...messages[index], options: void 0 };
+  }
+  playSetupMessages.value = messages;
+  characterBranch.value = restoredBranch;
+  if (control && controlMatchesSource && (control.status !== "interviewing" || control.branch !== restoredBranch || control.session.revision > latestState.revision)) {
+    playSetupStatus.value = "recovering";
+    playSetupError.value = "访谈控制状态与持久会话冲突，已停止继续发送。";
+    setView("opening-interview");
+    return true;
+  }
+  const reconciled = control && controlMatchesSource ? { ...control, session: { ...control.session, revision: latestState.revision } } : {
+    ...createOpeningControl(currentManifest, restoredBranch),
+    session: { id: session.id, slot: session.slot, revision: latestState.revision }
+  };
+  const processedAttempt = ((_c = reconciled.attempt) == null ? void 0 : _c.id) === latestState.processedAttemptId;
+  if (reconciled.attempt && !processedAttempt && reconciled.attempt.basedOnRevision !== latestState.revision) {
+    playSetupStatus.value = "recovering";
+    playSetupError.value = "待处理回答与当前访谈 revision 冲突，已停止继续发送。";
+    setView("opening-interview");
+    return true;
+  }
+  const nextControl = processedAttempt ? { ...reconciled, attempt: void 0 } : reconciled;
+  await writeOpeningControl(tsian, nextControl);
+  setView("opening-interview");
+  if (nextControl.attempt) {
+    if (!shownAttempts.has(nextControl.attempt.id)) {
+      playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: nextControl.attempt.input });
+    }
+    playSetupStatus.value = "recovering";
+    playSetupError.value = "上一条回答的提交结果尚未确认；可重新检查或使用同一回答重试。";
+  } else {
+    playSetupStatus.value = "ready";
+    playSetupError.value = "";
+  }
+  statusText.value = "访谈已恢复";
+  return true;
+}
+function resetOpeningMemory() {
+  characterBranch.value = null;
   playSetupStatus.value = "idle";
   playSetupMessages.value = [];
   playSetupError.value = "";
   playSetupStreamingText.value = "";
+  playSetupSummary.value = null;
   activeInvocationId = null;
-}
-async function retryPlaySetupDialog() {
-  var _a2;
-  playSetupError.value = "";
-  const lastUserMsg = [...playSetupMessages.value].reverse().find((m) => m.role === "user");
-  if (lastUserMsg) {
-    const lastIdx = playSetupMessages.value.length - 1;
-    if (lastIdx >= 0 && ((_a2 = playSetupMessages.value[lastIdx]) == null ? void 0 : _a2.role) === "agent") {
-      playSetupMessages.value.splice(lastIdx, 1);
-    }
-    await sendPlaySetupMessage(lastUserMsg.content);
-  } else {
-    playSetupMessages.value = [];
-    await startPlaySetupDialog();
-  }
+  rawStreamingText = "";
 }
 async function initialize() {
   if (initialized.value) return;
   const tsian = getTsianClient();
   try {
-    const existingManifest = await loadSourceManifest(tsian);
-    if (existingManifest) {
-      manifest.value = existingManifest;
-      chapterIndex.value = await ensureChapterCharacters(tsian, await loadChapterIndex(tsian));
-      const summary = await loadUnderstandingSummary(tsian);
-      if (summary) {
-        understandingSummary.value = summary;
-        understandingStatus.value = "ready";
-        const existingCharacter = await loadPlayerCharacter(tsian);
-        if (existingCharacter) {
-          selectedCharacter.value = existingCharacter;
-          characterSetupStatus.value = "confirmed";
-          characterBranch.value = existingCharacter.ref.startsWith("character:original-") ? "original" : "canon";
-          const setupSummary = await loadSetupSummary(tsian);
-          if ((setupSummary == null ? void 0 : setupSummary.status) === "complete") {
-            playSetupStatus.value = "complete";
-            playSetupSummary.value = setupSummary.summary ?? null;
-            subView.value = "opening-confirm";
-            step.value = 5;
-            statusText.value = "游玩设定已完成";
-          } else {
-            subView.value = "character-setup";
-            step.value = 3;
-            statusText.value = `已选定角色：${existingCharacter.name}`;
-          }
-        } else {
-          subView.value = "understanding";
-          step.value = 2;
-          statusText.value = "初始理解已完成";
-        }
-      } else {
-        subView.value = "review";
-        step.value = 1;
-        statusText.value = "已导入小说";
-      }
-    } else {
-      subView.value = "choose";
-      step.value = 1;
+    await tsian.waitForReady();
+    const setupSummary = await loadSetupSummary(tsian, true);
+    if ((setupSummary == null ? void 0 : setupSummary.status) === "complete") {
+      playSetupStatus.value = "complete";
+      playSetupSummary.value = setupSummary.summary ?? null;
+      setView("opening-confirm");
+      statusText.value = "开局已准备完成";
+      return;
     }
-  } catch {
-    subView.value = "choose";
-    step.value = 1;
+    const existingManifest = await loadSourceManifest(tsian);
+    if (!existingManifest) {
+      if (await hasLegacyOpeningState(tsian)) {
+        playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。";
+        setView("legacy-state");
+        return;
+      }
+      setView("choose");
+      return;
+    }
+    manifest.value = existingManifest;
+    const loadedChapterIndex = await ensureChapterCharacters(tsian, await loadChapterIndex(tsian));
+    if (!loadedChapterIndex || loadedChapterIndex.chapters.length !== existingManifest.chapterCount) {
+      throw new Error("小说来源清单与章节索引数量不一致。");
+    }
+    chapterIndex.value = loadedChapterIndex;
+    if (await restoreOpeningInterview(tsian, existingManifest)) return;
+    if (await hasLegacyOpeningState(tsian)) {
+      playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。";
+      setView("legacy-state");
+      return;
+    }
+    setView("review");
+    statusText.value = "已导入小说";
+  } catch (error) {
+    showFatalState(error instanceof Error ? `无法读取开局状态：${error.message}` : "无法读取开局状态。");
   } finally {
     initializing.value = false;
     initialized.value = true;
@@ -22213,66 +23023,52 @@ async function initialize() {
 }
 function useSetupState() {
   return {
-    // 响应式状态（只读视图）
     step: /* @__PURE__ */ readonly(step),
     subView: /* @__PURE__ */ readonly(subView),
-    understandingStatus: /* @__PURE__ */ readonly(understandingStatus),
     manifest: /* @__PURE__ */ readonly(manifest),
     chapterIndex: /* @__PURE__ */ readonly(chapterIndex),
     selectedChapter: /* @__PURE__ */ readonly(selectedChapter),
-    understandingSummary: /* @__PURE__ */ readonly(understandingSummary),
+    selectedChapterWritable: selectedChapter,
     busy: /* @__PURE__ */ readonly(busy),
     statusText: /* @__PURE__ */ readonly(statusText),
     errorText: /* @__PURE__ */ readonly(errorText),
     initializing: /* @__PURE__ */ readonly(initializing),
     initialized: /* @__PURE__ */ readonly(initialized),
-    understandingStage: /* @__PURE__ */ readonly(understandingStage),
     characterBranch: /* @__PURE__ */ readonly(characterBranch),
-    selectedCharacter: /* @__PURE__ */ readonly(selectedCharacter),
-    characterSetupStatus: /* @__PURE__ */ readonly(characterSetupStatus),
     playSetupStatus: /* @__PURE__ */ readonly(playSetupStatus),
     playSetupMessages: /* @__PURE__ */ readonly(playSetupMessages),
     playSetupError: /* @__PURE__ */ readonly(playSetupError),
     playSetupStreamingText: /* @__PURE__ */ readonly(playSetupStreamingText),
     playSetupSummary: /* @__PURE__ */ readonly(playSetupSummary),
-    // 可写状态（组件需直接改的）
-    selectedChapterWritable: selectedChapter,
-    // 操作方法
     initialize,
     setView,
     goToStep,
     startImport,
     confirmReimport,
-    startOpeningUnderstanding,
     loadChapterPreview,
-    setCharacterBranch,
-    backToBranchChoice,
-    confirmCanonCharacter,
-    confirmOriginalCharacter,
-    resetCharacterSetup,
-    startPlaySetupDialog,
+    showBranchChoice,
+    startOpeningInterview,
     sendPlaySetupMessage,
-    resetPlaySetupDialog,
     retryPlaySetupDialog
   };
 }
-const _hoisted_1$F = { class: "fuse-stepper" };
-const _hoisted_2$D = { class: "fuse-mark" };
-const _hoisted_3$z = {
+const _hoisted_1$z = { class: "fuse-stepper" };
+const _hoisted_2$x = { class: "fuse-mark" };
+const _hoisted_3$s = {
   key: 0,
   class: "ember-orb"
 };
-const _hoisted_4$v = {
+const _hoisted_4$o = {
   key: 1,
   class: "blaze-orb"
 };
-const _hoisted_5$r = {
+const _hoisted_5$m = {
   key: 2,
   class: "wick-tip"
 };
-const NODE_GAP = 120;
-const NODE_WIDTH = 80;
-const _sfc_main$H = /* @__PURE__ */ defineComponent({
+const NODE_GAP = 150;
+const NODE_WIDTH = 120;
+const _sfc_main$B = /* @__PURE__ */ defineComponent({
   __name: "SetupStepper",
   props: {
     current: {},
@@ -22280,7 +23076,7 @@ const _sfc_main$H = /* @__PURE__ */ defineComponent({
   },
   setup(__props) {
     const props = __props;
-    const STEPS = ["导入小说", "初始理解", "角色设定", "游玩倾向", "开局确认"];
+    const STEPS = ["导入小说", "创建角色与世界", "开局确认"];
     const CENTER_STEP = NODE_GAP + NODE_WIDTH;
     function markStatus(i) {
       if (i === props.current) return "current";
@@ -22288,7 +23084,7 @@ const _sfc_main$H = /* @__PURE__ */ defineComponent({
       return "locked";
     }
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$F, [
+      return openBlock(), createElementBlock("div", _hoisted_1$z, [
         _cache[3] || (_cache[3] = createBaseVNode("div", { class: "wick-base" }, null, -1)),
         createBaseVNode("div", {
           class: "wick-lit",
@@ -22308,13 +23104,13 @@ const _sfc_main$H = /* @__PURE__ */ defineComponent({
               key: i,
               class: normalizeClass(["fuse-node", markStatus(i)])
             }, [
-              createBaseVNode("div", _hoisted_2$D, [
-                markStatus(i) === "done" ? (openBlock(), createElementBlock("div", _hoisted_3$z, [..._cache[1] || (_cache[1] = [
+              createBaseVNode("div", _hoisted_2$x, [
+                markStatus(i) === "done" ? (openBlock(), createElementBlock("div", _hoisted_3$s, [..._cache[1] || (_cache[1] = [
                   createBaseVNode("span", { class: "ember-particle" }, null, -1),
                   createBaseVNode("span", { class: "ember-particle p2" }, null, -1)
-                ])])) : markStatus(i) === "current" ? (openBlock(), createElementBlock("div", _hoisted_4$v, [..._cache[2] || (_cache[2] = [
-                  createStaticVNode('<div class="blaze-halo" data-v-3d47b66d></div><div class="blaze-core" data-v-3d47b66d></div><span class="blaze-spark s1" data-v-3d47b66d></span><span class="blaze-spark s2" data-v-3d47b66d></span><span class="blaze-spark s3" data-v-3d47b66d></span>', 5)
-                ])])) : (openBlock(), createElementBlock("div", _hoisted_5$r))
+                ])])) : markStatus(i) === "current" ? (openBlock(), createElementBlock("div", _hoisted_4$o, [..._cache[2] || (_cache[2] = [
+                  createStaticVNode('<div class="blaze-halo" data-v-9e1dc057></div><div class="blaze-core" data-v-9e1dc057></div><span class="blaze-spark s1" data-v-9e1dc057></span><span class="blaze-spark s2" data-v-9e1dc057></span><span class="blaze-spark s3" data-v-9e1dc057></span>', 5)
+                ])])) : (openBlock(), createElementBlock("div", _hoisted_5$m))
               ]),
               createBaseVNode("span", {
                 class: normalizeClass(["fuse-label", markStatus(i)])
@@ -22326,8 +23122,8 @@ const _sfc_main$H = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const SetupStepper = /* @__PURE__ */ _export_sfc(_sfc_main$H, [["__scopeId", "data-v-3d47b66d"]]);
-const _sfc_main$G = /* @__PURE__ */ defineComponent({
+const SetupStepper = /* @__PURE__ */ _export_sfc(_sfc_main$B, [["__scopeId", "data-v-9e1dc057"]]);
+const _sfc_main$A = /* @__PURE__ */ defineComponent({
   __name: "MethodChoose",
   emits: ["select"],
   setup(__props, { emit: __emit }) {
@@ -22370,9 +23166,9 @@ const _sfc_main$G = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const MethodChoose = /* @__PURE__ */ _export_sfc(_sfc_main$G, [["__scopeId", "data-v-bb831f07"]]);
-const _hoisted_1$E = { class: "input-panel" };
-const _sfc_main$F = /* @__PURE__ */ defineComponent({
+const MethodChoose = /* @__PURE__ */ _export_sfc(_sfc_main$A, [["__scopeId", "data-v-bb831f07"]]);
+const _hoisted_1$y = { class: "input-panel" };
+const _sfc_main$z = /* @__PURE__ */ defineComponent({
   __name: "PasteInput",
   setup(__props, { expose: __expose }) {
     const title = /* @__PURE__ */ ref("");
@@ -22385,7 +23181,7 @@ const _sfc_main$F = /* @__PURE__ */ defineComponent({
     }
     __expose({ getInput });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$E, [
+      return openBlock(), createElementBlock("div", _hoisted_1$y, [
         withDirectives(createBaseVNode("input", {
           "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => title.value = $event),
           class: "title-input",
@@ -22405,7 +23201,7 @@ const _sfc_main$F = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const PasteInput = /* @__PURE__ */ _export_sfc(_sfc_main$F, [["__scopeId", "data-v-334d7d49"]]);
+const PasteInput = /* @__PURE__ */ _export_sfc(_sfc_main$z, [["__scopeId", "data-v-334d7d49"]]);
 const LEGACY_CHINESE_ENCODINGS = [
   { encoding: "gb18030", label: "GB18030 / GBK" },
   { encoding: "big5", label: "Big5" }
@@ -22504,9 +23300,9 @@ function decodeTextBytes(bytes) {
 async function readTextFileWithEncoding(file) {
   return decodeTextBytes(new Uint8Array(await file.arrayBuffer()));
 }
-const _hoisted_1$D = { class: "input-panel" };
-const _hoisted_2$C = { class: "drop-copy" };
-const _sfc_main$E = /* @__PURE__ */ defineComponent({
+const _hoisted_1$x = { class: "input-panel" };
+const _hoisted_2$w = { class: "drop-copy" };
+const _sfc_main$y = /* @__PURE__ */ defineComponent({
   __name: "FileInput",
   emits: ["autoImport"],
   setup(__props, { expose: __expose, emit: __emit }) {
@@ -22573,7 +23369,7 @@ const _sfc_main$E = /* @__PURE__ */ defineComponent({
     }
     __expose({ getInput, readFile });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$D, [
+      return openBlock(), createElementBlock("div", _hoisted_1$x, [
         withDirectives(createBaseVNode("input", {
           "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => title.value = $event),
           class: "title-input",
@@ -22599,7 +23395,7 @@ const _sfc_main$E = /* @__PURE__ */ defineComponent({
             onChange: onFileChange
           }, null, 544),
           _cache[1] || (_cache[1] = createBaseVNode("span", { class: "drop-title" }, "拖入或选择 .txt / .md 文件", -1)),
-          createBaseVNode("span", _hoisted_2$C, [
+          createBaseVNode("span", _hoisted_2$w, [
             createTextVNode(toDisplayString(selectedFileName.value || "支持拖放，或点击选择。") + " ", 1),
             decodedEncodingLabel.value ? (openBlock(), createElementBlock(Fragment, { key: 0 }, [
               createTextVNode(" · " + toDisplayString(decodedEncodingLabel.value), 1)
@@ -22626,30 +23422,30 @@ const _sfc_main$E = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const FileInput = /* @__PURE__ */ _export_sfc(_sfc_main$E, [["__scopeId", "data-v-a89a48d6"]]);
-const _hoisted_1$C = { class: "review" };
-const _hoisted_2$B = {
+const FileInput = /* @__PURE__ */ _export_sfc(_sfc_main$y, [["__scopeId", "data-v-a89a48d6"]]);
+const _hoisted_1$w = { class: "review" };
+const _hoisted_2$v = {
   key: 0,
   class: "overview"
 };
-const _hoisted_3$y = { class: "overview-main" };
-const _hoisted_4$u = { class: "book-title" };
-const _hoisted_5$q = { class: "overview-meta" };
-const _hoisted_6$l = { class: "meta-tag" };
-const _hoisted_7$h = { class: "meta-tag" };
-const _hoisted_8$b = { class: "meta-tag" };
-const _hoisted_9$9 = { class: "review-panes" };
-const _hoisted_10$7 = ["onClick"];
-const _hoisted_11$5 = { class: "chapter-num" };
-const _hoisted_12$5 = { class: "chapter-main" };
-const _hoisted_13$5 = { class: "chapter-title" };
-const _hoisted_14$5 = { class: "chapter-size" };
-const _hoisted_15$5 = { class: "preview-kicker" };
+const _hoisted_3$r = { class: "overview-main" };
+const _hoisted_4$n = { class: "book-title" };
+const _hoisted_5$l = { class: "overview-meta" };
+const _hoisted_6$h = { class: "meta-tag" };
+const _hoisted_7$d = { class: "meta-tag" };
+const _hoisted_8$8 = { class: "meta-tag" };
+const _hoisted_9$6 = { class: "review-panes" };
+const _hoisted_10$5 = ["onClick"];
+const _hoisted_11$4 = { class: "chapter-num" };
+const _hoisted_12$4 = { class: "chapter-main" };
+const _hoisted_13$4 = { class: "chapter-title" };
+const _hoisted_14$4 = { class: "chapter-size" };
+const _hoisted_15$4 = { class: "preview-kicker" };
 const _hoisted_16$4 = { class: "preview-title" };
 const _hoisted_17$4 = { class: "preview-body" };
 const ROW_HEIGHT = 58;
 const OVERSCAN = 6;
-const _sfc_main$D = /* @__PURE__ */ defineComponent({
+const _sfc_main$x = /* @__PURE__ */ defineComponent({
   __name: "SplitReview",
   props: {
     manifest: {},
@@ -22748,20 +23544,20 @@ const _sfc_main$D = /* @__PURE__ */ defineComponent({
       }
     });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$C, [
-        __props.manifest ? (openBlock(), createElementBlock("div", _hoisted_2$B, [
-          createBaseVNode("div", _hoisted_3$y, [
-            createBaseVNode("div", _hoisted_4$u, toDisplayString(__props.manifest.title), 1),
-            createBaseVNode("div", _hoisted_5$q, [
-              createBaseVNode("span", _hoisted_6$l, toDisplayString(unref(formatNumber)(__props.manifest.chapterCount)) + " 章", 1),
+      return openBlock(), createElementBlock("div", _hoisted_1$w, [
+        __props.manifest ? (openBlock(), createElementBlock("div", _hoisted_2$v, [
+          createBaseVNode("div", _hoisted_3$r, [
+            createBaseVNode("div", _hoisted_4$n, toDisplayString(__props.manifest.title), 1),
+            createBaseVNode("div", _hoisted_5$l, [
+              createBaseVNode("span", _hoisted_6$h, toDisplayString(unref(formatNumber)(__props.manifest.chapterCount)) + " 章", 1),
               _cache[0] || (_cache[0] = createBaseVNode("span", { class: "meta-dot" }, "·", -1)),
-              createBaseVNode("span", _hoisted_7$h, toDisplayString(unref(formatCharacters)(__props.manifest.totalCharacters)), 1),
+              createBaseVNode("span", _hoisted_7$d, toDisplayString(unref(formatCharacters)(__props.manifest.totalCharacters)), 1),
               _cache[1] || (_cache[1] = createBaseVNode("span", { class: "meta-dot" }, "·", -1)),
-              createBaseVNode("span", _hoisted_8$b, toDisplayString(__props.manifest.importMode === "paste" ? "粘贴导入" : "文件导入"), 1)
+              createBaseVNode("span", _hoisted_8$8, toDisplayString(__props.manifest.importMode === "paste" ? "粘贴导入" : "文件导入"), 1)
             ])
           ])
         ])) : createCommentVNode("", true),
-        createBaseVNode("div", _hoisted_9$9, [
+        createBaseVNode("div", _hoisted_9$6, [
           createBaseVNode("div", {
             ref_key: "listRef",
             ref: listRef,
@@ -22783,12 +23579,12 @@ const _sfc_main$D = /* @__PURE__ */ defineComponent({
                     type: "button",
                     onClick: ($event) => selectChapter(visibleStart.value + offset)
                   }, [
-                    createBaseVNode("span", _hoisted_11$5, toDisplayString(String(visibleStart.value + offset + 1).padStart(3, "0")), 1),
-                    createBaseVNode("span", _hoisted_12$5, [
-                      createBaseVNode("span", _hoisted_13$5, toDisplayString(ch.title || `第 ${visibleStart.value + offset + 1} 章`), 1),
-                      createBaseVNode("span", _hoisted_14$5, toDisplayString(unref(formatOptionalCharacters)(ch.characters)), 1)
+                    createBaseVNode("span", _hoisted_11$4, toDisplayString(String(visibleStart.value + offset + 1).padStart(3, "0")), 1),
+                    createBaseVNode("span", _hoisted_12$4, [
+                      createBaseVNode("span", _hoisted_13$4, toDisplayString(ch.title || `第 ${visibleStart.value + offset + 1} 章`), 1),
+                      createBaseVNode("span", _hoisted_14$4, toDisplayString(unref(formatOptionalCharacters)(ch.characters)), 1)
                     ])
-                  ], 10, _hoisted_10$7);
+                  ], 10, _hoisted_10$5);
                 }), 128))
               ], 4)
             ], 4)
@@ -22811,7 +23607,7 @@ const _sfc_main$D = /* @__PURE__ */ defineComponent({
                   key: previewKey.value,
                   class: "preview-inner"
                 }, [
-                  createBaseVNode("div", _hoisted_15$5, " 预览 · " + toDisplayString(String(selectedIndex.value + 1).padStart(3, "0")), 1),
+                  createBaseVNode("div", _hoisted_15$4, " 预览 · " + toDisplayString(String(selectedIndex.value + 1).padStart(3, "0")), 1),
                   createBaseVNode("h3", _hoisted_16$4, toDisplayString(previewTitle.value), 1),
                   createBaseVNode("div", _hoisted_17$4, toDisplayString(previewText.value), 1)
                 ]))
@@ -22824,7 +23620,251 @@ const _sfc_main$D = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const SplitReview = /* @__PURE__ */ _export_sfc(_sfc_main$D, [["__scopeId", "data-v-ed619cc9"]]);
+const SplitReview = /* @__PURE__ */ _export_sfc(_sfc_main$x, [["__scopeId", "data-v-ed619cc9"]]);
+const _hoisted_1$v = { class: "branch-choice" };
+const _hoisted_2$u = { class: "branch-grid" };
+const _sfc_main$w = /* @__PURE__ */ defineComponent({
+  __name: "OpeningBranchChoice",
+  emits: ["select"],
+  setup(__props, { emit: __emit }) {
+    const emit2 = __emit;
+    return (_ctx, _cache) => {
+      return openBlock(), createElementBlock("section", _hoisted_1$v, [
+        _cache[4] || (_cache[4] = createBaseVNode("p", { class: "eyebrow" }, "选择本局角色", -1)),
+        _cache[5] || (_cache[5] = createBaseVNode("h2", null, "你想以谁的视角进入故事？", -1)),
+        _cache[6] || (_cache[6] = createBaseVNode("p", { class: "intro" }, "这里只决定角色类型。具体人物、身份和本局偏好会在接下来的对话里逐步确认。", -1)),
+        createBaseVNode("div", _hoisted_2$u, [
+          createBaseVNode("button", {
+            class: "branch-card retro-focus",
+            type: "button",
+            onClick: _cache[0] || (_cache[0] = ($event) => emit2("select", "canon"))
+          }, [..._cache[2] || (_cache[2] = [
+            createBaseVNode("span", { class: "branch-index" }, "01", -1),
+            createBaseVNode("strong", null, "原著角色", -1),
+            createBaseVNode("span", null, "从小说已有角色中选择，也可以在对话中指定其他人物。", -1)
+          ])]),
+          createBaseVNode("button", {
+            class: "branch-card retro-focus",
+            type: "button",
+            onClick: _cache[1] || (_cache[1] = ($event) => emit2("select", "original"))
+          }, [..._cache[3] || (_cache[3] = [
+            createBaseVNode("span", { class: "branch-index" }, "02", -1),
+            createBaseVNode("strong", null, "原创角色", -1),
+            createBaseVNode("span", null, "通过简短问答创建角色，不需要预先填写完整表单。", -1)
+          ])])
+        ])
+      ]);
+    };
+  }
+});
+const OpeningBranchChoice = /* @__PURE__ */ _export_sfc(_sfc_main$w, [["__scopeId", "data-v-bd616427"]]);
+const _hoisted_1$u = { class: "setup-composer-wrap" };
+const _hoisted_2$t = ["disabled", "placeholder"];
+const _hoisted_3$q = ["disabled"];
+const _sfc_main$v = /* @__PURE__ */ defineComponent({
+  __name: "SetupComposer",
+  props: {
+    disabled: { type: Boolean },
+    placeholder: {}
+  },
+  emits: ["send"],
+  setup(__props, { emit: __emit }) {
+    const props = __props;
+    const emit2 = __emit;
+    const text = /* @__PURE__ */ ref("");
+    const inputEl = /* @__PURE__ */ ref(null);
+    const focused = /* @__PURE__ */ ref(false);
+    const hasContent = /* @__PURE__ */ ref(false);
+    function autoGrow() {
+      const el = inputEl.value;
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = el.scrollHeight <= 120 ? el.scrollHeight + "px" : "120px";
+      hasContent.value = text.value.trim().length > 0;
+    }
+    async function onSend() {
+      const content = text.value.trim();
+      if (!content || props.disabled) return;
+      emit2("send", content);
+      text.value = "";
+      hasContent.value = false;
+      await nextTick();
+      autoGrow();
+    }
+    function onKeydown(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        onSend();
+      }
+    }
+    return (_ctx, _cache) => {
+      return openBlock(), createElementBlock("div", _hoisted_1$u, [
+        createBaseVNode("div", {
+          class: normalizeClass(["setup-composer", { focused: focused.value, "has-content": hasContent.value }])
+        }, [
+          withDirectives(createBaseVNode("textarea", {
+            ref_key: "inputEl",
+            ref: inputEl,
+            "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => text.value = $event),
+            class: "composer-input",
+            disabled: __props.disabled,
+            placeholder: __props.placeholder ?? "说出你的想法…",
+            rows: "1",
+            onKeydown,
+            onInput: autoGrow,
+            onFocus: _cache[1] || (_cache[1] = ($event) => focused.value = true),
+            onBlur: _cache[2] || (_cache[2] = ($event) => focused.value = false)
+          }, null, 40, _hoisted_2$t), [
+            [vModelText, text.value]
+          ]),
+          createBaseVNode("button", {
+            class: "send-btn",
+            disabled: __props.disabled || !hasContent.value,
+            onClick: onSend
+          }, [..._cache[3] || (_cache[3] = [
+            createBaseVNode("svg", {
+              class: "btn-icon",
+              viewBox: "0 0 24 24",
+              "aria-hidden": "true"
+            }, [
+              createBaseVNode("path", {
+                d: "M5 12L19 5L13 19L11 13L5 12Z",
+                fill: "currentColor",
+                stroke: "currentColor",
+                "stroke-width": "1.2",
+                "stroke-linejoin": "round"
+              })
+            ], -1)
+          ])], 8, _hoisted_3$q),
+          _cache[4] || (_cache[4] = createBaseVNode("span", {
+            class: "ink-line",
+            "aria-hidden": "true"
+          }, null, -1))
+        ], 2)
+      ]);
+    };
+  }
+});
+const SetupComposer = /* @__PURE__ */ _export_sfc(_sfc_main$v, [["__scopeId", "data-v-9780fceb"]]);
+const _hoisted_1$t = { class: "play-setup-dialog" };
+const _hoisted_2$s = { class: "dialog-inner" };
+const _hoisted_3$p = {
+  key: 0,
+  class: "streaming-block"
+};
+const _hoisted_4$m = { class: "streaming-text" };
+const _hoisted_5$k = {
+  key: 1,
+  class: "error-card"
+};
+const _hoisted_6$g = { class: "failed-detail-scroll" };
+const _sfc_main$u = /* @__PURE__ */ defineComponent({
+  __name: "PlaySetupDialog",
+  setup(__props) {
+    const {
+      playSetupStatus: status,
+      playSetupMessages: messages,
+      playSetupError: error,
+      playSetupStreamingText: streamingText2,
+      sendPlaySetupMessage: sendPlaySetupMessage2,
+      retryPlaySetupDialog: retryPlaySetupDialog2
+    } = useSetupState();
+    const scrollRef = /* @__PURE__ */ ref(null);
+    watch(
+      () => messages.value.length,
+      async () => {
+        await nextTick();
+        const el = scrollRef.value;
+        if (el) el.scrollTop = el.scrollHeight;
+      },
+      { flush: "post" }
+    );
+    watch(
+      () => status.value,
+      async () => {
+        await nextTick();
+        const el = scrollRef.value;
+        if (el) el.scrollTop = el.scrollHeight;
+      },
+      { flush: "post" }
+    );
+    watch(
+      () => streamingText2.value.length,
+      async () => {
+        await nextTick();
+        const el = scrollRef.value;
+        if (el) el.scrollTop = el.scrollHeight;
+      },
+      { flush: "post" }
+    );
+    function onSelectOption(option) {
+      void sendPlaySetupMessage2(option);
+    }
+    function onSend(text) {
+      void sendPlaySetupMessage2(text);
+    }
+    onUnmounted(() => {
+    });
+    return (_ctx, _cache) => {
+      return openBlock(), createElementBlock("div", _hoisted_1$t, [
+        createBaseVNode("div", {
+          ref_key: "scrollRef",
+          ref: scrollRef,
+          class: "dialog-scroll"
+        }, [
+          createBaseVNode("div", _hoisted_2$s, [
+            (openBlock(true), createElementBlock(Fragment, null, renderList(unref(messages), (msg) => {
+              return openBlock(), createElementBlock(Fragment, {
+                key: msg.id
+              }, [
+                msg.role === "agent" ? (openBlock(), createBlock(NarrativeMessage, {
+                  key: 0,
+                  content: msg.content
+                }, null, 8, ["content"])) : (openBlock(), createBlock(UserMessage, {
+                  key: 1,
+                  content: msg.content
+                }, null, 8, ["content"])),
+                msg.options && msg.options.length > 0 && unref(status) !== "complete" ? (openBlock(), createBlock(StoryOptions, {
+                  key: 2,
+                  options: [...msg.options],
+                  disabled: unref(status) !== "ready",
+                  onSelect: onSelectOption
+                }, null, 8, ["options", "disabled"])) : createCommentVNode("", true)
+              ], 64);
+            }), 128)),
+            unref(status) === "running" ? (openBlock(), createElementBlock(Fragment, { key: 0 }, [
+              unref(streamingText2) ? (openBlock(), createElementBlock("div", _hoisted_3$p, [
+                createBaseVNode("p", _hoisted_4$m, toDisplayString(unref(streamingText2)), 1),
+                _cache[1] || (_cache[1] = createBaseVNode("span", {
+                  class: "streaming-caret",
+                  "aria-hidden": "true"
+                }, null, -1))
+              ])) : (openBlock(), createBlock(EmberForge, {
+                key: 1,
+                variant: "standalone"
+              }))
+            ], 64)) : createCommentVNode("", true),
+            unref(status) === "failed" || unref(status) === "recovering" ? (openBlock(), createElementBlock("div", _hoisted_5$k, [
+              _cache[2] || (_cache[2] = createBaseVNode("div", { class: "failed-mark" }, "✕", -1)),
+              createBaseVNode("div", _hoisted_6$g, toDisplayString(unref(error)), 1),
+              createBaseVNode("button", {
+                class: "retry-btn",
+                onClick: _cache[0] || (_cache[0] = //@ts-ignore
+                (...args) => unref(retryPlaySetupDialog2) && unref(retryPlaySetupDialog2)(...args))
+              }, toDisplayString(unref(status) === "recovering" ? "重新检查" : "重试"), 1)
+            ])) : createCommentVNode("", true)
+          ])
+        ], 512),
+        createVNode(SetupComposer, {
+          disabled: unref(status) !== "ready",
+          placeholder: "说出你的想法…",
+          onSend
+        }, null, 8, ["disabled"])
+      ]);
+    };
+  }
+});
+const PlaySetupDialog = /* @__PURE__ */ _export_sfc(_sfc_main$u, [["__scopeId", "data-v-25af940f"]]);
 const SIZE = 512;
 const HALF = SIZE / 2;
 const COLORS = {
@@ -23044,836 +24084,13 @@ function generateMagicCircle(seed) {
     `
   };
 }
-const _hoisted_1$B = { class: "understanding-running" };
-const _hoisted_2$A = { class: "loading-core" };
-const _hoisted_3$x = {
-  class: "magic-circle",
-  "aria-hidden": "true"
-};
-const _hoisted_4$t = ["viewBox"];
-const _hoisted_5$p = ["innerHTML"];
-const _sfc_main$C = /* @__PURE__ */ defineComponent({
-  __name: "UnderstandingRunning",
-  setup(__props) {
-    const { understandingStage: understandingStage2 } = useSetupState();
-    const magicCircle = generateMagicCircle();
-    const STAGES = [
-      "正在观察导入结构…",
-      "正在阅读开头剧情…",
-      "正在整理开局资料…"
-    ];
-    return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$B, [
-        createBaseVNode("div", _hoisted_2$A, [
-          createBaseVNode("div", _hoisted_3$x, [
-            (openBlock(), createElementBlock("svg", {
-              class: "magic-circle-svg",
-              viewBox: unref(magicCircle).viewBox
-            }, [
-              createBaseVNode("g", {
-                innerHTML: unref(magicCircle).layers
-              }, null, 8, _hoisted_5$p)
-            ], 8, _hoisted_4$t))
-          ]),
-          createVNode(Transition, {
-            name: "stage-fade",
-            mode: "out-in"
-          }, {
-            default: withCtx(() => [
-              (openBlock(), createElementBlock("p", {
-                key: unref(understandingStage2),
-                class: "stage-text"
-              }, toDisplayString(STAGES[unref(understandingStage2)]), 1))
-            ]),
-            _: 1
-          })
-        ])
-      ]);
-    };
-  }
-});
-const UnderstandingRunning = /* @__PURE__ */ _export_sfc(_sfc_main$C, [["__scopeId", "data-v-53148d40"]]);
-const _hoisted_1$A = {
-  key: 0,
-  class: "summary"
-};
-const _hoisted_2$z = { class: "summary-title" };
-const _hoisted_3$w = { class: "summary-meta" };
-const _hoisted_4$s = {
-  key: 0,
-  class: "meta-item"
-};
-const _hoisted_5$o = { class: "meta-num" };
-const _hoisted_6$k = { class: "branch-cards" };
-const _hoisted_7$g = ["disabled"];
-const _hoisted_8$a = ["disabled"];
-const _hoisted_9$8 = {
-  key: 0,
-  class: "selected-hint"
-};
-const _sfc_main$B = /* @__PURE__ */ defineComponent({
-  __name: "UnderstandingReady",
-  props: {
-    summary: {}
-  },
-  emits: ["select"],
-  setup(__props, { emit: __emit }) {
-    const emit2 = __emit;
-    const { manifest: manifest2 } = useSetupState();
-    const rootRef = /* @__PURE__ */ ref(null);
-    const selectedBranch = /* @__PURE__ */ ref(null);
-    function select(branch) {
-      if (selectedBranch.value) return;
-      selectedBranch.value = branch;
-      emit2("select", branch);
-    }
-    onMounted(async () => {
-      await nextTick();
-      if (!rootRef.value) return;
-      const cards = rootRef.value.querySelectorAll(".branch-card");
-      gsapWithCSS.fromTo(
-        cards,
-        { opacity: 0, scale: 0.92 },
-        { opacity: 1, scale: 1, duration: 0.5, stagger: 0.12, ease: "power2.out", delay: 0.15 }
-      );
-    });
-    return (_ctx, _cache) => {
-      var _a2, _b;
-      return openBlock(), createElementBlock("div", {
-        ref_key: "rootRef",
-        ref: rootRef,
-        class: "understanding-ready"
-      }, [
-        __props.summary ? (openBlock(), createElementBlock("div", _hoisted_1$A, [
-          createBaseVNode("div", _hoisted_2$z, toDisplayString(__props.summary.title || ((_a2 = unref(manifest2)) == null ? void 0 : _a2.title) || "导入小说"), 1),
-          createBaseVNode("div", _hoisted_3$w, [
-            ((_b = __props.summary.candidateCharacters) == null ? void 0 : _b.length) ? (openBlock(), createElementBlock("span", _hoisted_4$s, [
-              createBaseVNode("span", _hoisted_5$o, toDisplayString(__props.summary.candidateCharacters.length), 1),
-              _cache[2] || (_cache[2] = createTextVNode(" 候选角色 ", -1))
-            ])) : createCommentVNode("", true),
-            _cache[3] || (_cache[3] = createBaseVNode("span", { class: "meta-item ready-tag" }, "理解完成", -1))
-          ])
-        ])) : createCommentVNode("", true),
-        _cache[6] || (_cache[6] = createBaseVNode("h3", { class: "guide-question" }, "你想以谁的身份走进这个故事？", -1)),
-        createBaseVNode("div", _hoisted_6$k, [
-          createBaseVNode("button", {
-            class: normalizeClass(["branch-card", { selected: selectedBranch.value === "canon" }]),
-            type: "button",
-            disabled: !!selectedBranch.value && selectedBranch.value !== "canon",
-            onClick: _cache[0] || (_cache[0] = ($event) => select("canon"))
-          }, [..._cache[4] || (_cache[4] = [
-            createStaticVNode('<span class="branch-mark" aria-hidden="true" data-v-8c87ece1>原</span><span class="branch-body" data-v-8c87ece1><span class="branch-title" data-v-8c87ece1>原著角色</span><span class="branch-copy" data-v-8c87ece1>扮演故事里已有的人</span></span><span class="bracket tl" aria-hidden="true" data-v-8c87ece1></span><span class="bracket tr" aria-hidden="true" data-v-8c87ece1></span><span class="bracket bl" aria-hidden="true" data-v-8c87ece1></span><span class="bracket br" aria-hidden="true" data-v-8c87ece1></span>', 6)
-          ])], 10, _hoisted_7$g),
-          createBaseVNode("button", {
-            class: normalizeClass(["branch-card", { selected: selectedBranch.value === "original" }]),
-            type: "button",
-            disabled: !!selectedBranch.value && selectedBranch.value !== "original",
-            onClick: _cache[1] || (_cache[1] = ($event) => select("original"))
-          }, [..._cache[5] || (_cache[5] = [
-            createStaticVNode('<span class="branch-mark" aria-hidden="true" data-v-8c87ece1>创</span><span class="branch-body" data-v-8c87ece1><span class="branch-title" data-v-8c87ece1>原创角色</span><span class="branch-copy" data-v-8c87ece1>创造一个全新的角色</span></span><span class="bracket tl" aria-hidden="true" data-v-8c87ece1></span><span class="bracket tr" aria-hidden="true" data-v-8c87ece1></span><span class="bracket bl" aria-hidden="true" data-v-8c87ece1></span><span class="bracket br" aria-hidden="true" data-v-8c87ece1></span>', 6)
-          ])], 10, _hoisted_8$a)
-        ]),
-        createVNode(Transition, { name: "hint-fade" }, {
-          default: withCtx(() => [
-            selectedBranch.value ? (openBlock(), createElementBlock("p", _hoisted_9$8, "角色设定即将开放")) : createCommentVNode("", true)
-          ]),
-          _: 1
-        })
-      ], 512);
-    };
-  }
-});
-const UnderstandingReady = /* @__PURE__ */ _export_sfc(_sfc_main$B, [["__scopeId", "data-v-8c87ece1"]]);
-const _hoisted_1$z = { class: "understanding-failed" };
-const _hoisted_2$y = { class: "failed-card" };
-const _hoisted_3$v = { class: "failed-detail-scroll" };
-const _hoisted_4$r = { class: "failed-detail" };
-const _sfc_main$A = /* @__PURE__ */ defineComponent({
-  __name: "UnderstandingFailed",
-  props: {
-    error: {}
-  },
-  emits: ["retry"],
-  setup(__props, { emit: __emit }) {
-    const emit2 = __emit;
-    return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$z, [
-        createBaseVNode("div", _hoisted_2$y, [
-          _cache[1] || (_cache[1] = createBaseVNode("div", {
-            class: "failed-mark",
-            "aria-hidden": "true"
-          }, "✕", -1)),
-          _cache[2] || (_cache[2] = createBaseVNode("h3", { class: "failed-title" }, "理解未完成", -1)),
-          createBaseVNode("div", _hoisted_3$v, [
-            createBaseVNode("p", _hoisted_4$r, toDisplayString(__props.error), 1)
-          ]),
-          createBaseVNode("button", {
-            class: "retry-btn",
-            type: "button",
-            onClick: _cache[0] || (_cache[0] = ($event) => emit2("retry"))
-          }, " 重试 ")
-        ])
-      ]);
-    };
-  }
-});
-const UnderstandingFailed = /* @__PURE__ */ _export_sfc(_sfc_main$A, [["__scopeId", "data-v-277cc7cc"]]);
-const _hoisted_1$y = { class: "canon-select" };
-const _hoisted_2$x = {
-  key: 0,
-  class: "empty-hint"
-};
-const _hoisted_3$u = ["onClick", "onDblclick"];
-const _hoisted_4$q = {
-  class: "row-mark",
-  "aria-hidden": "true"
-};
-const _hoisted_5$n = {
-  key: 0,
-  class: "mark-particle"
-};
-const _hoisted_6$j = {
-  key: 1,
-  class: "mark-particle p2"
-};
-const _hoisted_7$f = {
-  key: 2,
-  class: "mark-particle p3"
-};
-const _hoisted_8$9 = { class: "row-body" };
-const _hoisted_9$7 = { class: "row-name" };
-const _hoisted_10$6 = {
-  key: 0,
-  class: "row-gender"
-};
-const _hoisted_11$4 = {
-  key: 0,
-  class: "row-brief"
-};
-const _hoisted_12$4 = ["data-index"];
-const _hoisted_13$4 = ["onClick", "onKeydown"];
-const _hoisted_14$4 = {
-  key: 0,
-  class: "row-brief-full"
-};
-const _hoisted_15$4 = ["onClick", "onKeydown"];
-const _sfc_main$z = /* @__PURE__ */ defineComponent({
-  __name: "CanonCharacterSelect",
-  props: {
-    candidates: {}
-  },
-  emits: ["select", "back"],
-  setup(__props, { emit: __emit }) {
-    const props = __props;
-    const emit2 = __emit;
-    const listRef = /* @__PURE__ */ ref(null);
-    const selectedIndex = /* @__PURE__ */ ref(null);
-    const expandedBrief = /* @__PURE__ */ ref(null);
-    const truncationMap = /* @__PURE__ */ ref({});
-    function selectCandidate(index) {
-      selectedIndex.value = index;
-      emit2("select", props.candidates[index]);
-    }
-    function toggleBrief(index) {
-      expandedBrief.value = expandedBrief.value === index ? null : index;
-    }
-    function checkTruncation() {
-      if (!listRef.value) return;
-      const briefEls = listRef.value.querySelectorAll(".brief-text");
-      const map = {};
-      briefEls.forEach((el) => {
-        const htmlEl = el;
-        const index = Number(htmlEl.dataset.index);
-        map[index] = htmlEl.scrollWidth > htmlEl.clientWidth + 1;
-      });
-      truncationMap.value = map;
-    }
-    function confirmSelection() {
-      if (selectedIndex.value === null) return;
-    }
-    onMounted(async () => {
-      await nextTick();
-      if (!listRef.value) return;
-      const rows = listRef.value.querySelectorAll(".char-row");
-      gsapWithCSS.fromTo(
-        rows,
-        { opacity: 0, x: -16 },
-        {
-          opacity: 1,
-          x: 0,
-          duration: 0.35,
-          stagger: 0.04,
-          ease: "power2.out",
-          onComplete: () => checkTruncation()
-        }
-      );
-    });
-    onUnmounted(() => {
-      if (listRef.value) gsapWithCSS.killTweensOf(listRef.value.querySelectorAll(".char-row"));
-    });
-    return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$y, [
-        _cache[7] || (_cache[7] = createBaseVNode("h3", { class: "guide-question" }, "选择你要扮演的角色", -1)),
-        __props.candidates.length === 0 ? (openBlock(), createElementBlock("div", _hoisted_2$x, [
-          _cache[1] || (_cache[1] = createBaseVNode("p", { class: "empty-text" }, "未找到合适的原著角色候选", -1)),
-          _cache[2] || (_cache[2] = createBaseVNode("p", { class: "empty-sub" }, "请返回选择原创角色，创造你自己的身份", -1)),
-          createBaseVNode("button", {
-            class: "empty-back",
-            type: "button",
-            onClick: _cache[0] || (_cache[0] = ($event) => emit2("back"))
-          }, " 返回选择原创角色 ")
-        ])) : (openBlock(), createElementBlock("div", {
-          key: 1,
-          ref_key: "listRef",
-          ref: listRef,
-          class: "char-list"
-        }, [
-          (openBlock(true), createElementBlock(Fragment, null, renderList(__props.candidates, (candidate, i) => {
-            return openBlock(), createElementBlock("button", {
-              key: candidate.id || candidate.name,
-              class: normalizeClass(["char-row", { selected: selectedIndex.value === i }]),
-              type: "button",
-              onClick: ($event) => selectCandidate(i),
-              onDblclick: ($event) => {
-                selectCandidate(i);
-                confirmSelection();
-              }
-            }, [
-              createBaseVNode("span", _hoisted_4$q, [
-                createTextVNode(toDisplayString(candidate.name.charAt(0)) + " ", 1),
-                selectedIndex.value === i ? (openBlock(), createElementBlock("span", _hoisted_5$n)) : createCommentVNode("", true),
-                selectedIndex.value === i ? (openBlock(), createElementBlock("span", _hoisted_6$j)) : createCommentVNode("", true),
-                selectedIndex.value === i ? (openBlock(), createElementBlock("span", _hoisted_7$f)) : createCommentVNode("", true)
-              ]),
-              createBaseVNode("span", _hoisted_8$9, [
-                createBaseVNode("span", _hoisted_9$7, [
-                  createTextVNode(toDisplayString(candidate.name) + " ", 1),
-                  candidate.gender ? (openBlock(), createElementBlock("span", _hoisted_10$6, toDisplayString(candidate.gender), 1)) : createCommentVNode("", true)
-                ]),
-                expandedBrief.value !== i ? (openBlock(), createElementBlock("span", _hoisted_11$4, [
-                  createBaseVNode("span", {
-                    class: "brief-text",
-                    "data-index": i
-                  }, toDisplayString(candidate.brief), 9, _hoisted_12$4),
-                  truncationMap.value[i] ? (openBlock(), createElementBlock("span", {
-                    key: 0,
-                    class: "brief-expand",
-                    role: "button",
-                    tabindex: "0",
-                    onClick: withModifiers(($event) => toggleBrief(i), ["stop"]),
-                    onKeydown: withKeys(withModifiers(($event) => toggleBrief(i), ["stop", "prevent"]), ["enter"])
-                  }, "展开", 40, _hoisted_13$4)) : createCommentVNode("", true)
-                ])) : createCommentVNode("", true),
-                createVNode(Transition, { name: "brief-detail-fade" }, {
-                  default: withCtx(() => [
-                    expandedBrief.value === i ? (openBlock(), createElementBlock("span", _hoisted_14$4, [
-                      createTextVNode(toDisplayString(candidate.brief) + " ", 1),
-                      createBaseVNode("span", {
-                        class: "brief-expand",
-                        role: "button",
-                        tabindex: "0",
-                        onClick: withModifiers(($event) => toggleBrief(i), ["stop"]),
-                        onKeydown: withKeys(withModifiers(($event) => toggleBrief(i), ["stop", "prevent"]), ["enter"])
-                      }, "收起", 40, _hoisted_15$4)
-                    ])) : createCommentVNode("", true)
-                  ]),
-                  _: 2
-                }, 1024)
-              ]),
-              _cache[3] || (_cache[3] = createBaseVNode("span", {
-                class: "bracket tl",
-                "aria-hidden": "true"
-              }, null, -1)),
-              _cache[4] || (_cache[4] = createBaseVNode("span", {
-                class: "bracket tr",
-                "aria-hidden": "true"
-              }, null, -1)),
-              _cache[5] || (_cache[5] = createBaseVNode("span", {
-                class: "bracket bl",
-                "aria-hidden": "true"
-              }, null, -1)),
-              _cache[6] || (_cache[6] = createBaseVNode("span", {
-                class: "bracket br",
-                "aria-hidden": "true"
-              }, null, -1))
-            ], 42, _hoisted_3$u);
-          }), 128))
-        ], 512))
-      ]);
-    };
-  }
-});
-const CanonCharacterSelect = /* @__PURE__ */ _export_sfc(_sfc_main$z, [["__scopeId", "data-v-d41a0acb"]]);
-const _hoisted_1$x = { class: "original-form" };
-const _hoisted_2$w = { class: "form-field" };
-const _hoisted_3$t = { class: "form-field" };
-const _hoisted_4$p = { class: "form-field" };
-const _hoisted_5$m = { class: "form-field" };
-const _hoisted_6$i = { class: "optional-fields" };
-const _hoisted_7$e = { class: "form-field optional" };
-const _hoisted_8$8 = { class: "form-field optional" };
-const _hoisted_9$6 = { class: "form-field optional" };
-const _hoisted_10$5 = ["disabled"];
-const _sfc_main$y = /* @__PURE__ */ defineComponent({
-  __name: "OriginalCharacterForm",
-  emits: ["submit", "back"],
-  setup(__props, { emit: __emit }) {
-    const emit2 = __emit;
-    const formRef = /* @__PURE__ */ ref(null);
-    const name = /* @__PURE__ */ ref("");
-    const brief = /* @__PURE__ */ ref("");
-    const gender = /* @__PURE__ */ ref("");
-    const appearance = /* @__PURE__ */ ref("");
-    const personality = /* @__PURE__ */ ref("");
-    const background = /* @__PURE__ */ ref("");
-    const showOptional = /* @__PURE__ */ ref(false);
-    const canSubmit = computed(() => name.value.trim() !== "" && brief.value.trim() !== "");
-    function toggleOptional() {
-      showOptional.value = !showOptional.value;
-    }
-    function onSubmit() {
-      if (!canSubmit.value) return;
-      const form = {
-        name: name.value.trim(),
-        brief: brief.value.trim()
-      };
-      if (gender.value.trim()) form.gender = gender.value.trim();
-      if (appearance.value.trim()) form.appearance = appearance.value.trim();
-      if (personality.value.trim()) form.personality = personality.value.trim();
-      if (background.value.trim()) form.background = background.value.trim();
-      emit2("submit", form);
-    }
-    onMounted(async () => {
-      await nextTick();
-      if (!formRef.value) return;
-      const fields = formRef.value.querySelectorAll(".form-field");
-      gsapWithCSS.fromTo(
-        fields,
-        { opacity: 0, y: 12 },
-        { opacity: 1, y: 0, duration: 0.35, stagger: 0.06, ease: "power2.out" }
-      );
-    });
-    onUnmounted(() => {
-      if (formRef.value) gsapWithCSS.killTweensOf(formRef.value.querySelectorAll(".form-field"));
-    });
-    return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$x, [
-        _cache[13] || (_cache[13] = createBaseVNode("h3", { class: "guide-question" }, "创造你的角色", -1)),
-        createBaseVNode("form", {
-          ref_key: "formRef",
-          ref: formRef,
-          class: "form-fields",
-          onSubmit: withModifiers(onSubmit, ["prevent"])
-        }, [
-          createBaseVNode("label", _hoisted_2$w, [
-            _cache[6] || (_cache[6] = createBaseVNode("span", { class: "field-label" }, [
-              createTextVNode("角色名 "),
-              createBaseVNode("span", { class: "required" }, "*")
-            ], -1)),
-            withDirectives(createBaseVNode("input", {
-              "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => name.value = $event),
-              type: "text",
-              placeholder: "给你的角色起个名字",
-              class: "field-input",
-              maxlength: "120"
-            }, null, 512), [
-              [vModelText, name.value]
-            ])
-          ]),
-          createBaseVNode("label", _hoisted_3$t, [
-            _cache[7] || (_cache[7] = createBaseVNode("span", { class: "field-label" }, [
-              createTextVNode("一句话简介 "),
-              createBaseVNode("span", { class: "required" }, "*")
-            ], -1)),
-            withDirectives(createBaseVNode("input", {
-              "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => brief.value = $event),
-              type: "text",
-              placeholder: "用一句话描述这个角色是谁",
-              class: "field-input",
-              maxlength: "500"
-            }, null, 512), [
-              [vModelText, brief.value]
-            ])
-          ]),
-          createBaseVNode("label", _hoisted_4$p, [
-            _cache[8] || (_cache[8] = createBaseVNode("span", { class: "field-label" }, "性别", -1)),
-            withDirectives(createBaseVNode("input", {
-              "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => gender.value = $event),
-              type: "text",
-              placeholder: "男 / 女 / 未知（留空则不设）",
-              class: "field-input",
-              maxlength: "20"
-            }, null, 512), [
-              [vModelText, gender.value]
-            ])
-          ]),
-          createBaseVNode("div", _hoisted_5$m, [
-            createBaseVNode("button", {
-              class: "optional-toggle",
-              type: "button",
-              onClick: toggleOptional
-            }, [
-              createBaseVNode("span", {
-                class: normalizeClass(["toggle-arrow", { expanded: showOptional.value }])
-              }, "▸", 2),
-              _cache[9] || (_cache[9] = createTextVNode(" 展开更多（可选） ", -1))
-            ]),
-            createBaseVNode("div", {
-              class: normalizeClass(["optional-collapse", { expanded: showOptional.value }])
-            }, [
-              createBaseVNode("div", _hoisted_6$i, [
-                createBaseVNode("label", _hoisted_7$e, [
-                  _cache[10] || (_cache[10] = createBaseVNode("span", { class: "field-label" }, "外貌描述", -1)),
-                  withDirectives(createBaseVNode("textarea", {
-                    "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => appearance.value = $event),
-                    rows: "3",
-                    placeholder: "角色的外貌特征（可选）",
-                    class: "field-textarea"
-                  }, null, 512), [
-                    [vModelText, appearance.value]
-                  ])
-                ]),
-                createBaseVNode("label", _hoisted_8$8, [
-                  _cache[11] || (_cache[11] = createBaseVNode("span", { class: "field-label" }, "性格特征", -1)),
-                  withDirectives(createBaseVNode("textarea", {
-                    "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => personality.value = $event),
-                    rows: "3",
-                    placeholder: "角色的性格倾向（可选）",
-                    class: "field-textarea"
-                  }, null, 512), [
-                    [vModelText, personality.value]
-                  ])
-                ]),
-                createBaseVNode("label", _hoisted_9$6, [
-                  _cache[12] || (_cache[12] = createBaseVNode("span", { class: "field-label" }, "背景故事", -1)),
-                  withDirectives(createBaseVNode("textarea", {
-                    "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => background.value = $event),
-                    rows: "4",
-                    placeholder: "角色的过往经历（可选）",
-                    class: "field-textarea"
-                  }, null, 512), [
-                    [vModelText, background.value]
-                  ])
-                ])
-              ])
-            ], 2)
-          ]),
-          createBaseVNode("button", {
-            class: "submit-btn",
-            type: "submit",
-            disabled: !canSubmit.value
-          }, " 创建角色 ", 8, _hoisted_10$5)
-        ], 544)
-      ]);
-    };
-  }
-});
-const OriginalCharacterForm = /* @__PURE__ */ _export_sfc(_sfc_main$y, [["__scopeId", "data-v-12210f24"]]);
-const _hoisted_1$w = { class: "character-confirmed" };
-const _hoisted_2$v = { class: "char-card" };
-const _hoisted_3$s = {
-  class: "card-mark",
-  "aria-hidden": "true"
-};
-const _hoisted_4$o = { class: "card-body" };
-const _hoisted_5$l = { class: "card-name" };
-const _hoisted_6$h = {
-  key: 0,
-  class: "card-gender"
-};
-const _hoisted_7$d = { class: "card-brief" };
-const _sfc_main$x = /* @__PURE__ */ defineComponent({
-  __name: "CharacterConfirmed",
-  props: {
-    character: {}
-  },
-  emits: ["back", "next"],
-  setup(__props, { emit: __emit }) {
-    const cardRef = /* @__PURE__ */ ref(null);
-    const pulseKey = /* @__PURE__ */ ref(0);
-    onMounted(async () => {
-      await nextTick();
-      pulseKey.value++;
-      if (cardRef.value) {
-        gsapWithCSS.fromTo(
-          cardRef.value,
-          { opacity: 0, scale: 0.92 },
-          { opacity: 1, scale: 1, duration: 0.5, ease: "power2.out", delay: 0.1 }
-        );
-      }
-    });
-    onUnmounted(() => {
-      if (cardRef.value) gsapWithCSS.killTweensOf(cardRef.value);
-    });
-    return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$w, [
-        createBaseVNode("div", {
-          ref_key: "cardRef",
-          ref: cardRef,
-          class: "card-wrapper"
-        }, [
-          (openBlock(), createElementBlock("div", {
-            key: pulseKey.value,
-            class: "pulse-ring",
-            "aria-hidden": "true"
-          })),
-          createBaseVNode("div", _hoisted_2$v, [
-            createBaseVNode("span", _hoisted_3$s, [
-              createTextVNode(toDisplayString(__props.character.name.charAt(0)) + " ", 1),
-              _cache[0] || (_cache[0] = createBaseVNode("span", { class: "mark-particle" }, null, -1)),
-              _cache[1] || (_cache[1] = createBaseVNode("span", { class: "mark-particle p2" }, null, -1)),
-              _cache[2] || (_cache[2] = createBaseVNode("span", { class: "mark-particle p3" }, null, -1))
-            ]),
-            createBaseVNode("span", _hoisted_4$o, [
-              createBaseVNode("span", _hoisted_5$l, [
-                createTextVNode(toDisplayString(__props.character.name) + " ", 1),
-                __props.character.gender ? (openBlock(), createElementBlock("span", _hoisted_6$h, toDisplayString(__props.character.gender), 1)) : createCommentVNode("", true)
-              ]),
-              createBaseVNode("span", _hoisted_7$d, toDisplayString(__props.character.brief), 1)
-            ]),
-            _cache[3] || (_cache[3] = createBaseVNode("span", {
-              class: "bracket tl",
-              "aria-hidden": "true"
-            }, null, -1)),
-            _cache[4] || (_cache[4] = createBaseVNode("span", {
-              class: "bracket tr",
-              "aria-hidden": "true"
-            }, null, -1)),
-            _cache[5] || (_cache[5] = createBaseVNode("span", {
-              class: "bracket bl",
-              "aria-hidden": "true"
-            }, null, -1)),
-            _cache[6] || (_cache[6] = createBaseVNode("span", {
-              class: "bracket br",
-              "aria-hidden": "true"
-            }, null, -1))
-          ])
-        ], 512),
-        createVNode(Transition, { name: "hint-fade" }, {
-          default: withCtx(() => [..._cache[7] || (_cache[7] = [
-            createBaseVNode("p", { class: "confirmed-hint" }, "已选定角色", -1)
-          ])]),
-          _: 1
-        })
-      ]);
-    };
-  }
-});
-const CharacterConfirmed = /* @__PURE__ */ _export_sfc(_sfc_main$x, [["__scopeId", "data-v-d5485ce0"]]);
-const _hoisted_1$v = { class: "setup-composer-wrap" };
-const _hoisted_2$u = ["disabled", "placeholder"];
-const _hoisted_3$r = ["disabled"];
-const _sfc_main$w = /* @__PURE__ */ defineComponent({
-  __name: "SetupComposer",
-  props: {
-    disabled: { type: Boolean },
-    placeholder: {}
-  },
-  emits: ["send"],
-  setup(__props, { emit: __emit }) {
-    const props = __props;
-    const emit2 = __emit;
-    const text = /* @__PURE__ */ ref("");
-    const inputEl = /* @__PURE__ */ ref(null);
-    const focused = /* @__PURE__ */ ref(false);
-    const hasContent = /* @__PURE__ */ ref(false);
-    function autoGrow() {
-      const el = inputEl.value;
-      if (!el) return;
-      el.style.height = "auto";
-      el.style.height = el.scrollHeight <= 120 ? el.scrollHeight + "px" : "120px";
-      hasContent.value = text.value.trim().length > 0;
-    }
-    async function onSend() {
-      const content = text.value.trim();
-      if (!content || props.disabled) return;
-      emit2("send", content);
-      text.value = "";
-      hasContent.value = false;
-      await nextTick();
-      autoGrow();
-    }
-    function onKeydown(e) {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        onSend();
-      }
-    }
-    return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$v, [
-        createBaseVNode("div", {
-          class: normalizeClass(["setup-composer", { focused: focused.value, "has-content": hasContent.value }])
-        }, [
-          withDirectives(createBaseVNode("textarea", {
-            ref_key: "inputEl",
-            ref: inputEl,
-            "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => text.value = $event),
-            class: "composer-input",
-            disabled: __props.disabled,
-            placeholder: __props.placeholder ?? "说出你的想法…",
-            rows: "1",
-            onKeydown,
-            onInput: autoGrow,
-            onFocus: _cache[1] || (_cache[1] = ($event) => focused.value = true),
-            onBlur: _cache[2] || (_cache[2] = ($event) => focused.value = false)
-          }, null, 40, _hoisted_2$u), [
-            [vModelText, text.value]
-          ]),
-          createBaseVNode("button", {
-            class: "send-btn",
-            disabled: __props.disabled || !hasContent.value,
-            onClick: onSend
-          }, [..._cache[3] || (_cache[3] = [
-            createBaseVNode("svg", {
-              class: "btn-icon",
-              viewBox: "0 0 24 24",
-              "aria-hidden": "true"
-            }, [
-              createBaseVNode("path", {
-                d: "M5 12L19 5L13 19L11 13L5 12Z",
-                fill: "currentColor",
-                stroke: "currentColor",
-                "stroke-width": "1.2",
-                "stroke-linejoin": "round"
-              })
-            ], -1)
-          ])], 8, _hoisted_3$r),
-          _cache[4] || (_cache[4] = createBaseVNode("span", {
-            class: "ink-line",
-            "aria-hidden": "true"
-          }, null, -1))
-        ], 2)
-      ]);
-    };
-  }
-});
-const SetupComposer = /* @__PURE__ */ _export_sfc(_sfc_main$w, [["__scopeId", "data-v-9780fceb"]]);
-const _hoisted_1$u = { class: "play-setup-dialog" };
-const _hoisted_2$t = { class: "dialog-inner" };
-const _hoisted_3$q = {
-  key: 0,
-  class: "streaming-block"
-};
-const _hoisted_4$n = { class: "streaming-text" };
-const _hoisted_5$k = {
-  key: 1,
-  class: "error-card"
-};
-const _hoisted_6$g = { class: "failed-detail-scroll" };
-const _sfc_main$v = /* @__PURE__ */ defineComponent({
-  __name: "PlaySetupDialog",
-  setup(__props) {
-    const {
-      playSetupStatus: status,
-      playSetupMessages: messages,
-      playSetupError: error,
-      playSetupStreamingText: streamingText2,
-      sendPlaySetupMessage: sendPlaySetupMessage2,
-      retryPlaySetupDialog: retryPlaySetupDialog2
-    } = useSetupState();
-    const scrollRef = /* @__PURE__ */ ref(null);
-    watch(
-      () => messages.value.length,
-      async () => {
-        await nextTick();
-        const el = scrollRef.value;
-        if (el) el.scrollTop = el.scrollHeight;
-      },
-      { flush: "post" }
-    );
-    watch(
-      () => status.value,
-      async () => {
-        await nextTick();
-        const el = scrollRef.value;
-        if (el) el.scrollTop = el.scrollHeight;
-      },
-      { flush: "post" }
-    );
-    watch(
-      () => streamingText2.value.length,
-      async () => {
-        await nextTick();
-        const el = scrollRef.value;
-        if (el) el.scrollTop = el.scrollHeight;
-      },
-      { flush: "post" }
-    );
-    function onSelectOption(option) {
-      void sendPlaySetupMessage2(option);
-    }
-    function onSend(text) {
-      void sendPlaySetupMessage2(text);
-    }
-    onUnmounted(() => {
-    });
-    return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$u, [
-        createBaseVNode("div", {
-          ref_key: "scrollRef",
-          ref: scrollRef,
-          class: "dialog-scroll"
-        }, [
-          createBaseVNode("div", _hoisted_2$t, [
-            (openBlock(true), createElementBlock(Fragment, null, renderList(unref(messages), (msg) => {
-              return openBlock(), createElementBlock(Fragment, {
-                key: msg.id
-              }, [
-                msg.role === "agent" ? (openBlock(), createBlock(NarrativeMessage, {
-                  key: 0,
-                  content: msg.content
-                }, null, 8, ["content"])) : (openBlock(), createBlock(UserMessage, {
-                  key: 1,
-                  content: msg.content
-                }, null, 8, ["content"])),
-                msg.options && msg.options.length > 0 && unref(status) !== "complete" ? (openBlock(), createBlock(StoryOptions, {
-                  key: 2,
-                  options: [...msg.options],
-                  disabled: unref(status) === "running",
-                  onSelect: onSelectOption
-                }, null, 8, ["options", "disabled"])) : createCommentVNode("", true)
-              ], 64);
-            }), 128)),
-            unref(status) === "running" ? (openBlock(), createElementBlock(Fragment, { key: 0 }, [
-              unref(streamingText2) ? (openBlock(), createElementBlock("div", _hoisted_3$q, [
-                createBaseVNode("p", _hoisted_4$n, toDisplayString(unref(streamingText2)), 1),
-                _cache[1] || (_cache[1] = createBaseVNode("span", {
-                  class: "streaming-caret",
-                  "aria-hidden": "true"
-                }, null, -1))
-              ])) : (openBlock(), createBlock(EmberForge, {
-                key: 1,
-                variant: "standalone"
-              }))
-            ], 64)) : createCommentVNode("", true),
-            unref(status) === "failed" ? (openBlock(), createElementBlock("div", _hoisted_5$k, [
-              _cache[2] || (_cache[2] = createBaseVNode("div", { class: "failed-mark" }, "✕", -1)),
-              createBaseVNode("div", _hoisted_6$g, toDisplayString(unref(error)), 1),
-              createBaseVNode("button", {
-                class: "retry-btn",
-                onClick: _cache[0] || (_cache[0] = //@ts-ignore
-                (...args) => unref(retryPlaySetupDialog2) && unref(retryPlaySetupDialog2)(...args))
-              }, "重试")
-            ])) : createCommentVNode("", true)
-          ])
-        ], 512),
-        createVNode(SetupComposer, {
-          disabled: unref(status) === "running" || unref(status) === "complete",
-          placeholder: "说出你的想法…",
-          onSend
-        }, null, 8, ["disabled"])
-      ]);
-    };
-  }
-});
-const PlaySetupDialog = /* @__PURE__ */ _export_sfc(_sfc_main$v, [["__scopeId", "data-v-a6464a01"]]);
-const _hoisted_1$t = { class: "opening-confirm" };
-const _hoisted_2$s = {
+const _hoisted_1$s = { class: "opening-confirm" };
+const _hoisted_2$r = {
   class: "drift-layer",
   "aria-hidden": "true"
 };
-const _hoisted_3$p = ["viewBox"];
-const _hoisted_4$m = ["innerHTML"];
+const _hoisted_3$o = ["viewBox"];
+const _hoisted_4$l = ["innerHTML"];
 const _hoisted_5$j = { class: "confirm-card" };
 const _hoisted_6$f = {
   class: "bg-glyph",
@@ -23882,14 +24099,14 @@ const _hoisted_6$f = {
 const _hoisted_7$c = { class: "card-body" };
 const _hoisted_8$7 = { class: "card-title" };
 const _hoisted_9$5 = { class: "card-summary" };
-const _sfc_main$u = /* @__PURE__ */ defineComponent({
+const _sfc_main$t = /* @__PURE__ */ defineComponent({
   __name: "OpeningConfirm",
   setup(__props) {
-    const { playSetupSummary: playSetupSummary2, understandingSummary: understandingSummary2, manifest: manifest2 } = useSetupState();
+    const { playSetupSummary: playSetupSummary2, manifest: manifest2 } = useSetupState();
     const title = computed(
       () => {
-        var _a2, _b;
-        return ((_a2 = understandingSummary2.value) == null ? void 0 : _a2.title) ?? ((_b = manifest2.value) == null ? void 0 : _b.title) ?? "设定已成";
+        var _a2;
+        return ((_a2 = manifest2.value) == null ? void 0 : _a2.title) ?? "设定已成";
       }
     );
     const summary = computed(() => playSetupSummary2.value ?? "");
@@ -23964,8 +24181,8 @@ const _sfc_main$u = /* @__PURE__ */ defineComponent({
       if (spawnTimer) clearInterval(spawnTimer);
     });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$t, [
-        createBaseVNode("div", _hoisted_2$s, [
+      return openBlock(), createElementBlock("div", _hoisted_1$s, [
+        createBaseVNode("div", _hoisted_2$r, [
           (openBlock(true), createElementBlock(Fragment, null, renderList(driftCircles.value, (c) => {
             return openBlock(), createElementBlock("div", {
               key: c.id,
@@ -23985,8 +24202,8 @@ const _sfc_main$u = /* @__PURE__ */ defineComponent({
               }, [
                 createBaseVNode("g", {
                   innerHTML: c.layers
-                }, null, 8, _hoisted_4$m)
-              ], 8, _hoisted_3$p))
+                }, null, 8, _hoisted_4$l)
+              ], 8, _hoisted_3$o))
             ], 4);
           }), 128))
         ]),
@@ -23996,7 +24213,7 @@ const _sfc_main$u = /* @__PURE__ */ defineComponent({
             "aria-hidden": "true"
           }, null, -1)),
           createBaseVNode("span", _hoisted_6$f, toDisplayString(title.value), 1),
-          _cache[5] || (_cache[5] = createStaticVNode('<span class="bracket tl" aria-hidden="true" data-v-4c486348></span><span class="bracket tr" aria-hidden="true" data-v-4c486348></span><span class="bracket bl" aria-hidden="true" data-v-4c486348></span><span class="bracket br" aria-hidden="true" data-v-4c486348></span><div class="pulse-ring" aria-hidden="true" data-v-4c486348></div>', 5)),
+          _cache[5] || (_cache[5] = createStaticVNode('<span class="bracket tl" aria-hidden="true" data-v-b21612bb></span><span class="bracket tr" aria-hidden="true" data-v-b21612bb></span><span class="bracket bl" aria-hidden="true" data-v-b21612bb></span><span class="bracket br" aria-hidden="true" data-v-b21612bb></span><div class="pulse-ring" aria-hidden="true" data-v-b21612bb></div>', 5)),
           createBaseVNode("div", _hoisted_7$c, [
             _cache[0] || (_cache[0] = createBaseVNode("span", { class: "card-label" }, "術式已定", -1)),
             createBaseVNode("h2", _hoisted_8$7, toDisplayString(title.value), 1),
@@ -24018,41 +24235,7 @@ const _sfc_main$u = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const OpeningConfirm = /* @__PURE__ */ _export_sfc(_sfc_main$u, [["__scopeId", "data-v-4c486348"]]);
-const _hoisted_1$s = { class: "step-stub" };
-const _hoisted_2$r = { class: "stub-card" };
-const _hoisted_3$o = { class: "stub-title" };
-const _hoisted_4$l = { class: "stub-desc" };
-const _sfc_main$t = /* @__PURE__ */ defineComponent({
-  __name: "StepStub",
-  props: {
-    step: {},
-    title: {}
-  },
-  emits: ["back"],
-  setup(__props, { emit: __emit }) {
-    const emit2 = __emit;
-    return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$s, [
-        createBaseVNode("div", _hoisted_2$r, [
-          _cache[1] || (_cache[1] = createBaseVNode("div", {
-            class: "stub-glyph",
-            "aria-hidden": "true"
-          }, "⚿", -1)),
-          createBaseVNode("h3", _hoisted_3$o, toDisplayString(__props.title), 1),
-          createBaseVNode("p", _hoisted_4$l, "第 " + toDisplayString(__props.step) + " 步 · 即将开放", 1),
-          _cache[2] || (_cache[2] = createBaseVNode("p", { class: "stub-hint" }, "此步骤正在开发中，暂未接入。", -1)),
-          createBaseVNode("button", {
-            class: "stub-back",
-            type: "button",
-            onClick: _cache[0] || (_cache[0] = ($event) => emit2("back"))
-          }, " 返回 ")
-        ])
-      ]);
-    };
-  }
-});
-const StepStub = /* @__PURE__ */ _export_sfc(_sfc_main$t, [["__scopeId", "data-v-de479f8d"]]);
+const OpeningConfirm = /* @__PURE__ */ _export_sfc(_sfc_main$t, [["__scopeId", "data-v-b21612bb"]]);
 const _hoisted_1$r = { class: "setup-shell" };
 const _hoisted_2$q = { class: "setup-body" };
 const _hoisted_3$n = { class: "setup-inner" };
@@ -24074,11 +24257,11 @@ const _hoisted_8$6 = {
   class: "stage-content"
 };
 const _hoisted_9$4 = {
-  key: "understanding",
+  key: "branch-choice",
   class: "stage-content"
 };
 const _hoisted_10$4 = {
-  key: "play-setup",
+  key: "opening-interview",
   class: "stage-content stage-content--dialog"
 };
 const _hoisted_11$3 = {
@@ -24086,24 +24269,26 @@ const _hoisted_11$3 = {
   class: "stage-content"
 };
 const _hoisted_12$3 = {
-  key: "stub",
-  class: "stage-content"
+  key: "legacy-state",
+  class: "legacy-state"
 };
 const _hoisted_13$3 = {
+  key: "fatal-state",
+  class: "legacy-state"
+};
+const _hoisted_14$3 = {
   key: 0,
   class: "setup-error"
 };
-const _hoisted_14$3 = { class: "setup-action-wrap" };
-const _hoisted_15$3 = { class: "setup-action-bar" };
-const _hoisted_16$3 = { class: "action-left" };
+const _hoisted_15$3 = { class: "setup-action-wrap" };
+const _hoisted_16$3 = { class: "setup-action-bar" };
 const _hoisted_17$3 = ["disabled"];
 const _hoisted_18$3 = {
   key: 0,
   class: "setup-status",
   "aria-live": "polite"
 };
-const _hoisted_19$3 = { class: "action-right" };
-const _hoisted_20$3 = ["disabled"];
+const _hoisted_19$3 = ["disabled"];
 const _sfc_main$s = /* @__PURE__ */ defineComponent({
   __name: "SetupWizard",
   emits: ["enterPlay"],
@@ -24112,224 +24297,73 @@ const _sfc_main$s = /* @__PURE__ */ defineComponent({
     const {
       step: step2,
       subView: subView2,
-      understandingStatus: understandingStatus2,
-      understandingSummary: understandingSummary2,
       manifest: manifest2,
       chapterIndex: chapterIndex2,
       busy: busy2,
       statusText: statusText2,
       errorText: errorText2,
-      characterBranch: characterBranch2,
-      selectedCharacter: selectedCharacter2,
-      characterSetupStatus: characterSetupStatus2,
       playSetupStatus: playSetupStatus2,
+      playSetupError: playSetupError2,
       initialize: initialize2,
       setView: setView2,
-      goToStep: goToStep2,
       startImport: startImport2,
-      startOpeningUnderstanding: startOpeningUnderstanding2,
-      setCharacterBranch: setCharacterBranch2,
-      backToBranchChoice: backToBranchChoice2,
-      confirmCanonCharacter: confirmCanonCharacter2,
-      confirmOriginalCharacter: confirmOriginalCharacter2,
-      resetCharacterSetup: resetCharacterSetup2
+      confirmReimport: confirmReimport2,
+      showBranchChoice: showBranchChoice2,
+      startOpeningInterview: startOpeningInterview2
     } = useSetupState();
     const pasteRef = /* @__PURE__ */ ref(null);
     const fileRef = /* @__PURE__ */ ref(null);
-    const canonSelectedCandidate = /* @__PURE__ */ ref(null);
-    function onResetCharacterSetup() {
-      canonSelectedCandidate.value = null;
-      resetCharacterSetup2();
-    }
     const currentStepIndex = computed(() => step2.value - 1);
     const completedUntil = computed(() => {
-      if (subView2.value === "opening-confirm") return 4;
-      if (playSetupStatus2.value === "complete") return 3;
-      if (characterSetupStatus2.value === "confirmed") return 2;
-      if (understandingStatus2.value === "ready") return 1;
+      if (subView2.value === "opening-confirm" || playSetupStatus2.value === "complete") return 2;
+      if (subView2.value === "opening-interview" || playSetupStatus2.value === "ready") return 1;
       if (manifest2.value) return 0;
       return -1;
     });
     const actions = computed(() => {
       if (subView2.value === "choose") {
-        return {
-          secondaryLabel: "上一步",
-          secondaryDisabled: true,
-          onSecondary: null,
-          primaryLabel: "选择导入方式",
-          primaryDisabled: true,
-          onPrimary: null
-        };
+        return { secondaryLabel: "上一步", secondaryDisabled: true, onSecondary: null, primaryLabel: "选择导入方式", primaryDisabled: true, onPrimary: null };
       }
       if (subView2.value === "paste") {
-        return {
-          secondaryLabel: "返回",
-          secondaryDisabled: busy2.value,
-          onSecondary: () => setView2("choose"),
-          primaryLabel: busy2.value ? "导入中…" : "导入",
-          primaryDisabled: busy2.value,
-          onPrimary: onImportPaste
-        };
+        return { secondaryLabel: "返回", secondaryDisabled: busy2.value, onSecondary: () => setView2("choose"), primaryLabel: busy2.value ? "导入中…" : "导入", primaryDisabled: busy2.value, onPrimary: onImportPaste };
       }
       if (subView2.value === "file") {
-        return {
-          secondaryLabel: "返回",
-          secondaryDisabled: busy2.value,
-          onSecondary: () => setView2("choose"),
-          primaryLabel: busy2.value ? "导入中…" : "导入",
-          primaryDisabled: busy2.value,
-          onPrimary: onImportFile
-        };
+        return { secondaryLabel: "返回", secondaryDisabled: busy2.value, onSecondary: () => setView2("choose"), primaryLabel: busy2.value ? "导入中…" : "导入", primaryDisabled: busy2.value, onPrimary: onImportFile };
       }
       if (subView2.value === "review") {
-        return {
-          secondaryLabel: "返回",
-          secondaryDisabled: busy2.value,
-          onSecondary: () => setView2("choose"),
-          primaryLabel: understandingStatus2.value === "ready" ? "查看理解" : "开始理解",
-          primaryDisabled: busy2.value || !manifest2.value,
-          onPrimary: understandingStatus2.value === "ready" ? () => setView2("understanding") : startOpeningUnderstanding2
-        };
+        return { secondaryLabel: "重新导入", secondaryDisabled: busy2.value, onSecondary: confirmReimport2, primaryLabel: "开始创建", primaryDisabled: busy2.value || !manifest2.value, onPrimary: showBranchChoice2 };
       }
-      if (understandingStatus2.value === "running") {
-        return {
-          secondaryLabel: "返回目录",
-          secondaryDisabled: true,
-          // running 时不允许返回
-          onSecondary: null,
-          primaryLabel: "理解中…",
-          primaryDisabled: true,
-          onPrimary: null
-        };
+      if (subView2.value === "branch-choice") {
+        return { secondaryLabel: "返回目录", secondaryDisabled: false, onSecondary: () => setView2("review"), primaryLabel: "选择上方角色类型", primaryDisabled: true, onPrimary: null };
       }
-      if (understandingStatus2.value === "failed") {
-        return {
-          secondaryLabel: "返回目录",
-          secondaryDisabled: busy2.value,
-          onSecondary: () => setView2("review"),
-          primaryLabel: "重试",
-          primaryDisabled: busy2.value,
-          onPrimary: startOpeningUnderstanding2
-        };
-      }
-      if (understandingStatus2.value === "ready" && subView2.value === "understanding") {
-        return {
-          secondaryLabel: "返回目录",
-          secondaryDisabled: busy2.value,
-          onSecondary: () => setView2("review"),
-          primaryLabel: "下一步",
-          primaryDisabled: false,
-          onPrimary: () => goToStep2(3)
-        };
-      }
-      if (subView2.value === "character-setup") {
-        if (characterSetupStatus2.value === "confirmed") {
-          return {
-            secondaryLabel: "返回修改",
-            secondaryDisabled: busy2.value,
-            onSecondary: onResetCharacterSetup,
-            primaryLabel: "下一步",
-            primaryDisabled: busy2.value,
-            onPrimary: () => goToStep2(4)
-          };
-        }
-        if (characterBranch2.value === "canon") {
-          return {
-            secondaryLabel: "返回分支",
-            secondaryDisabled: busy2.value,
-            onSecondary: backToBranchChoice2,
-            primaryLabel: busy2.value ? "确认中…" : "确认选择",
-            primaryDisabled: busy2.value || !canonSelectedCandidate.value,
-            onPrimary: onConfirmCanon
-          };
-        }
-        if (characterBranch2.value === "original") {
-          return {
-            secondaryLabel: "返回分支",
-            secondaryDisabled: busy2.value,
-            onSecondary: backToBranchChoice2,
-            primaryLabel: "填写角色信息",
-            primaryDisabled: true,
-            onPrimary: null
-          };
-        }
-      }
-      if (subView2.value === "play-setup") {
-        return {
-          secondaryLabel: "返回角色",
-          secondaryDisabled: playSetupStatus2.value === "running",
-          onSecondary: () => goToStep2(3),
-          primaryLabel: "下一步",
-          primaryDisabled: playSetupStatus2.value !== "complete",
-          onPrimary: () => goToStep2(5)
-        };
+      if (subView2.value === "opening-interview") {
+        return { secondaryLabel: "访谈进行中", secondaryDisabled: true, onSecondary: null, primaryLabel: playSetupStatus2.value === "complete" ? "下一步" : "完成后自动进入确认", primaryDisabled: true, onPrimary: null };
       }
       if (subView2.value === "opening-confirm") {
-        return {
-          secondaryLabel: "返回设定",
-          secondaryDisabled: false,
-          onSecondary: () => goToStep2(4),
-          primaryLabel: "进入故事",
-          primaryDisabled: false,
-          onPrimary: onEnterPlay
-        };
+        return { secondaryLabel: "开局已提交", secondaryDisabled: true, onSecondary: null, primaryLabel: "进入故事", primaryDisabled: false, onPrimary: () => emit2("enterPlay") };
       }
-      if (subView2.value === "stub") {
-        return {
-          secondaryLabel: "返回",
-          secondaryDisabled: false,
-          onSecondary: () => goToStep2(3),
-          primaryLabel: "下一步",
-          primaryDisabled: true,
-          onPrimary: null
-        };
+      if (subView2.value === "legacy-state") {
+        return { secondaryLabel: "旧进度不支持升级", secondaryDisabled: true, onSecondary: null, primaryLabel: "请使用新存档", primaryDisabled: true, onPrimary: null };
       }
-      return {
-        secondaryLabel: "返回目录",
-        secondaryDisabled: busy2.value,
-        onSecondary: () => setView2("review"),
-        primaryLabel: "下一步",
-        primaryDisabled: true,
-        onPrimary: null
-      };
+      return { secondaryLabel: "状态读取失败", secondaryDisabled: true, onSecondary: null, primaryLabel: "请重新进入或使用新存档", primaryDisabled: true, onPrimary: null };
     });
     async function onImportPaste() {
       if (!pasteRef.value || busy2.value) return;
       const input = pasteRef.value.getInput();
-      if (!input.text.trim()) {
-        return;
-      }
-      await startImport2("paste", input);
+      if (input.text.trim()) await startImport2("paste", input);
     }
     async function onImportFile() {
       if (!fileRef.value || busy2.value) return;
       const input = await fileRef.value.readFile();
-      if (!input || !input.text.trim()) {
-        return;
-      }
-      await startImport2("file", input);
-    }
-    function onEnterPlay() {
-      emit2("enterPlay");
+      if (input == null ? void 0 : input.text.trim()) await startImport2("file", input);
     }
     async function onAutoImport() {
       if (!fileRef.value || busy2.value) return;
       const input = await fileRef.value.readFile();
-      if (!input) return;
-      await startImport2("file", input);
-    }
-    function onCanonSelect(candidate) {
-      canonSelectedCandidate.value = candidate;
-    }
-    async function onConfirmCanon() {
-      if (!canonSelectedCandidate.value) return;
-      await confirmCanonCharacter2(canonSelectedCandidate.value);
-    }
-    async function onConfirmOriginal(formData) {
-      await confirmOriginalCharacter2(formData);
+      if (input) await startImport2("file", input);
     }
     onMounted(() => {
-      initialize2();
+      void initialize2();
     });
     return (_ctx, _cache) => {
       return openBlock(), createElementBlock("div", _hoisted_1$r, [
@@ -24344,114 +24378,88 @@ const _sfc_main$s = /* @__PURE__ */ defineComponent({
                 name: "stage-fade",
                 mode: "out-in"
               }, {
-                default: withCtx(() => {
-                  var _a2;
-                  return [
-                    unref(subView2) === "choose" ? (openBlock(), createElementBlock("div", _hoisted_5$i, [
-                      createVNode(MethodChoose, {
-                        onSelect: _cache[0] || (_cache[0] = (m) => unref(setView2)(m))
-                      })
-                    ])) : unref(subView2) === "paste" ? (openBlock(), createElementBlock("div", _hoisted_6$e, [
-                      createVNode(PasteInput, {
-                        ref_key: "pasteRef",
-                        ref: pasteRef
-                      }, null, 512)
-                    ])) : unref(subView2) === "file" ? (openBlock(), createElementBlock("div", _hoisted_7$b, [
-                      createVNode(FileInput, {
-                        ref_key: "fileRef",
-                        ref: fileRef,
-                        onAutoImport
-                      }, null, 512)
-                    ])) : unref(subView2) === "review" ? (openBlock(), createElementBlock("div", _hoisted_8$6, [
-                      createVNode(SplitReview, {
-                        manifest: unref(manifest2),
-                        "chapter-index": unref(chapterIndex2)
-                      }, null, 8, ["manifest", "chapter-index"])
-                    ])) : unref(subView2) === "understanding" ? (openBlock(), createElementBlock("div", _hoisted_9$4, [
-                      unref(understandingStatus2) === "running" ? (openBlock(), createBlock(UnderstandingRunning, { key: 0 })) : unref(understandingStatus2) === "ready" ? (openBlock(), createBlock(UnderstandingReady, {
-                        key: 1,
-                        summary: unref(understandingSummary2),
-                        onSelect: unref(setCharacterBranch2)
-                      }, null, 8, ["summary", "onSelect"])) : unref(understandingStatus2) === "failed" ? (openBlock(), createBlock(UnderstandingFailed, {
-                        key: 2,
-                        error: unref(errorText2),
-                        onRetry: unref(startOpeningUnderstanding2)
-                      }, null, 8, ["error", "onRetry"])) : createCommentVNode("", true)
-                    ])) : unref(subView2) === "character-setup" ? (openBlock(), createElementBlock("div", {
-                      key: `char-${unref(characterBranch2)}-${unref(characterSetupStatus2)}`,
-                      class: "stage-content"
-                    }, [
-                      unref(characterSetupStatus2) === "confirmed" && unref(selectedCharacter2) ? (openBlock(), createBlock(CharacterConfirmed, {
-                        key: 0,
-                        character: unref(selectedCharacter2),
-                        onBack: onResetCharacterSetup,
-                        onNext: _cache[1] || (_cache[1] = ($event) => unref(goToStep2)(4))
-                      }, null, 8, ["character"])) : unref(characterBranch2) === "canon" ? (openBlock(), createBlock(CanonCharacterSelect, {
-                        key: 1,
-                        candidates: ((_a2 = unref(understandingSummary2)) == null ? void 0 : _a2.candidateCharacters) ?? [],
-                        onSelect: onCanonSelect,
-                        onBack: unref(backToBranchChoice2)
-                      }, null, 8, ["candidates", "onBack"])) : unref(characterBranch2) === "original" ? (openBlock(), createBlock(OriginalCharacterForm, {
-                        key: 2,
-                        onSubmit: onConfirmOriginal,
-                        onBack: unref(backToBranchChoice2)
-                      }, null, 8, ["onBack"])) : createCommentVNode("", true)
-                    ])) : unref(subView2) === "play-setup" ? (openBlock(), createElementBlock("div", _hoisted_10$4, [
-                      createVNode(PlaySetupDialog)
-                    ])) : unref(subView2) === "opening-confirm" ? (openBlock(), createElementBlock("div", _hoisted_11$3, [
-                      createVNode(OpeningConfirm)
-                    ])) : (openBlock(), createElementBlock("div", _hoisted_12$3, [
-                      createVNode(StepStub, {
-                        step: unref(step2),
-                        title: "即将开放",
-                        onBack: _cache[2] || (_cache[2] = ($event) => unref(goToStep2)(4))
-                      }, null, 8, ["step"])
-                    ]))
-                  ];
-                }),
+                default: withCtx(() => [
+                  unref(subView2) === "choose" ? (openBlock(), createElementBlock("div", _hoisted_5$i, [
+                    createVNode(MethodChoose, {
+                      onSelect: _cache[0] || (_cache[0] = (mode) => unref(setView2)(mode))
+                    })
+                  ])) : unref(subView2) === "paste" ? (openBlock(), createElementBlock("div", _hoisted_6$e, [
+                    createVNode(PasteInput, {
+                      ref_key: "pasteRef",
+                      ref: pasteRef
+                    }, null, 512)
+                  ])) : unref(subView2) === "file" ? (openBlock(), createElementBlock("div", _hoisted_7$b, [
+                    createVNode(FileInput, {
+                      ref_key: "fileRef",
+                      ref: fileRef,
+                      onAutoImport
+                    }, null, 512)
+                  ])) : unref(subView2) === "review" ? (openBlock(), createElementBlock("div", _hoisted_8$6, [
+                    createVNode(SplitReview, {
+                      manifest: unref(manifest2),
+                      "chapter-index": unref(chapterIndex2)
+                    }, null, 8, ["manifest", "chapter-index"])
+                  ])) : unref(subView2) === "branch-choice" ? (openBlock(), createElementBlock("div", _hoisted_9$4, [
+                    createVNode(OpeningBranchChoice, { onSelect: unref(startOpeningInterview2) }, null, 8, ["onSelect"])
+                  ])) : unref(subView2) === "opening-interview" ? (openBlock(), createElementBlock("div", _hoisted_10$4, [
+                    createVNode(PlaySetupDialog)
+                  ])) : unref(subView2) === "opening-confirm" ? (openBlock(), createElementBlock("div", _hoisted_11$3, [
+                    createVNode(OpeningConfirm)
+                  ])) : unref(subView2) === "legacy-state" ? (openBlock(), createElementBlock("section", _hoisted_12$3, [
+                    _cache[3] || (_cache[3] = createBaseVNode("span", {
+                      class: "legacy-mark",
+                      "aria-hidden": "true"
+                    }, "!", -1)),
+                    _cache[4] || (_cache[4] = createBaseVNode("h2", null, "旧开局进度无法继续", -1)),
+                    createBaseVNode("p", null, toDisplayString(unref(playSetupError2) || "当前存档来自测试期旧流程，请创建新存档后重新导入小说。"), 1)
+                  ])) : (openBlock(), createElementBlock("section", _hoisted_13$3, [
+                    _cache[5] || (_cache[5] = createBaseVNode("span", {
+                      class: "legacy-mark",
+                      "aria-hidden": "true"
+                    }, "!", -1)),
+                    _cache[6] || (_cache[6] = createBaseVNode("h2", null, "无法安全继续开局", -1)),
+                    createBaseVNode("p", null, toDisplayString(unref(playSetupError2) || "读取存档状态失败。请重新进入；若问题持续，请使用新存档重新导入小说。"), 1)
+                  ]))
+                ]),
                 _: 1
               }),
               createVNode(Transition, { name: "error-fade" }, {
                 default: withCtx(() => [
-                  unref(errorText2) && unref(subView2) !== "understanding" ? (openBlock(), createElementBlock("p", _hoisted_13$3, toDisplayString(unref(errorText2)), 1)) : createCommentVNode("", true)
+                  unref(errorText2) ? (openBlock(), createElementBlock("p", _hoisted_14$3, toDisplayString(unref(errorText2)), 1)) : createCommentVNode("", true)
                 ]),
                 _: 1
               })
             ])
           ])
         ]),
-        createBaseVNode("div", _hoisted_14$3, [
-          createBaseVNode("div", _hoisted_15$3, [
-            createBaseVNode("div", _hoisted_16$3, [
-              createBaseVNode("button", {
-                class: "setup-btn secondary",
-                type: "button",
-                disabled: actions.value.secondaryDisabled,
-                onClick: _cache[3] || (_cache[3] = ($event) => {
-                  var _a2, _b;
-                  return (_b = (_a2 = actions.value).onSecondary) == null ? void 0 : _b.call(_a2);
-                })
-              }, toDisplayString(actions.value.secondaryLabel), 9, _hoisted_17$3)
-            ]),
+        createBaseVNode("div", _hoisted_15$3, [
+          createBaseVNode("div", _hoisted_16$3, [
+            createBaseVNode("button", {
+              class: "setup-btn secondary",
+              type: "button",
+              disabled: actions.value.secondaryDisabled,
+              onClick: _cache[1] || (_cache[1] = ($event) => {
+                var _a2, _b;
+                return (_b = (_a2 = actions.value).onSecondary) == null ? void 0 : _b.call(_a2);
+              })
+            }, toDisplayString(actions.value.secondaryLabel), 9, _hoisted_17$3),
             unref(busy2) && unref(statusText2) ? (openBlock(), createElementBlock("p", _hoisted_18$3, toDisplayString(unref(statusText2)), 1)) : createCommentVNode("", true),
-            createBaseVNode("div", _hoisted_19$3, [
-              createBaseVNode("button", {
-                class: "setup-btn primary",
-                type: "button",
-                disabled: actions.value.primaryDisabled,
-                onClick: _cache[4] || (_cache[4] = ($event) => {
-                  var _a2, _b;
-                  return (_b = (_a2 = actions.value).onPrimary) == null ? void 0 : _b.call(_a2);
-                })
-              }, toDisplayString(actions.value.primaryLabel), 9, _hoisted_20$3)
-            ])
+            createBaseVNode("button", {
+              class: "setup-btn primary",
+              type: "button",
+              disabled: actions.value.primaryDisabled,
+              onClick: _cache[2] || (_cache[2] = ($event) => {
+                var _a2, _b;
+                return (_b = (_a2 = actions.value).onPrimary) == null ? void 0 : _b.call(_a2);
+              })
+            }, toDisplayString(actions.value.primaryLabel), 9, _hoisted_19$3)
           ])
         ])
       ]);
     };
   }
 });
-const SetupWizard = /* @__PURE__ */ _export_sfc(_sfc_main$s, [["__scopeId", "data-v-85a34df0"]]);
+const SetupWizard = /* @__PURE__ */ _export_sfc(_sfc_main$s, [["__scopeId", "data-v-4b45ef67"]]);
 function sceneIdToPath(id) {
   const idx = id.indexOf(":");
   const localId = idx >= 0 ? id.slice(idx + 1) : id;
@@ -25675,53 +25683,48 @@ const _hoisted_13$2 = {
   key: 5,
   class: "overview-section full"
 };
-const _hoisted_14$2 = { class: "history-list" };
+const _hoisted_14$2 = { class: "narrative-block" };
 const _hoisted_15$2 = {
   key: 6,
   class: "overview-section full"
 };
-const _hoisted_16$2 = { class: "narrative-block" };
-const _hoisted_17$2 = {
-  key: 7,
-  class: "overview-section full"
-};
-const _hoisted_18$2 = { class: "ext-metric-list" };
-const _hoisted_19$2 = { class: "ext-metric-head" };
-const _hoisted_20$2 = { class: "ext-metric-label" };
-const _hoisted_21$2 = { class: "ext-metric-value" };
-const _hoisted_22$2 = {
+const _hoisted_16$2 = { class: "ext-metric-list" };
+const _hoisted_17$2 = { class: "ext-metric-head" };
+const _hoisted_18$2 = { class: "ext-metric-label" };
+const _hoisted_19$2 = { class: "ext-metric-value" };
+const _hoisted_20$2 = {
   key: 0,
   class: "ext-metric-unit"
 };
-const _hoisted_23$2 = {
+const _hoisted_21$2 = {
   key: 0,
   class: "ext-metric-track"
 };
+const _hoisted_22$2 = {
+  key: 7,
+  class: "overview-section"
+};
+const _hoisted_23$2 = { class: "ext-tags" };
 const _hoisted_24$2 = {
   key: 8,
   class: "overview-section"
 };
-const _hoisted_25$2 = { class: "ext-tags" };
-const _hoisted_26$2 = {
-  key: 9,
-  class: "overview-section"
-};
-const _hoisted_27$2 = { class: "ext-ref-list" };
-const _hoisted_28$1 = { class: "ext-ref-label" };
-const _hoisted_29$1 = {
+const _hoisted_25$2 = { class: "ext-ref-list" };
+const _hoisted_26$2 = { class: "ext-ref-label" };
+const _hoisted_27$2 = {
   key: 0,
   class: "ext-ref-name"
 };
-const _hoisted_30$1 = {
-  key: 10,
+const _hoisted_28$1 = {
+  key: 9,
   class: "overview-section full"
 };
-const _hoisted_31$1 = { class: "ext-sections" };
-const _hoisted_32$1 = {
+const _hoisted_29$1 = { class: "ext-sections" };
+const _hoisted_30$1 = {
   key: 0,
   class: "ext-section-title"
 };
-const _hoisted_33$1 = {
+const _hoisted_31$1 = {
   key: 1,
   class: "ext-section-body"
 };
@@ -25748,12 +25751,6 @@ const _sfc_main$f = /* @__PURE__ */ defineComponent({
       () => typeof props.entity.background === "string" && props.entity.background.length > 0
     );
     const hasGoals = computed(() => Boolean(props.entity.goals));
-    const historyEvents = computed(
-      () => (props.entity.history ?? []).filter(
-        (item) => typeof item === "object" && item !== null && typeof item.event === "string" && item.event.length > 0
-      )
-    );
-    const hasHistory = computed(() => historyEvents.value.length > 0);
     const edges = computed(() => {
       var _a2;
       return ((_a2 = props.relationships) == null ? void 0 : _a2.edges) ?? [];
@@ -25830,39 +25827,28 @@ const _sfc_main$f = /* @__PURE__ */ defineComponent({
               "entity-ref": __props.entityRef
             }, null, 8, ["goals", "entity-ref"])
           ])) : createCommentVNode("", true),
-          hasHistory.value ? (openBlock(), createElementBlock("div", _hoisted_13$2, [
-            _cache[5] || (_cache[5] = createBaseVNode("div", { class: "section-title" }, "人物履历", -1)),
-            createBaseVNode("ol", _hoisted_14$2, [
-              (openBlock(true), createElementBlock(Fragment, null, renderList(historyEvents.value, (item, idx) => {
-                return openBlock(), createElementBlock("li", {
-                  key: `history-${idx}`,
-                  class: "history-row"
-                }, toDisplayString(item.event), 1);
-              }), 128))
-            ])
-          ])) : createCommentVNode("", true),
-          hasBackground.value ? (openBlock(), createElementBlock("div", _hoisted_15$2, [
-            _cache[6] || (_cache[6] = createBaseVNode("div", { class: "section-title" }, "背景摘记", -1)),
-            createBaseVNode("div", _hoisted_16$2, [
+          hasBackground.value ? (openBlock(), createElementBlock("div", _hoisted_13$2, [
+            _cache[5] || (_cache[5] = createBaseVNode("div", { class: "section-title" }, "背景摘记", -1)),
+            createBaseVNode("div", _hoisted_14$2, [
               createBaseVNode("p", null, toDisplayString(__props.entity.background), 1)
             ])
           ])) : createCommentVNode("", true),
-          hasMetrics.value ? (openBlock(), createElementBlock("div", _hoisted_17$2, [
-            _cache[7] || (_cache[7] = createBaseVNode("div", { class: "section-title" }, "数值", -1)),
-            createBaseVNode("ul", _hoisted_18$2, [
+          hasMetrics.value ? (openBlock(), createElementBlock("div", _hoisted_15$2, [
+            _cache[6] || (_cache[6] = createBaseVNode("div", { class: "section-title" }, "数值", -1)),
+            createBaseVNode("ul", _hoisted_16$2, [
               (openBlock(true), createElementBlock(Fragment, null, renderList(__props.displayItems.metrics, (m, idx) => {
                 return openBlock(), createElementBlock("li", {
                   key: `metric-${idx}`,
                   class: "ext-metric-row"
                 }, [
-                  createBaseVNode("div", _hoisted_19$2, [
-                    createBaseVNode("span", _hoisted_20$2, toDisplayString(m.label), 1),
-                    createBaseVNode("span", _hoisted_21$2, [
+                  createBaseVNode("div", _hoisted_17$2, [
+                    createBaseVNode("span", _hoisted_18$2, toDisplayString(m.label), 1),
+                    createBaseVNode("span", _hoisted_19$2, [
                       createTextVNode(toDisplayString(typeof m.value === "number" ? m.value : 0), 1),
-                      m.unit ? (openBlock(), createElementBlock("span", _hoisted_22$2, toDisplayString(m.unit), 1)) : createCommentVNode("", true)
+                      m.unit ? (openBlock(), createElementBlock("span", _hoisted_20$2, toDisplayString(m.unit), 1)) : createCommentVNode("", true)
                     ])
                   ]),
-                  m.render === "progress" ? (openBlock(), createElementBlock("div", _hoisted_23$2, [
+                  m.render === "progress" ? (openBlock(), createElementBlock("div", _hoisted_21$2, [
                     createBaseVNode("div", {
                       class: "ext-metric-fill",
                       style: normalizeStyle({
@@ -25874,9 +25860,9 @@ const _sfc_main$f = /* @__PURE__ */ defineComponent({
               }), 128))
             ])
           ])) : createCommentVNode("", true),
-          hasTags.value ? (openBlock(), createElementBlock("div", _hoisted_24$2, [
-            _cache[8] || (_cache[8] = createBaseVNode("div", { class: "section-title" }, "标签", -1)),
-            createBaseVNode("div", _hoisted_25$2, [
+          hasTags.value ? (openBlock(), createElementBlock("div", _hoisted_22$2, [
+            _cache[7] || (_cache[7] = createBaseVNode("div", { class: "section-title" }, "标签", -1)),
+            createBaseVNode("div", _hoisted_23$2, [
               (openBlock(true), createElementBlock(Fragment, null, renderList(__props.displayItems.tags, (t, idx) => {
                 return openBlock(), createElementBlock("span", {
                   key: `tag-${idx}`,
@@ -25890,30 +25876,30 @@ const _sfc_main$f = /* @__PURE__ */ defineComponent({
               }), 128))
             ])
           ])) : createCommentVNode("", true),
-          hasRefs.value ? (openBlock(), createElementBlock("div", _hoisted_26$2, [
-            _cache[9] || (_cache[9] = createBaseVNode("div", { class: "section-title" }, "关联", -1)),
-            createBaseVNode("ul", _hoisted_27$2, [
+          hasRefs.value ? (openBlock(), createElementBlock("div", _hoisted_24$2, [
+            _cache[8] || (_cache[8] = createBaseVNode("div", { class: "section-title" }, "关联", -1)),
+            createBaseVNode("ul", _hoisted_25$2, [
               (openBlock(true), createElementBlock(Fragment, null, renderList(__props.displayItems.refs, (r, idx) => {
                 return openBlock(), createElementBlock("li", {
                   key: `ext-ref-${idx}`,
                   class: "ext-ref-row"
                 }, [
-                  createBaseVNode("span", _hoisted_28$1, toDisplayString(r.label), 1),
-                  r.name ? (openBlock(), createElementBlock("span", _hoisted_29$1, toDisplayString(r.name), 1)) : createCommentVNode("", true)
+                  createBaseVNode("span", _hoisted_26$2, toDisplayString(r.label), 1),
+                  r.name ? (openBlock(), createElementBlock("span", _hoisted_27$2, toDisplayString(r.name), 1)) : createCommentVNode("", true)
                 ]);
               }), 128))
             ])
           ])) : createCommentVNode("", true),
-          hasSections.value ? (openBlock(), createElementBlock("div", _hoisted_30$1, [
-            _cache[10] || (_cache[10] = createBaseVNode("div", { class: "section-title" }, "详情", -1)),
-            createBaseVNode("div", _hoisted_31$1, [
+          hasSections.value ? (openBlock(), createElementBlock("div", _hoisted_28$1, [
+            _cache[9] || (_cache[9] = createBaseVNode("div", { class: "section-title" }, "详情", -1)),
+            createBaseVNode("div", _hoisted_29$1, [
               (openBlock(true), createElementBlock(Fragment, null, renderList(__props.displayItems.sections, (s, idx) => {
                 return openBlock(), createElementBlock("div", {
                   key: `sec-${idx}`,
                   class: "ext-section"
                 }, [
-                  s.title ? (openBlock(), createElementBlock("div", _hoisted_32$1, toDisplayString(s.title), 1)) : createCommentVNode("", true),
-                  s.body ? (openBlock(), createElementBlock("div", _hoisted_33$1, toDisplayString(s.body), 1)) : createCommentVNode("", true)
+                  s.title ? (openBlock(), createElementBlock("div", _hoisted_30$1, toDisplayString(s.title), 1)) : createCommentVNode("", true),
+                  s.body ? (openBlock(), createElementBlock("div", _hoisted_31$1, toDisplayString(s.body), 1)) : createCommentVNode("", true)
                 ]);
               }), 128))
             ])
@@ -25927,7 +25913,7 @@ const _sfc_main$f = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const OverviewPane = /* @__PURE__ */ _export_sfc(_sfc_main$f, [["__scopeId", "data-v-3e2d4692"]]);
+const OverviewPane = /* @__PURE__ */ _export_sfc(_sfc_main$f, [["__scopeId", "data-v-4f0c564c"]]);
 const _hoisted_1$d = { class: "attribute-card" };
 const _hoisted_2$d = {
   class: "attribute-watermark",

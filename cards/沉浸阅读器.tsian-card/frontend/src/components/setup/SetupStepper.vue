@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * SetupStepper — 5 节点横向 stepper（燃烧烛芯方案 v3）。
+ * SetupStepper — 3 节点横向 stepper（燃烧烛芯方案 v3）。
  *
  * 视觉概念：一根贯通屏幕的烛芯，节点聚拢居中。
  * - 已点燃段（完成）：ember 渐变线 + 光脉冲沿烛芯传播
@@ -13,16 +13,16 @@
  * 节点聚拢居中而非均匀分布全宽。
  */
 const props = defineProps<{
-  /** 当前步骤索引 0-4 */
+  /** 当前步骤索引 0-2 */
   current: number
   /** 已完成到第几步（-1 = 都没完成） */
   completedUntil: number
 }>()
 
-const STEPS = ["导入小说", "初始理解", "角色设定", "游玩倾向", "开局确认"]
-const NODE_GAP = 120 // 节点间距 px（flex gap，节点之间的空白）
-const NODE_WIDTH = 80 // 标签 min-width = 节点宽度
-const CENTER_STEP = NODE_GAP + NODE_WIDTH // 节点中心间距 = 200px
+const STEPS = ["导入小说", "创建角色与世界", "开局确认"]
+const NODE_GAP = 150
+const NODE_WIDTH = 120
+const CENTER_STEP = NODE_GAP + NODE_WIDTH
 
 /** 节点状态：done 已点燃 / current 燃烧前沿 / locked 未点燃 */
 function markStatus(i: number): "done" | "current" | "locked" {
@@ -316,7 +316,7 @@ function markStatus(i: number): "done" | "current" | "locked" {
 /* ══ 标签 ══ */
 .fuse-label {
   margin-top: 14px;
-  min-width: 80px;
+  min-width: 120px;
   text-align: center;
   font-family: var(--font-serif);
   font-size: 0.75rem;

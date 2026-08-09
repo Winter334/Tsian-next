@@ -27,29 +27,19 @@
   },
   "workspaceFiles": [
     {
-      "path": "workspace/README.md",
-      "mediaType": "text/markdown",
-      "size": 488
-    },
-    {
       "path": "workspace/agents/README.md",
       "mediaType": "text/markdown",
       "size": 612
     },
     {
-      "path": "workspace/agents/stage-manager/AGENT.md",
-      "mediaType": "text/markdown",
-      "size": 4453
-    },
-    {
-      "path": "workspace/agents/stage-manager/SOUL.md",
-      "mediaType": "text/markdown",
-      "size": 231
-    },
-    {
       "path": "workspace/agents/stage-manager/agent.json",
       "mediaType": "application/json",
       "size": 1230
+    },
+    {
+      "path": "workspace/agents/stage-manager/AGENT.md",
+      "mediaType": "text/markdown",
+      "size": 4453
     },
     {
       "path": "workspace/agents/stage-manager/skills/schema演进检查/SKILL.md",
@@ -62,34 +52,39 @@
       "size": 10715
     },
     {
-      "path": "workspace/agents/stage-manager/skills/装备管理/SKILL.md",
-      "mediaType": "text/markdown",
-      "size": 3510
-    },
-    {
       "path": "workspace/agents/stage-manager/skills/装备管理/scripts/equip.js",
       "mediaType": "text/javascript",
-      "size": 86
+      "size": 87
     },
     {
       "path": "workspace/agents/stage-manager/skills/装备管理/scripts/equipment-core.js",
       "mediaType": "text/javascript",
-      "size": 28937
+      "size": 29588
     },
     {
       "path": "workspace/agents/stage-manager/skills/装备管理/scripts/refresh.js",
       "mediaType": "text/javascript",
-      "size": 88
+      "size": 89
     },
     {
       "path": "workspace/agents/stage-manager/skills/装备管理/scripts/unequip.js",
       "mediaType": "text/javascript",
-      "size": 88
+      "size": 89
+    },
+    {
+      "path": "workspace/agents/stage-manager/skills/装备管理/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 3587
+    },
+    {
+      "path": "workspace/agents/stage-manager/SOUL.md",
+      "mediaType": "text/markdown",
+      "size": 231
     },
     {
       "path": "workspace/agents/stage-manager/tools/commit_turn_recall/run.js",
       "mediaType": "text/javascript",
-      "size": 7985
+      "size": 8186
     },
     {
       "path": "workspace/agents/stage-manager/tools/commit_turn_recall/tool.json",
@@ -107,19 +102,14 @@
       "size": 1092
     },
     {
-      "path": "workspace/agents/storyteller/AGENT.md",
-      "mediaType": "text/markdown",
-      "size": 451
-    },
-    {
-      "path": "workspace/agents/storyteller/SOUL.md",
-      "mediaType": "text/markdown",
-      "size": 1429
-    },
-    {
       "path": "workspace/agents/storyteller/agent.json",
       "mediaType": "application/json",
       "size": 1111
+    },
+    {
+      "path": "workspace/agents/storyteller/AGENT.md",
+      "mediaType": "text/markdown",
+      "size": 451
     },
     {
       "path": "workspace/agents/storyteller/creation-guide.md",
@@ -427,14 +417,19 @@
       "size": 5138
     },
     {
+      "path": "workspace/agents/storyteller/skills/历史召回/scripts/recall-turns.js",
+      "mediaType": "text/javascript",
+      "size": 13217
+    },
+    {
       "path": "workspace/agents/storyteller/skills/历史召回/SKILL.md",
       "mediaType": "text/markdown",
       "size": 4499
     },
     {
-      "path": "workspace/agents/storyteller/skills/历史召回/scripts/recall-turns.js",
+      "path": "workspace/agents/storyteller/skills/掷骰/scripts/run.js",
       "mediaType": "text/javascript",
-      "size": 13217
+      "size": 7044
     },
     {
       "path": "workspace/agents/storyteller/skills/掷骰/SKILL.md",
@@ -442,9 +437,9 @@
       "size": 4694
     },
     {
-      "path": "workspace/agents/storyteller/skills/掷骰/scripts/run.js",
-      "mediaType": "text/javascript",
-      "size": 7044
+      "path": "workspace/agents/storyteller/SOUL.md",
+      "mediaType": "text/markdown",
+      "size": 1429
     },
     {
       "path": "workspace/agents/storyteller/tools/read_entity/run.js",
@@ -477,24 +472,14 @@
       "size": 727
     },
     {
-      "path": "workspace/agents/world-architect/AGENT.md",
-      "mediaType": "text/markdown",
-      "size": 1362
-    },
-    {
-      "path": "workspace/agents/world-architect/SOUL.md",
-      "mediaType": "text/markdown",
-      "size": 479
-    },
-    {
       "path": "workspace/agents/world-architect/agent.json",
       "mediaType": "application/json",
-      "size": 1794
+      "size": 1745
     },
     {
-      "path": "workspace/agents/world-architect/skills/frontier推进/SKILL.md",
+      "path": "workspace/agents/world-architect/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 5869
+      "size": 1539
     },
     {
       "path": "workspace/agents/world-architect/skills/frontier推进/scripts/_common.js",
@@ -522,39 +507,24 @@
       "size": 3323
     },
     {
-      "path": "workspace/agents/world-architect/skills/开局建模/SKILL.md",
+      "path": "workspace/agents/world-architect/skills/frontier推进/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 9663
+      "size": 5869
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/_common.js",
       "mediaType": "text/javascript",
-      "size": 5687
+      "size": 5676
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/_validation.js",
       "mediaType": "text/javascript",
-      "size": 11212
+      "size": 1115
     },
     {
-      "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-entities.js",
+      "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-opening.js",
       "mediaType": "text/javascript",
-      "size": 1291
-    },
-    {
-      "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-runtime-and-frontier.js",
-      "mediaType": "text/javascript",
-      "size": 7368
-    },
-    {
-      "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-scenes-and-relationships.js",
-      "mediaType": "text/javascript",
-      "size": 2624
-    },
-    {
-      "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-understanding-summary.js",
-      "mediaType": "text/javascript",
-      "size": 1433
+      "size": 52632
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js",
@@ -567,49 +537,34 @@
       "size": 2334
     },
     {
-      "path": "workspace/agents/world-architect/skills/游玩设定/SKILL.md",
+      "path": "workspace/agents/world-architect/skills/开局建模/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 6095
+      "size": 18589
     },
     {
-      "path": "workspace/agents/world-architect/skills/游玩设定/scripts/_common.js",
-      "mediaType": "text/javascript",
-      "size": 5687
-    },
-    {
-      "path": "workspace/agents/world-architect/skills/游玩设定/scripts/_validation.js",
-      "mediaType": "text/javascript",
-      "size": 11212
-    },
-    {
-      "path": "workspace/agents/world-architect/skills/游玩设定/scripts/commit-play-setup.js",
-      "mediaType": "text/javascript",
-      "size": 7897
-    },
-    {
-      "path": "workspace/agents/world-architect/skills/游玩设定/scripts/commit-setup-summary.js",
-      "mediaType": "text/javascript",
-      "size": 1305
+      "path": "workspace/agents/world-architect/SOUL.md",
+      "mediaType": "text/markdown",
+      "size": 479
     },
     {
       "path": "workspace/config/reply-projection.json",
       "mediaType": "application/json",
-      "size": 255
+      "size": 683
+    },
+    {
+      "path": "workspace/docs/novel-airp-schema-guide.md",
+      "mediaType": "text/markdown",
+      "size": 14710
+    },
+    {
+      "path": "workspace/docs/novel-airp-schema-reference.md",
+      "mediaType": "text/markdown",
+      "size": 18261
     },
     {
       "path": "workspace/docs/README.md",
       "mediaType": "text/markdown",
       "size": 204
-    },
-    {
-      "path": "workspace/docs/novel-airp-schema-guide.md",
-      "mediaType": "text/markdown",
-      "size": 14506
-    },
-    {
-      "path": "workspace/docs/novel-airp-schema-reference.md",
-      "mediaType": "text/markdown",
-      "size": 17964
     },
     {
       "path": "workspace/docs/tsian-framework-knowledge.md",
@@ -619,17 +574,22 @@
     {
       "path": "workspace/frontend-actions/equipment/action.json",
       "mediaType": "application/json",
-      "size": 4064
+      "size": 4170
     },
     {
       "path": "workspace/frontend-actions/equipment/equipment-core.js",
       "mediaType": "text/javascript",
-      "size": 29003
+      "size": 29656
     },
     {
       "path": "workspace/frontend-actions/equipment/run.js",
       "mediaType": "text/javascript",
-      "size": 452
+      "size": 465
+    },
+    {
+      "path": "workspace/README.md",
+      "mediaType": "text/markdown",
+      "size": 1215
     },
     {
       "path": "workspace/skills/README.md",
@@ -637,19 +597,19 @@
       "size": 244
     },
     {
-      "path": "workspace/tools/README.md",
-      "mediaType": "text/markdown",
-      "size": 1631
-    },
-    {
       "path": "workspace/tools/json_edit/run.js",
       "mediaType": "text/javascript",
-      "size": 21805
+      "size": 22277
     },
     {
       "path": "workspace/tools/json_edit/tool.json",
       "mediaType": "application/json",
-      "size": 2558
+      "size": 2620
+    },
+    {
+      "path": "workspace/tools/README.md",
+      "mediaType": "text/markdown",
+      "size": 1631
     },
     {
       "path": "workspace/tools/roll_dice/run.js",
@@ -664,12 +624,12 @@
     {
       "path": "workspace/tools/text_edit/run.js",
       "mediaType": "text/javascript",
-      "size": 7591
+      "size": 7755
     },
     {
       "path": "workspace/tools/text_edit/tool.json",
       "mediaType": "application/json",
-      "size": 2563
+      "size": 2636
     }
   ],
   "frontendFiles": [
@@ -684,14 +644,14 @@
       "size": 1251472
     },
     {
-      "path": "frontend/dist/assets/index-D8C66qLb.js",
+      "path": "frontend/dist/assets/index-B_bg96TL.js",
       "mediaType": "text/javascript",
-      "size": 1016362
+      "size": 1022104
     },
     {
-      "path": "frontend/dist/assets/index-xR8pARfi.css",
+      "path": "frontend/dist/assets/index-WEGGfPzE.css",
       "mediaType": "text/css",
-      "size": 206574
+      "size": 181449
     },
     {
       "path": "frontend/dist/assets/source-import.worker-C_uK7gaR.js",
@@ -701,12 +661,7 @@
     {
       "path": "frontend/dist/index.html",
       "mediaType": "text/html",
-      "size": 573
-    },
-    {
-      "path": "frontend/dist/scroll.webp",
-      "mediaType": "image/webp",
-      "size": 1440778
+      "size": 404
     },
     {
       "path": "frontend/src/App.vue",
@@ -742,26 +697,6 @@
       "path": "frontend/src/components/BurningReveal.vue",
       "mediaType": "text/plain; charset=utf-8",
       "size": 5568
-    },
-    {
-      "path": "frontend/src/components/CornerBrackets.vue",
-      "mediaType": "text/plain; charset=utf-8",
-      "size": 1317
-    },
-    {
-      "path": "frontend/src/components/EmberForge.vue",
-      "mediaType": "text/plain; charset=utf-8",
-      "size": 6012
-    },
-    {
-      "path": "frontend/src/components/StatusBar.vue",
-      "mediaType": "text/plain; charset=utf-8",
-      "size": 13231
-    },
-    {
-      "path": "frontend/src/components/TsianLogo.vue",
-      "mediaType": "text/plain; charset=utf-8",
-      "size": 5785
     },
     {
       "path": "frontend/src/components/character/AttributeCard.vue",
@@ -879,6 +814,16 @@
       "size": 6223
     },
     {
+      "path": "frontend/src/components/CornerBrackets.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 1317
+    },
+    {
+      "path": "frontend/src/components/EmberForge.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 6012
+    },
+    {
       "path": "frontend/src/components/inventory/InventoryBreadcrumb.vue",
       "mediaType": "text/plain; charset=utf-8",
       "size": 2065
@@ -901,17 +846,12 @@
     {
       "path": "frontend/src/components/setup/SetupStepper.vue",
       "mediaType": "text/plain; charset=utf-8",
-      "size": 8649
+      "size": 8499
     },
     {
       "path": "frontend/src/components/setup/SetupWizard.vue",
       "mediaType": "text/plain; charset=utf-8",
-      "size": 18344
-    },
-    {
-      "path": "frontend/src/components/setup/StepStub.vue",
-      "mediaType": "text/plain; charset=utf-8",
-      "size": 2299
+      "size": 10774
     },
     {
       "path": "frontend/src/components/setup/step1/FileInput.vue",
@@ -934,44 +874,19 @@
       "size": 10562
     },
     {
-      "path": "frontend/src/components/setup/step2/UnderstandingFailed.vue",
-      "mediaType": "text/plain; charset=utf-8",
-      "size": 2639
-    },
-    {
-      "path": "frontend/src/components/setup/step2/UnderstandingReady.vue",
-      "mediaType": "text/plain; charset=utf-8",
-      "size": 7730
-    },
-    {
-      "path": "frontend/src/components/setup/step2/UnderstandingRunning.vue",
-      "mediaType": "text/plain; charset=utf-8",
-      "size": 3927
-    },
-    {
       "path": "frontend/src/components/setup/step2/magicCircleGenerator.ts",
       "mediaType": "text/typescript; charset=utf-8",
       "size": 11998
     },
     {
-      "path": "frontend/src/components/setup/step3/CanonCharacterSelect.vue",
+      "path": "frontend/src/components/setup/step2/OpeningBranchChoice.vue",
       "mediaType": "text/plain; charset=utf-8",
-      "size": 11865
-    },
-    {
-      "path": "frontend/src/components/setup/step3/CharacterConfirmed.vue",
-      "mediaType": "text/plain; charset=utf-8",
-      "size": 6372
-    },
-    {
-      "path": "frontend/src/components/setup/step3/OriginalCharacterForm.vue",
-      "mediaType": "text/plain; charset=utf-8",
-      "size": 8982
+      "size": 2681
     },
     {
       "path": "frontend/src/components/setup/step4/PlaySetupDialog.vue",
       "mediaType": "text/plain; charset=utf-8",
-      "size": 6739
+      "size": 6787
     },
     {
       "path": "frontend/src/components/setup/step4/SetupComposer.vue",
@@ -981,7 +896,12 @@
     {
       "path": "frontend/src/components/setup/step5/OpeningConfirm.vue",
       "mediaType": "text/plain; charset=utf-8",
-      "size": 14480
+      "size": 14403
+    },
+    {
+      "path": "frontend/src/components/setup/StepStub.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2299
     },
     {
       "path": "frontend/src/components/status-bar/StatusBarCharacter.vue",
@@ -1017,6 +937,11 @@
       "path": "frontend/src/components/status-bar/StatusBarStatus.vue",
       "mediaType": "text/plain; charset=utf-8",
       "size": 4231
+    },
+    {
+      "path": "frontend/src/components/StatusBar.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 13231
     },
     {
       "path": "frontend/src/components/story/Composer.vue",
@@ -1084,6 +1009,11 @@
       "size": 4696
     },
     {
+      "path": "frontend/src/components/TsianLogo.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5785
+    },
+    {
       "path": "frontend/src/composables/useAtmosphere.ts",
       "mediaType": "text/typescript; charset=utf-8",
       "size": 4046
@@ -1126,7 +1056,7 @@
     {
       "path": "frontend/src/composables/useSetupState.ts",
       "mediaType": "text/typescript; charset=utf-8",
-      "size": 37446
+      "size": 38804
     },
     {
       "path": "frontend/src/composables/useStatusBarCollapsed.ts",
@@ -1189,6 +1119,11 @@
       "size": 1456
     },
     {
+      "path": "frontend/src/lib/opening-interview.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 17963
+    },
+    {
       "path": "frontend/src/lib/parse-character.ts",
       "mediaType": "text/typescript; charset=utf-8",
       "size": 11666
@@ -1241,17 +1176,17 @@
     {
       "path": "frontend/src/lib/source-import.worker.ts",
       "mediaType": "text/typescript; charset=utf-8",
-      "size": 1050
+      "size": 1085
     },
     {
       "path": "frontend/src/lib/source-reader.ts",
       "mediaType": "text/typescript; charset=utf-8",
-      "size": 2272
+      "size": 2338
     },
     {
       "path": "frontend/src/lib/source.ts",
       "mediaType": "text/typescript; charset=utf-8",
-      "size": 21316
+      "size": 17937
     },
     {
       "path": "frontend/src/lib/text-decoding.ts",
@@ -1281,7 +1216,7 @@
       "size": 1751017
     }
   ],
-  "exportedAt": "2026-07-18T06:56:45.939Z",
+  "exportedAt": "2026-08-08T17:43:18.722Z",
   "exporter": {
     "name": "platform-web",
     "version": "0.0.0"

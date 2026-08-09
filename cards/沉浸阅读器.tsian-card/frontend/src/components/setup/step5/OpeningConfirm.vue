@@ -4,7 +4,7 @@ import { useSetupState } from "../../../composables/useSetupState"
 import { generateMagicCircle } from "../step2/magicCircleGenerator"
 
 /**
- * OpeningConfirm — 开局确认（Step 5）。
+ * OpeningConfirm — 开局确认。
  *
  * 纯过渡入口屏：设定卡片 + 周围漂浮的随机魔法阵。
  * 魔法阵复用 magicCircleGenerator，内部多层（outer/text/inner/core）
@@ -14,10 +14,10 @@ import { generateMagicCircle } from "../step2/magicCircleGenerator"
  *
  * 不展示开局叙事全文——叙事留给 StoryView 特殊渲染为第一条消息。
  */
-const { playSetupSummary, understandingSummary, manifest } = useSetupState()
+const { playSetupSummary, manifest } = useSetupState()
 
 const title = computed(
-  () => understandingSummary.value?.title ?? manifest.value?.title ?? "设定已成",
+  () => manifest.value?.title ?? "设定已成",
 )
 
 const summary = computed(() => playSetupSummary.value ?? "")

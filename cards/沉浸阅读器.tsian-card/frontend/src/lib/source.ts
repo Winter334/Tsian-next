@@ -156,56 +156,6 @@ interface ParsedSourceChapter {
   pseudo: boolean
 }
 
-export interface OpeningCandidateCharacter {
-  id?: string
-  name: string
-  brief: string
-  gender?: string
-}
-
-// ── 角色设定（Step 3）──
-
-export type CharacterBranch = "canon" | "original"
-
-export interface SelectedCharacter {
-  ref: string
-  name: string
-  brief: string
-  gender?: string
-}
-
-export interface OriginalCharacterFormData {
-  name: string
-  brief: string
-  gender?: string
-  appearance?: string
-  personality?: string
-  background?: string
-}
-
-export interface CharacterEntity {
-  id: string
-  name: string
-  brief: string
-  gender?: string
-  sourceRefs: string[]
-  updatedBy: string
-  updatedAt: string
-  appearance?: string
-  personality?: string
-  background?: string
-}
-
-export interface OpeningUnderstandingSummary {
-  status: "ready"
-  title: string
-  candidateCharacters: ReadonlyArray<OpeningCandidateCharacter>
-}
-
-// ── 游玩设定对话（Step 4）──
-
-export type PlaySetupStatus = "idle" | "running" | "complete" | "failed"
-
 export interface DialogMessage {
   id: string
   role: "agent" | "user"
@@ -240,14 +190,12 @@ export function isSourceManifest(value: unknown): value is SourceManifest {
   return typeof value === "object"
     && value !== null
     && (value as { status?: unknown }).status === "ready"
-}
-
-export function isOpeningUnderstandingSummary(value: unknown): value is OpeningUnderstandingSummary {
-  return typeof value === "object"
-    && value !== null
-    && (value as { status?: unknown }).status === "ready"
     && typeof (value as { title?: unknown }).title === "string"
-    && Array.isArray((value as { candidateCharacters?: unknown }).candidateCharacters)
+    && Boolean((value as { title: string }).title.trim())
+    && typeof (value as { importedAt?: unknown }).importedAt === "string"
+    && typeof (value as { normalizationVersion?: unknown }).normalizationVersion === "string"
+    && Number.isSafeInteger((value as { chapterCount?: unknown }).chapterCount)
+    && Number((value as { chapterCount: number }).chapterCount) > 0
 }
 
 // ── 格式化 ──
@@ -629,47 +577,4 @@ export function buildSourceCorpus(
   }
   onProgress?.({ phase: "complete", message: "源文本处理完成", current: shards.length, total: shards.length })
   return { manifest, chapterIndex, shards }
-}
-
-export function buildPlaySetupPrompt(
-  title: string,
-  character: { ref: string; name: string } | null,
-): string {
-  const isOriginal = character?.ref.startsWith("original-") ?? false
-  const characterDesc = character
-    ? `${character.name}（${isOriginal ? "原创角色" : "原著角色"}，ref: ${character.ref}）`
-    : "未设定"
-  return [
-    "玩家已完成小说导入、初始理解和角色设定，现在进入游玩设定对话阶段。",
-    "请作为 world-architect 使用 Skill《游玩设定》引导玩家补充本局特别设定，确认后落盘并生成开局正文。",
-    "",
-    `书名：${title}`,
-    `玩家角色：${characterDesc}`,
-    "现在请开始第一轮对话，向玩家介绍本阶段并引导其说出需求。",
-  ].join("\n")
-}
-
-// ── prompt 构建（Step 7 用，先放此供 useSetupState 引用）──
-
-export function buildOpeningInitializationPrompt(
-  manifest: SourceManifest,
-  index: ChapterIndexFile | null,
-): string {
-  const chapterCount = index?.chapters.length ?? manifest.chapterCount
-  return [
-    "玩家已经完成小说导入并确认切分结果。请作为 world-architect 使用 Skill《开局建模》完成真实开局资料抽取与初始世界建模。",
-    "",
-    "要求：",
-    "1. 用 `inspect_source_opening` 和 `read_opening_slice` 读源文本；用 `commit_*` 脚本写入开局产物，按 Skill《开局建模》的步骤执行。",
-    "2. 连续阅读开头剧情；是否继续阅读以剧情是否足够支撑开局为准。",
-    "3. 建模顺序：`commit_entities` 先写实体；再 `commit_scenes_and_relationships` 写场景与关系；再 `commit_runtime_and_frontier` 写 runtime 与 frontier。",
-    "4. 无依赖的 commit 脚本可在一轮内同时调用。例如 `commit_understanding_summary` 与 `commit_runtime_and_frontier` 互不依赖，可并行发出工具调用，框架串行执行后一并返回。",
-    "5. 保持未来剧情 spoiler-safe；只使用开头窗口中读到的内容。",
-    "6. 如果写入遇到格式或校验错误，请按错误修正后重试，直到写入成功或明确失败。",
-    "",
-    `书名：${manifest.title}`,
-    `章节数：${chapterCount}`,
-    `文本量：${manifest.totalCharacters} 字`,
-    "完成后用中文简短告诉前端已经写入哪些开局资料。",
-  ].join("\n")
 }
