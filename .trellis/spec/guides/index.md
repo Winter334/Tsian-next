@@ -28,6 +28,7 @@ These guides help you **ask the right questions before coding**.
 | [Module Structure Guide](./module-structure-guide.md) | Keep source files focused on one responsibility; split god files along seams | When a file accumulates unrelated concerns, before adding a function that doesn't fit the file's theme |
 | [AIRP 数据与能力设计原则](./airp-data-capability-design-principles.md) | 泛用方法论：能力供给分级、归属决策、skill 封装判据、数据权威、分片、产物落点、写入策略、文档分层、字段消费者验证 | 涉及 agent/skill/tool 能力设计、schema 字段设计、写入策略、数据权威与派生、聚合层、文档分层、审查过度设计时 |
 | [提示词自包含与口吻指南](./prompt-self-contained-and-tone.md) | 写 Skill / AGENT.md / 工具 description 时避免两类错误：开发侧因果解释污染；默认 Agent 知道本上下文之外的概念 | 写或改 AI-facing 提示词、引用跨 Skill 概念、发现 Agent 行为偏差疑似来自提示词时 |
+| [玩家可见产品文案指南](./player-facing-product-copy.md) | 避免把开发决策、实现机制和内部流程写进产品 UI，只保留用户当前理解与行动所需的信息 | 新增或修改页面标题、说明、按钮、选项、加载/错误/确认等玩家可见文案时 |
 
 ---
 
@@ -101,6 +102,15 @@ These guides help you **ask the right questions before coding**.
 - [ ] Agent behavior deviates from intent and you suspect the prompt leaked dev-side framing or assumed outside knowledge
 
 → Read [提示词自包含与口吻指南](./prompt-self-contained-and-tone.md)
+
+### When to Think About Player-Facing Product Copy
+
+- [ ] 你正在新增或改写玩家可见的标题、说明、按钮或状态提示
+- [ ] 文案提到了表单、Agent、Schema、内部阶段或“后续如何处理”
+- [ ] 文案在解释开发选择，但用户无法据此采取不同操作
+- [ ] 同一页面的说明和禁用按钮重复描述页面布局或操作方式
+
+→ Read [玩家可见产品文案指南](./player-facing-product-copy.md)
 
 ---
 
