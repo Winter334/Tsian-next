@@ -63,7 +63,7 @@ const actions = computed<ActionConfig>(() => {
     return { secondaryLabel: "重新导入", secondaryDisabled: busy.value, onSecondary: confirmReimport, primaryLabel: "开始创建", primaryDisabled: busy.value || !manifest.value, onPrimary: showBranchChoice }
   }
   if (subView.value === "branch-choice") {
-    return { secondaryLabel: "返回目录", secondaryDisabled: false, onSecondary: () => setView("review"), primaryLabel: "选择上方角色类型", primaryDisabled: true, onPrimary: null }
+    return { secondaryLabel: "返回目录", secondaryDisabled: false, onSecondary: () => setView("review"), primaryLabel: "", primaryDisabled: true, onPrimary: null }
   }
   if (subView.value === "opening-interview") {
     return { secondaryLabel: "访谈进行中", secondaryDisabled: true, onSecondary: null, primaryLabel: playSetupStatus.value === "complete" ? "下一步" : "完成后自动进入确认", primaryDisabled: true, onPrimary: null }
@@ -154,7 +154,7 @@ onMounted(() => {
           {{ actions.secondaryLabel }}
         </button>
         <p v-if="busy && statusText" class="setup-status" aria-live="polite">{{ statusText }}</p>
-        <button class="setup-btn primary" type="button" :disabled="actions.primaryDisabled" @click="actions.onPrimary?.()">
+        <button v-if="actions.primaryLabel" class="setup-btn primary" type="button" :disabled="actions.primaryDisabled" @click="actions.onPrimary?.()">
           {{ actions.primaryLabel }}
         </button>
       </div>
