@@ -1,0 +1,9 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Feature spans card frontend state/UI, Agent Skill/actions, reply projection, save files, and packaged card output."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Defines temporary versus authoritative data, minimal opening closure, and high-consequence action boundaries."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Old initial-understanding/play-setup concepts must be removed from active Agent instructions without residual decision noise."}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Merged opening interview Skill and hidden protocol instructions must be self-contained and executable."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Routes to invokeAgent, context slot, injection, and workspace bridge contracts used by the card frontend."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Routes card-frontend implementation to relevant state, component, and quality guidance without injecting oversized files."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Guides Vue component boundaries and player-facing UI that must hide internal protocol details."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Defines repository verification policy and prevents unapproved standalone test-suite expansion."}
+{"file":".trellis/tasks/08-08-interview-driven-opening-modeling/research/design-resolution.md","reason":"Compact authoritative mapping from every historical blocker to the final split between development frontend and card workspace authorities."}

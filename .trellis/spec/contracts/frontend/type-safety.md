@@ -34,6 +34,81 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - Use `SkillDetailEntry` for `bridge.query.query({ resource: "skill-detail", params: { path } })` results.
 - Unified diagnostics are available only through the in-process optional `DebugBridge`; the remote iframe bridge does not expose diagnostic records or retired diagnostic query resources.
 
+## Scenario: Game Card Authoring Source Ownership
+
+### 1. Scope / Trigger
+
+- Trigger: changing a game UI, setup flow, card Skill/custom Tool/Agent/config/docs, generated save skeleton, frontend package script, or whole-card package assembly.
+
+### 2. Signatures
+
+```text
+Game-card frontend source: apps/play-frontend-dev/src/**
+Frontend build:            npm run build:play-frontend
+Frontend package:          npm run package:frontend
+Card content source:       cards/<card>.tsian-card/workspace/**
+Generated whole-card file: game-card.json inside the output ZIP
+```
+
+`npm run package:frontend` packages `apps/play-frontend-dev/src/**` as a `.tsian-frontend.zip`; platform upload atomically replaces the target card frontend source and builds its `frontend/dist/**`.
+
+### 3. Contracts
+
+- `apps/play-frontend-dev/**` is the repository source of truth for the game-card frontend. Implement UI/composable/frontend protocol changes there, then build and package it. Do not develop against an extracted card's `frontend/src/**` copy.
+- `cards/<card>.tsian-card/workspace/**` is the source of truth for card content: Skills, custom Tools/Frontend Actions, Agent files, config, prompts, and card docs are edited there.
+- Modify `apps/platform-web/**` only when the behavior is platform-owned, including automatic generation of save skeletons or package/import/build infrastructure. Platform built-in card/workspace templates are currently unmaintained and must not receive feature synchronization.
+- An extracted card directory may contain historical `frontend/src/**`, `frontend/dist/**`, and a package-wrapper `game-card.json`. Treat these as export residue, not parallel authoring sources; do not hand-maintain or manually synchronize them.
+- A whole-card packager must assemble canonical card workspace/cover content with a freshly built development frontend, generate the package-wrapper `game-card.json` from a small author-owned manifest input plus enumerated files, and write generated data only to the output archive/staging area.
+- Keep frontend-only and whole-card delivery as separate commands or explicit modes. Frontend-only upload is the fast path for UI work; whole-card output is for a complete installable card. Both must reuse the same media-type/path enumeration helpers rather than maintaining two manifest algorithms.
+
+### 4. Validation & Error Matrix
+
+| Change or package condition | Required behavior |
+|---|---|
+| UI/setup/composable change | Edit `apps/play-frontend-dev/src/**`; build and create frontend package |
+| Skill/custom Tool/Agent/config change | Edit `cards/<card>.tsian-card/workspace/**` |
+| Generated save skeleton rule changes | Edit the owning platform generator; do not patch one card export |
+| Built-in template appears similar | Leave it unchanged unless a separate template-maintenance task explicitly reactivates it |
+| Extracted card frontend differs from development frontend | Development frontend wins; no bidirectional/manual synchronization |
+| Frontend package manifest and source archive disagree | Packaging/validation fails before upload |
+| Whole-card package lacks built `frontend/dist/index.html` | Packaging fails; whole-card import does not build source automatically |
+| Generated `game-card.json` file index differs from archive entries | Packaging fails before delivery |
+
+### 5. Good/Base/Bad Cases
+
+- Good: update setup UI under `apps/play-frontend-dev/src`, run its build and `package:frontend`, then upload the generated frontend package to the card.
+- Good: update `cards/沉浸阅读器.tsian-card/workspace/agents/.../SKILL.md` without copying it into a platform template.
+- Base: a workspace-only change uses whole-card packaging when a complete installable package is needed; frontend-only upload is unnecessary.
+- Bad: edit `cards/.../frontend/src`, rebuild `cards/.../frontend/dist`, and manually rewrite hundreds of `game-card.json` file entries.
+- Bad: copy every card workspace change into `apps/platform-web/src/storage/workspace-templates/**` even though built-in templates are no longer maintained.
+
+### 6. Tests Required
+
+- Frontend change: run `npm run build:play-frontend`, run `npm run package:frontend`, parse `frontend.json`, and assert every indexed `src/**` entry matches `apps/play-frontend-dev/src/**` by path, byte size, and byte content.
+- Workspace change: parse all changed JSON and `tsian-actions`; compile referenced browser scripts with helpers.
+- Whole-card packager: assert source-tree cleanliness, built entry presence, generated manifest schema, exact archive/index path agreement, and byte-for-byte ZIP round trip.
+- Scope audit must distinguish canonical product changes from historical extracted-card residue and must reject new manual synchronization edits.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+edit cards/foo.tsian-card/frontend/src/**
+manually rebuild cards/foo.tsian-card/frontend/dist/**
+manually update cards/foo.tsian-card/game-card.json
+copy workspace changes into platform built-in templates
+```
+
+#### Correct
+
+```text
+UI:        edit apps/play-frontend-dev/src/** -> build -> package:frontend -> upload
+Card data: edit cards/foo.tsian-card/workspace/**
+Whole card: package:card assembles workspace + built frontend + generated manifest in ZIP
+Platform:  edit only platform-owned generators/infrastructure
+```
+
 ## Scenario: Tool Event Display Name And Player Status
 
 ### 1. Scope / Trigger
@@ -347,6 +422,119 @@ await tsian.invokeAgent(agentId, input, {
   persist: true,
   checkpoint: { mode: "current-turn-auto" },
 })
+```
+
+## Scenario: Recoverable invokeAgent Sidecar Session
+
+### 1. Scope / Trigger
+
+- Trigger: a packaged or remote play frontend uses persistent `invokeAgent` calls for a multi-round setup/interview that must survive refresh, remains outside formal story turns, and carries machine state hidden from the player.
+
+### 2. Signatures
+
+```ts
+tsian.invokeAgent(agentId, userMarker, {
+  invocationId,
+  contextSlot: sourceDerivedSlot,
+  persist: true,
+  injection: [{ role: "user", position: "before-input", content: invariants }],
+})
+
+type SidecarControl = {
+  source: { hash: string }
+  session: { id: string; slot: string; revision: number }
+  attempt?: {
+    id: string
+    input: string
+    inputHash: string
+    basedOnRevision: number
+    status: "submitted" | "failed"
+  }
+  receipt?: { revision: number; payloadHash: string; committedAt: string }
+}
+
+type SidecarTurnState = {
+  sessionId: string
+  sourceHash: string
+  revision: number
+  processedAttemptId: string
+}
+```
+
+The user marker must carry either the session bootstrap id or the durable `attempt.id`; the assistant machine block must carry the complete latest `SidecarTurnState`, not a patch.
+
+### 3. Contracts
+
+- Derive `session.id` and `contextSlot` from stable source identity. Sidecar progress uses local `revision + attemptId`; formal story `turn` is not a sidecar sequence number.
+- The latest valid machine block in the persistent context is progress authority. A separate control file stores source/session identity, the current submitted/failed attempt, and the final receipt only; it must not duplicate the evolving model draft. Context compression may remove the bootstrap and older pairs, so the first retained answer/assistant pair may establish a revision greater than `1`; its marker/state must still agree, and every later retained revision must be contiguous.
+- Persist an attempt before invoking. On success, accept only an assistant block matching source/session, `processedAttemptId`, and expected `revision`; then clear the attempt. On transport rejection, mark that same attempt failed. If invocation resolved but projection/control write/navigation failed, enter recovery and never allocate a new attempt.
+- A retry first rereads persistent context. If the attempt is already processed, repair control state without resending; otherwise resend the identical marker/input with the same attempt id. Replayed assistant turns must be byte-equivalent for the same `(revision, processedAttemptId)`.
+- Initialization order is completion signal -> valid persistent context -> revision-zero bootstrap retry -> fail-closed protocol error -> fresh setup. Ordinary workspace read/parse errors must not silently route to a fresh import/setup surface.
+- Hidden protocol markers must be removed from final display and from streaming display. Streaming sanitization must trim every trailing prefix of a hidden marker (for example `[[开局会`) so no partial marker or JSON flashes before the full delimiter arrives.
+- Formal model writes happen once, through one transactional final action after full input/ref/identity/clean-save validation. Test-stage legacy incomplete state fails closed and requests a new save; do not delete, merge, or migrate it. A completed old save may continue through its existing completion signal.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Context state matches source/session/revision/attempt | Restore messages and repair the compact control file |
+| Submitted attempt already appears as `processedAttemptId` | Clear attempt; do not invoke again |
+| Submitted attempt absent from latest valid context | Retry the same id/input; do not append a duplicate player message |
+| Same attempt/revision has a different assistant state or display | Fail closed as protocol conflict |
+| Bootstrap assistant revision is not `1`; a compressed-tail answer starts at revision `1`; or later revisions skip/regress | Fail closed; do not send another answer |
+| Invocation rejects before a valid assistant state | Mark the existing attempt `failed`; expose retry |
+| Invocation resolves but local reconciliation fails | Mark UI `recovering`; reread completion/context before any resend |
+| Full or partial hidden marker reaches streaming display | Remove from the marker-prefix boundary onward |
+| Legacy incomplete formal files/context exist | Stable new-save error and zero mutation |
+| Same final payload receipt is retried before play starts | Return the existing receipt without rewriting |
+| Different payload, `enteredPlay`, or formal turn > 0 | Reject the final action |
+
+### 5. Good/Base/Bad Cases
+
+- Good: answer is durably recorded as `attempt-abc`; refresh finds context state with `processedAttemptId: "attempt-abc"`, repairs control, and shows one player answer plus one assistant question.
+- Base: bootstrap invocation rejects before any assistant state; control remains revision zero and the UI retries the same bootstrap marker.
+- Bad: use formal `runtime.turn` as interview revision, copy the whole draft into both context and control JSON, or create a new attempt after an ambiguous resolve.
+- Bad: sanitize only complete `[[hidden]]` delimiters; chunked streaming can briefly expose `[[hid` to the player.
+
+### 6. Tests Required
+
+- Type-check and production-build the consuming card frontend.
+- Protocol harness assertions: complete marker removal, every partial marker prefix, strict machine-state parsing, bootstrap revision `1`, valid compressed-tail baseline above `1`, later monotonic revisions, duplicate replay equality, and attempt-id reuse rejection.
+- Recovery assertions: durable write before invoke, reject -> failed, resolve/reconcile failure -> recovering, context-first retry, no duplicate player message, and completion-first initialization.
+- Final-action harness assertions: successful dependency closure, unknown ref, duplicate id/path, source/session mismatch, legacy/formal state with zero writes, same-receipt idempotency, different payload rejection, `enteredPlay`, and turn > 0.
+- Package verification: generated frontend entry exists, manifest file sizes match sources, and every ZIP entry matches the source byte-for-byte.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const attemptId = crypto.randomUUID()
+await tsian.invokeAgent(agentId, answer, { persist: true })
+control.revision = runtime.turn
+
+function streamingDisplay(text: string) {
+  return text.replace(FULL_HIDDEN_BLOCK_RE, "")
+}
+```
+
+#### Correct
+
+```ts
+await writeControl({ ...control, attempt }) // durable before invoke
+const result = await tsian.invokeAgent(agentId, encodeAttempt(attempt), {
+  invocationId,
+  contextSlot: control.session.slot,
+  persist: true,
+})
+const state = parseAndValidateState(result.response, {
+  revision: attempt.basedOnRevision + 1,
+  processedAttemptId: attempt.id,
+})
+
+function streamingDisplay(text: string) {
+  return trimFullBlocksAndTrailingMarkerPrefixes(text)
+}
 ```
 
 
