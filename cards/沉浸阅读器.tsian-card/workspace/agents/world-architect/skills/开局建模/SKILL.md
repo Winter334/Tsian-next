@@ -28,28 +28,33 @@ appliesTo:
 
 ## 回复协议
 
-每个成功回复都必须包含一份完整状态，不是增量。自然语言问题在前，内部块在后：
+每个成功回复都必须包含一份完整状态快照，不输出 patch。自然语言问题在前，内部块在后：
 
 ```text
-<给玩家的问题>
+你希望开局氛围更庄重，还是更轻松？
 
 [[开局会话]]
-{"schema":"novel-airp.opening-turn.v1","sessionId":"...","sourceHash":"...","branch":"canon","revision":1,"processedAttemptId":"start","readSlices":[],"decisions":{},"unresolved":{},"phase":"interviewing"}
+{"schema":"novel-airp.opening-turn.v1","sessionId":"opening-a1b2c3d4","sourceHash":"a1b2c3d4","branch":"canon","revision":2,"processedAttemptId":"attempt-2","readSlices":[{"ref":"source:chapter-0002","start":0,"end":3240,"purpose":"核对萧澈在迎亲前的处境"}],"protagonist":{"mode":"canon","ref":"character:萧澈","name":"萧澈"},"decisions":{"openingEntry":{"value":"迎亲出发前","evidenceRefs":["source:chapter-0002"]}},"unresolved":{"openingTone":{"reason":"等待玩家选择庄重或轻松的开局氛围"}},"phase":"interviewing"}
 [[/开局会话]]
 
 [[开局选项]]
-- 选项一
-- 选项二
+- 庄重
+- 轻松
 [[/开局选项]]
 ```
 
 状态约束：
 
+- 顶层固定为 `schema/sessionId/sourceHash/branch/revision/processedAttemptId/readSlices/protagonist?/decisions/unresolved/phase`；`protagonist` 尚未明确时省略，其余字段每轮都保留。
 - 新 attempt 成功时 `revision = basedOnRevision + 1`，`processedAttemptId = attemptId`；首轮使用 `processedAttemptId:"start"`。
 - 如果当前 attemptId 已等于最近状态的 `processedAttemptId`，这是幂等重试：原样重放最近的问题、完整状态和选项，不增加 revision，不重复应用玩家回答。
-- `readSlices` 保存真实、不必连续的读取范围：`{ref,start?,end?,purpose}`；ref 必须来自章节索引。
-- `decisions` 与 `unresolved` 是稳定 key 的对象；新回答更新同 key，不追加冲突副本。
-- `protagonist` 只保存 `{mode,ref?,name?}` 摘要。
+- `protagonist` 是唯一的主角摘要，固定为 `{mode,ref?,name?}`，其中 `mode` 等于顶层 `branch`；它只放在顶层，主角选择不在 `decisions.protagonist` 中保存第二份。
+- `decisions.<stableKey>` 固定为 `{value,evidenceRefs?}`：`value` 是已确定的字符串，`evidenceRefs` 是支持该决定的去重 ref 数组；玩家偏好不需要原文证据时省略 `evidenceRefs`。
+- `unresolved.<stableKey>` 固定为 `{reason}`：`reason` 是说明仍缺什么的字符串；不要用裸字符串、选项数组或以 `|` 拼接的值代替该对象。
+- stable key 按事项语义命名并跨轮复用。新回答更新同 key；事项解决后从 `unresolved` 移除并写入对应 `decisions`，不保留冲突副本。
+- 每轮以最近完整状态为基础应用一次当前回答，保留仍有效的 `readSlices`、`protagonist`、`decisions` 与 `unresolved`，再输出完整快照。
+- `readSlices` 中每个精读章节恰有一条 `{ref,start?,end?,purpose}`，`ref` 必须来自章节索引。`start/end` 是该章节正文内 0-based、end-exclusive 的字符偏移；从章首读取时写 `start:0, end:charactersRead`，确认读完整章时可同时省略 `start/end`。
+- `readSlices.start/end` 只记录章节内字符范围，不填 `window.startIndex/endIndex`，也不填章节序号。
 - 状态及其子对象只使用本节示例列出的字段，不附加临时草稿字段。
 - 不把整段小说、完整 entity/scene/runtime 草稿或开发解释放进状态块。
 - 未完成用 `phase:"interviewing"` 或 `"ready-to-commit"`；`commit_opening` 成功后用 `"complete"`。
@@ -57,8 +62,10 @@ appliesTo:
 
 ## 阅读策略
 
-- 首轮原著分支先用 `inspect_source_opening` 获取开头结构和候选线索；原创分支只读取足以提出首问的内容。
-- 需要原文证据时用 `read_opening_slice`。把返回章节 ref 与实际范围写入 `readSlices`。
+- 每轮先核对最近的 `[[开局会话]]` 与近期 Tool 工作记忆（已执行 action 的摘要、参数与 refs）；已有信息足以支撑当前问题时直接复用。
+- 需要开头结构或候选线索且现有信息不足时使用 `inspect_source_opening`。它提供章节结构与候选预览，不代表精读正文，也不写入 `readSlices`。
+- 预览不足以确认角色事实、开局锚点或其他精确证据时，使用 `read_opening_slice` 定向精读；近期摘要缺少所需细节时可以重读 source 权威。把每个实际精读章节的 ref、章节内字符范围与用途写入 `readSlices`。
+- 原创分支只读取足以提出当前高价值问题的内容。
 - 玩家指定首批窗口之外的原著角色时，定向扩展读取；不要因为不在首批候选而拒绝。
 - 只使用已经读取范围内、在开局锚点时成立的事实。后续章节发生的关系变化、状态、目标和经历不得提前写入正式模型。
 

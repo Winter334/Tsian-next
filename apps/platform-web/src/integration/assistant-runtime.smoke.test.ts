@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   ASSISTANT_CONTEXT_AGENT_ID,
   ASSISTANT_CONTEXT_SCHEMA,
+  agentContextPath,
   createEmptyAgentContext,
   parseAgentContext,
   serializeAgentContext,
@@ -21,6 +22,7 @@ import {
   saveBrowserPlatformConfigDraft,
 } from "../config/ai"
 import { markPlatformHostReady } from "../platform-host/host-state"
+import { invokeAgent } from "../platform-host/ai-invocation"
 import { runAssistantChat } from "../platform-host/assistant-chat"
 import {
   assistantContextPath,
@@ -46,6 +48,8 @@ const PROVIDER_CREDENTIAL = "assistant-provider-secret"
 const WORKSPACE_PATH = "save/assistant-smoke.txt"
 const WORKSPACE_BASELINE = "before"
 const STAGED_VALUE = "same-turn-staged-value"
+const SIDE_AGENT_ID = "world-architect"
+const SIDE_CONTEXT_SLOT = "assistant-smoke-side"
 
 interface OpenAiRequestBody {
   messages?: Array<{
@@ -147,7 +151,30 @@ async function seedRuntime(input: {
     version: "1.0.0",
     summary: "Cross-layer Assistant transaction fixture",
   }
-  const card = await putLocalGameCard({ manifest, source: "local", contentFiles: [] })
+  const card = await putLocalGameCard({
+    manifest,
+    source: "local",
+    contentFiles: [
+      {
+        path: `agents/${SIDE_AGENT_ID}/agent.json`,
+        content: JSON.stringify({
+          id: SIDE_AGENT_ID,
+          title: "Smoke side Agent",
+          summary: "Persistent task-mode side invocation fixture",
+          contacts: [],
+          contextPaths: [],
+          skills: { enabled: [], disabled: [] },
+          tools: { enabled: [], disabled: [] },
+          platformTools: { enabled: ["workspace_read"], disabled: [] },
+          workspaceAccess: { level: 1 },
+        }, null, 2),
+      },
+      {
+        path: `agents/${SIDE_AGENT_ID}/AGENT.md`,
+        content: "# Smoke side Agent\n\nFollow the current request and use available workspace tools.\n",
+      },
+    ],
+  })
   const save = await createLocalSaveFromGameCard(card, { name: "Assistant smoke" })
   await setActiveGameCardId(card.id)
   await setActiveSaveId(save.id)
@@ -230,8 +257,20 @@ describe("Assistant Runtime transaction smoke", () => {
         expect(toolObservation(body, "write-1")).toContain(WORKSPACE_PATH)
         return openAiToolResponse("read-1", "read", { path: WORKSPACE_PATH })
       }
-      expect(toolObservation(body, "read-1")).toContain(STAGED_VALUE)
-      return openAiFinalResponse("Assistant smoke completed")
+      if (requests.length === 3) {
+        expect(toolObservation(body, "read-1")).toContain(STAGED_VALUE)
+        return openAiFinalResponse("Assistant smoke completed")
+      }
+      if (requests.length === 4) {
+        return openAiToolResponse("side-read-1", "read", { path: WORKSPACE_PATH })
+      }
+      if (requests.length === 5) {
+        expect(toolObservation(body, "side-read-1")).toContain(STAGED_VALUE)
+        return openAiFinalResponse("Side invocation recorded")
+      }
+      expect(JSON.stringify(body.messages)).toContain("最近工具工作记录")
+      expect(JSON.stringify(body.messages)).toContain(WORKSPACE_PATH)
+      return openAiFinalResponse("Side invocation resumed")
     }))
 
     await expect(runAssistantChat({
@@ -263,8 +302,37 @@ describe("Assistant Runtime transaction smoke", () => {
       { role: "assistant", content: "Assistant smoke completed" },
     ])
 
+    await expect(invokeAgent({
+      agentId: SIDE_AGENT_ID,
+      input: "Read the smoke workspace file.",
+      contextSlot: SIDE_CONTEXT_SLOT,
+      persist: true,
+    })).resolves.toMatchObject({ response: "Side invocation recorded" })
+
+    const sideContextPath = agentContextPath(SIDE_AGENT_ID, SIDE_CONTEXT_SLOT)
+    const firstSideContext = parseAgentContext(
+      (await readWorkspaceFileForSave(seeded.saveId, sideContextPath))?.content ?? "",
+      seeded.saveId,
+      { agentId: SIDE_AGENT_ID },
+    )
+    expect(firstSideContext?.toolMemories).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceToolCallId: "side-read-1",
+        toolName: "read",
+        status: "success",
+      }),
+    ]))
+
+    await expect(invokeAgent({
+      agentId: SIDE_AGENT_ID,
+      input: "Continue using the previous work record.",
+      contextSlot: SIDE_CONTEXT_SLOT,
+      persist: true,
+    })).resolves.toMatchObject({ response: "Side invocation resumed" })
+    expect(requests).toHaveLength(6)
+
     const diagnostics = await diagnosticRequests("succeeded")
-    expect(diagnostics).toHaveLength(3)
+    expect(diagnostics).toHaveLength(6)
     expect(diagnostics.every((record) => record.attempts.length === 1)).toBe(true)
     expect(JSON.stringify(diagnostics)).not.toContain(PROVIDER_CREDENTIAL)
   })

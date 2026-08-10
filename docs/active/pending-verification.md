@@ -256,3 +256,21 @@
 **已知瑕疵（不阻塞，留作后续）**：旧会话迁移时 `createInitialAgentContext` 的 turn 号倒推算出负数（-2,-1,0,1）。根因：旧会话首 turn `currentTurn=1` + 6 条历史时 `baseTurn = 1 - ceil(6/2) = -2`。功能不受影响（压缩去重仍工作，`lastCompressedTurn` 正常）。**新会话不受影响**——从空开始 turn 号从 1 正常起步。
 
 **待续（G3-G9）**：长对话压缩稳态、多会话隔离、会话删除清理、旧会话迁移完整链路、turn 失败不写回、master 不回归、turn 号递增。注意：实测中发现 AssistantView 新建会话后 active 切换 + 建议按钮触发的消息路由需进一步确认（非 context 机制问题，是 UI 会话管理）。
+
+---
+
+## PV-006 开局访谈 persistent Tool memory 与状态协议实测
+
+**状态**：待用户手动浏览器验证（2026-08-10 代码、smoke、平台构建与卡包导入回环已通过）
+
+**关联任务**：`08-10-opening-interview-read-recovery-diagnosis`
+
+**验证范围**：
+
+- G1：新建存档进入原著角色开局访谈，首轮执行 `inspect_source_opening` 后选择候选角色；下一轮 Provider 请求应包含“最近工具工作记录”及 inspect 的参数/refs，不应因跨轮失忆再次执行同一 inspect。
+- G2：如果候选预览不足以确认精确事实，Agent 可以继续调用 `read_opening_slice`；这属于预览后精读，不判为重复读取。
+- G3：每轮 `[[开局会话]]` 应输出 canonical 完整快照：顶层 `protagonist`，`decisions.*={value,evidenceRefs?}`，`unresolved.*={reason}`。
+- G4：`readSlices` 每个精读章节一条，字符范围使用章节内 0-based/end-exclusive 偏移；不得把章节 index 写进 start/end。
+- G5：刷新后继续同一开局访谈，persistent `world-architect` context 应保留 Tool memory 与隐藏状态；formal narrative 回合不应出现 Tool 工作日志层。
+
+**通过标准**：Agent 能区分已做过的预览/读取与仍需补充的精确证据，新回复持续符合严格状态 schema；无需兼容或修复此前测试 sidecar。

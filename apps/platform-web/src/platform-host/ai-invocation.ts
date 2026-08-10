@@ -470,6 +470,9 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
           user: result.contextUpdate.user,
           assistant: projectedReply.content,
           compressedContext: result.contextUpdate.compressedContext,
+          ...(result.contextUpdate.toolMemories && result.contextUpdate.toolMemories.length > 0
+            ? { toolMemories: result.contextUpdate.toolMemories }
+            : {}),
           agentId,
           slot,
         })

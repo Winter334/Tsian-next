@@ -1,5 +1,6 @@
 import type {
   AgentContextSnapshot,
+  AgentContextToolMemory,
   ConversationMessageRecord,
   SessionHistoryEntry,
   TurnTimelineItem,
@@ -13,6 +14,10 @@ import {
   parseAgentContext,
   serializeAgentContext,
 } from "../agent-runtime/context-lifecycle"
+import {
+  applyTaskToolMemoryRetention,
+  sortToolMemoriesStable,
+} from "../agent-runtime/tool-memory"
 
 const AIRP_HISTORY_TURN_SCHEMA = "tsian.airp.history.turn.v2"
 const AIRP_HISTORY_TURN_PATH_PREFIX = "save/history/turns/"
@@ -111,6 +116,7 @@ export function stageAgentContextFile(
     user: string
     assistant: string
     compressedContext?: AgentContextSnapshot
+    toolMemories?: AgentContextToolMemory[]
     agentId?: string
     slot?: string
   },
@@ -123,12 +129,20 @@ export function stageAgentContextFile(
     ?? readAgentContextFromWorkspace(workspaceTransaction.workspaceFiles, input.saveId, agentId, slot)
     ?? createEmptyAgentContext(input.saveId, { agentId })
   // 追加本轮正文(保持最近 K 轮),saveId 用真实值修正(runtime 兜底时可能为空)
-  const updated = appendTurnToContext(
+  const appended = appendTurnToContext(
     { ...base, saveId: input.saveId },
     input.turn,
     input.user,
     input.assistant,
   )
+  const mergedToolMemories = applyTaskToolMemoryRetention(sortToolMemoriesStable([
+    ...(appended.toolMemories ?? []),
+    ...(input.toolMemories ?? []),
+  ]))
+  const updated: AgentContextSnapshot = {
+    ...appended,
+    ...(mergedToolMemories.length > 0 ? { toolMemories: mergedToolMemories } : {}),
+  }
   return workspaceTransaction.write({
     path: agentContextPath(agentId, slot),
     content: serializeAgentContext(updated),

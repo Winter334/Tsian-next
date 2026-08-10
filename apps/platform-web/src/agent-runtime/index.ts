@@ -525,6 +525,7 @@ function buildEntryAgentMessages(
   collaborationPolicy: AgentRuntimeCollaborationPolicy,
   agentCallState: AgentCallTurnState,
   toolCallMode?: BrowserAiToolCallMode,
+  compressionMode: RuntimeCompressionMode = "narrative",
   agentContext?: AgentContextSnapshot | null,
 ): RuntimeChatMessage[] {
   const history = normalizeHistory(input.recentHistory)
@@ -547,7 +548,7 @@ function buildEntryAgentMessages(
   const historyMessages: RuntimeChatMessage[] = agentContext
     ? buildAgentContextMessages(agentContext, isAssistant, historySummaryRole)
     : [{ role: "user", content: `最近对话：\n${formatHistory(history)}` }]
-  const toolMemoryLog = isAssistant
+  const toolMemoryLog = compressionMode === "task"
     ? renderToolMemoriesForModel(agentContext?.toolMemories)
     : null
   const toolMemoryMessages: RuntimeChatMessage[] = toolMemoryLog
@@ -592,7 +593,7 @@ function buildEntryAgentMessages(
     // runtime 段（状态层）：runtime position 注入（runtime.json、frontier.json 等）。
     // 放在 history 之后——每轮可能变化的状态文件，不指望前缀缓存命中。
     ...buildRuntimeMessages(context),
-    // task-mode 助手的跨 turn 工具记忆作为普通工作日志放在 runtime 段后，
+    // task-mode entry agent 的跨 turn 工具记忆作为普通工作日志放在 runtime 段后，
     // 避免高频变化块提前破坏大段稳定前缀缓存；不使用 provider tool protocol。
     ...toolMemoryMessages,
     {
@@ -2086,6 +2087,7 @@ export async function runAgentRuntimeTurn(
         collaborationPolicy,
         agentCallState,
         capabilities.toolCallMode,
+        entryCompressionMode,
         agentContext,
       ),
       input,

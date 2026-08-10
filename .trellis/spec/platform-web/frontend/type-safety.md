@@ -724,6 +724,100 @@ await reloadAuthoritativeState()
 - Do not leak Dexie table records directly into contracts unless they are intentionally shared.
 - Do not silently swallow invalid platform action input.
 
+## Scenario: Persistent Task-mode Side-invocation Tool Memory
+
+### 1. Scope / Trigger
+
+- Trigger: changing `interaction.invokeAgent(persist:true)`, side-invocation context writeback, `AgentContextSnapshot.toolMemories`, or the entry message layer that replays cross-turn Tool work.
+
+### 2. Signatures
+
+```ts
+interface AgentRuntimeTurnContextUpdate {
+  turn: number
+  user: string
+  assistant: string
+  compressedContext?: AgentContextSnapshot
+  toolMemories?: AgentContextToolMemory[]
+}
+
+stageAgentContextFile(transaction, {
+  saveId,
+  turn,
+  user,
+  assistant,
+  compressedContext?,
+  toolMemories?,
+  agentId?,
+  slot?,
+}): WorkspaceFile
+```
+
+### 3. Contracts
+
+- A successful `invokeAgent` with `persist:true` passes the runtime's `contextUpdate.toolMemories` into the same `context-<slot>.json` snapshot that receives the projected user/assistant turn. `persist:false` and failed invocations do not write context or Tool memory.
+- Writeback starts from the compressed snapshot when present, otherwise the current slot snapshot, otherwise an empty snapshot. It appends the text-only turn, merges existing and current Tool memories, then applies `sortToolMemoriesStable` and `applyTaskToolMemoryRetention` before serialization.
+- Cross-turn Tool memory is the existing bounded semantic projection of an accepted Tool observation: tool/status/title, bounded argument/result summary, and anchors. Raw observation, provider Tool protocol messages, and UI timeline/presentation are not persisted as model history.
+- Entry message composition renders the Tool memory layer when `compressionMode === "task"`, independent of whether the Agent path is under `.tsian/local/` or `agents/<id>/`. Agent-path classification continues to choose user/player labels only; it is not a capability gate.
+- Narrative mode does not render the Tool memory layer. Formal player-turn behavior and narrative cache layout stay unchanged.
+- A persistent side invocation may reread an authoritative workspace/source when the bounded memory lacks required detail; Tool memory records prior work but is not a replacement authority for file content.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| `persist:true`, successful Tool turn | Append prose and retained Tool memories to the selected context slot |
+| `persist:true`, successful turn without new Tools | Preserve existing retained memories while appending prose |
+| `persist:true`, invocation throws before successful commit | Do not write the failed turn or its Tool memory |
+| Successful invocation contains a failed Tool observation | Persist its bounded memory with `status:"failed"`; the Agent can avoid blindly repeating it |
+| `persist:false` | Do not read or write cross-turn context/memory |
+| Task mode with retained memories | Inject one ordinary Tool-work-log message; do not replay provider Tool messages |
+| Narrative mode with retained memories | Omit the Tool-memory message |
+| Compression occurred this turn | Merge new memories into the compressed base; do not resurrect memories removed by compression |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a persistent `world-architect` side invocation reads a source chapter, stores a bounded read summary/anchor, and its next call sees that prior work before deciding whether exact source detail must be reread.
+- Base: a one-shot side invocation omits `persist`; it returns normally and leaves no context file.
+- Bad: gate Tool-memory rendering on `.tsian/local/`, which preserves Desktop Assistant memory but silently drops persistent game-Agent side-invocation memory.
+- Bad: store the complete read observation or source text in `recentTurns` to make it visible next turn.
+
+### 6. Tests Required
+
+- Extend the retained Assistant runtime success smoke rather than adding a test file: run a persistent game-Agent side invocation that calls a Tool, assert its slot context contains the expected Tool-memory identity/status, then run the same slot again and assert the provider-bound messages contain the Tool-work log and anchor.
+- Keep the retained failure smoke proving failed turns do not alter context/workspace.
+- Run `npm run test:smoke:web`, `npm run build:web`, and manually review the narrative branch to confirm the render condition is exactly task mode.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const toolMemoryLog = isAssistantEntryAgent(context.agent.path)
+  ? renderToolMemoriesForModel(snapshot.toolMemories)
+  : null
+
+stageAgentContextFile(transaction, {
+  ...turnText,
+  // result.contextUpdate.toolMemories is dropped
+})
+```
+
+#### Correct
+
+```ts
+const toolMemoryLog = compressionMode === "task"
+  ? renderToolMemoriesForModel(snapshot.toolMemories)
+  : null
+
+stageAgentContextFile(transaction, {
+  ...turnText,
+  ...(result.contextUpdate.toolMemories?.length
+    ? { toolMemories: result.contextUpdate.toolMemories }
+    : {}),
+})
+```
+
 ## Scenario: Play Bridge Event Payload Type Alignment
 
 ### Scope / Trigger
