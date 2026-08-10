@@ -457,6 +457,7 @@ tsian.invokeAgent(agentId, userMarker, {
 type SidecarControl = {
   source: { hash: string }
   session: { id: string; slot: string; revision: number }
+  branch: "canon" | "original"
   attempt?: {
     id: string
     input: string
@@ -470,6 +471,7 @@ type SidecarControl = {
 type SidecarTurnState = {
   sessionId: string
   sourceHash: string
+  branch: "canon" | "original"
   revision: number
   processedAttemptId: string
 }
@@ -480,12 +482,15 @@ The user marker must carry either the session bootstrap id or the durable `attem
 ### 3. Contracts
 
 - Derive `session.id` and `contextSlot` from stable source identity. Sidecar progress uses local `revision + attemptId`; formal story `turn` is not a sidecar sequence number.
+- Keep a pre-interview choice such as `branch` as one structured control/state invariant. Generate its player-language label from the enum in the per-turn injection (for example `canon = 原著角色`, `original = 原创角色`) and state that the player has already confirmed it; do not add a second persisted label field or ask the Agent to reconfirm the choice.
 - The latest valid machine block in the persistent context is progress authority. A separate control file stores source/session identity, the current submitted/failed attempt, and the final receipt only; it must not duplicate the evolving model draft. Context compression may remove the bootstrap and older pairs, so the first retained answer/assistant pair may establish a revision greater than `1`; its marker/state must still agree, and every later retained revision must be contiguous.
 - Persist an attempt before invoking. On success, accept only an assistant block matching source/session, `processedAttemptId`, and expected `revision`; then clear the attempt. On transport rejection, mark that same attempt failed. If invocation resolved but projection/control write/navigation failed, enter recovery and never allocate a new attempt.
 - A retry first rereads persistent context. If the attempt is already processed, repair control state without resending; otherwise resend the identical marker/input with the same attempt id. Replayed assistant turns must be byte-equivalent for the same `(revision, processedAttemptId)`.
 - Initialization order is completion signal -> valid persistent context -> revision-zero bootstrap retry -> fail-closed protocol error -> fresh setup. Ordinary workspace read/parse errors must not silently route to a fresh import/setup surface.
 - Hidden protocol markers must be removed from final display and from streaming display. Streaming sanitization must trim every trailing prefix of a hidden marker (for example `[[开局会`) so no partial marker or JSON flashes before the full delimiter arrives.
+- A setup streaming view should keep the same message skeleton, typography, and layout from waiting through final text. Show already-sanitized provider deltas directly with a low-motion inline status mark; do not add a second typewriter interpolation. `prefers-reduced-motion` must disable its looping animation.
 - Formal model writes happen once, through one transactional final action after full input/ref/identity/clean-save validation. Test-stage legacy incomplete state fails closed and requests a new save; do not delete, merge, or migrate it. A completed old save may continue through its existing completion signal.
+- The final action builds the minimum sufficient formal model from actual opening content. `character`, `location`, `relationship`, `container`, `item`, character container roots, and equipment are ordinary schema content: create what the opening needs, do not manufacture empty inventory structure, and do not hide core refs in extensions. Normalize all entities before validating refs; container graphs must be acyclic and character-exclusive. Equipped items must be reachable with sufficient count and matching slot type. The action, not the Agent, derives `applied` and final attributes with the same safe-integer/round-away formula as equipment management. Any validation failure is zero-write.
 
 ### 4. Validation & Error Matrix
 
@@ -499,6 +504,10 @@ The user marker must carry either the session bootstrap id or the durable `attem
 | Invocation rejects before a valid assistant state | Mark the existing attempt `failed`; expose retry |
 | Invocation resolves but local reconciliation fails | Mark UI `recovering`; reread completion/context before any resend |
 | Full or partial hidden marker reaches streaming display | Remove from the marker-prefix boundary onward |
+| Injection/control/assistant `branch` values disagree | Reject the assistant/recovery result; do not continue or silently remap the branch |
+| Container/item ref is missing or wrong-type; container graph cycles or is shared by characters | Reject the final action before any write |
+| Equipped item is unreachable, quantity-exhausted, wrong-slot, or references an unknown attribute | Reject the final action before any write |
+| Equipment contribution or final attribute exceeds the safe-integer range | Reject the final action before any write |
 | Legacy incomplete formal files/context exist | Stable new-save error and zero mutation |
 | Same final payload receipt is retried before play starts | Return the existing receipt without rewriting |
 | Different payload, `enteredPlay`, or formal turn > 0 | Reject the final action |
@@ -506,16 +515,18 @@ The user marker must carry either the session bootstrap id or the durable `attem
 ### 5. Good/Base/Bad Cases
 
 - Good: answer is durably recorded as `attempt-abc`; refresh finds context state with `processedAttemptId: "attempt-abc"`, repairs control, and shows one player answer plus one assistant question.
+- Good: an opening that establishes a carried or equipped item commits the character, exclusive container graph, item, derived equipment projection, and all refs atomically; an opening without inventory facts creates none of those entities.
 - Base: bootstrap invocation rejects before any assistant state; control remains revision zero and the UI retries the same bootstrap marker.
 - Bad: use formal `runtime.turn` as interview revision, copy the whole draft into both context and control JSON, or create a new attempt after an ambiguous resolve.
 - Bad: sanitize only complete `[[hidden]]` delimiters; chunked streaming can briefly expose `[[hid` to the player.
+- Bad: persist a Chinese branch label as a second authority, ask the player to choose the branch again, forbid all opening items, require an inventory every time, or accept Agent-authored `applied` values.
 
 ### 6. Tests Required
 
 - Type-check and production-build the consuming card frontend.
 - Protocol harness assertions: complete marker removal, every partial marker prefix, strict machine-state parsing, bootstrap revision `1`, valid compressed-tail baseline above `1`, later monotonic revisions, duplicate replay equality, and attempt-id reuse rejection.
 - Recovery assertions: durable write before invoke, reject -> failed, resolve/reconcile failure -> recovering, context-first retry, no duplicate player message, and completion-first initialization.
-- Final-action harness assertions: successful dependency closure, unknown ref, duplicate id/path, source/session mismatch, legacy/formal state with zero writes, same-receipt idempotency, different payload rejection, `enteredPlay`, and turn > 0.
+- Final-action harness assertions: no-inventory baseline; valid container/item/equipment closure and deterministic projection parity; unknown/wrong-type ref; duplicate id/path; container cycle/shared ownership; unreachable/wrong-slot/quantity-exhausted equipment; unknown attribute and safe-integer overflow; source/session mismatch; legacy/formal state with zero writes; same-receipt idempotency; different payload rejection; `enteredPlay`; and turn > 0.
 - Package verification: generated frontend entry exists, manifest file sizes match sources, and every ZIP entry matches the source byte-for-byte.
 
 ### 7. Wrong vs Correct

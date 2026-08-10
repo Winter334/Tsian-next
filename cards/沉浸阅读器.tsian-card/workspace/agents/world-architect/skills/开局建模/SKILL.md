@@ -10,7 +10,7 @@ appliesTo:
 
 # 开局建模
 
-你正在一个临时、可恢复的开局访谈中直接面对玩家。前端 injection 给出不可改写的 `sessionId`、`sourceHash`、`branch`、`basedOnRevision` 与 `attemptId`。当前 user input 是下列之一：
+你正在一个临时、可恢复的开局访谈中直接面对玩家。前端 injection 给出不可改写的 `sessionId`、`sourceHash`、`branch`、`basedOnRevision` 与 `attemptId`。`branch` 已由玩家确认：`canon` 表示原著角色，`original` 表示原创角色。当前 user input 是下列之一：
 
 - `opening-interview:start:<sessionId>`：第一次提问；
 - `opening-interview:answer:<attemptId>\n<玩家回答>`：处理一次玩家回答。
@@ -19,7 +19,7 @@ appliesTo:
 
 1. 从最近一条 assistant 消息的 `[[开局会话]]` 读取完整进度；首轮没有旧状态。
 2. 只在当前决策缺口需要小说证据时使用 `inspect_source_opening` 或 `read_opening_slice`。
-3. 原著分支先给小说相关候选，也接受玩家指定其他原著角色；原创分支从姓名、身份或切入点中最高价值的一项开始问，不要求表单。
+3. 直接进入 injection 指定的分支：`canon` 首轮给出小说相关候选并接受玩家指定其他原著角色；`original` 首轮从姓名、身份或切入点中最高价值的一项开始问，不要求表单。
 4. 小说已经明确的事实直接记入进度；只向玩家询问偏好、多种合理选择、冲突信息或阻塞开局且无法可靠推断的内容。
 5. 每轮优先只问一个问题，至多两个紧密相关的问题；给快捷选项时始终允许自由回答。
 6. 玩家明确确认开始，且最小依赖闭包满足后，调用一次 `commit_opening`。成功后不再提问。
@@ -68,12 +68,12 @@ appliesTo:
 
 - 主角已明确，可构造一个有效 character；
 - 开局地点与至少一个 scene 成立，scene.present 至少包含一个本次实体；
-- 必要角色关系、traits、当前状态和处境已知；非阻塞细节不强问；
+- 第一回合所需的角色、地点、必要关系、traits、当前状态、处境及其他正式实体已形成最小充分闭包，全部已用引用可闭合；非阻塞细节不强问；
 - runtime protagonist/location/activeSceneRefs 可指向本次闭包；
 - frontier 窗口与首个 source anchor 可由已读章节构造；
 - 玩家已明确同意开始。
 
-MVP 开局只提交 `character` 与 `location` entity。不要创建 container/item，不写 character containers/equipment，也不要写未知 ref-bearing extension。
+依据已读小说、玩家回答和已确认的开局处境，只建立让第一回合成立的最小充分正式模型。实体使用下方 action 中的 `character`、`location`、`container`、`item` 正式结构；已有正式字段可以表达的事实写入对应字段，`extensions` 只承载 schema 中没有的非引用信息。relationships 只保存 character-to-character 关系。
 
 组装 `commit_opening` 输入时：
 
@@ -128,10 +128,45 @@ MVP 开局只提交 `character` 与 `location` entity。不要创建 container/i
             "type": "object",
             "additionalProperties": false,
             "required": ["id", "name", "brief"],
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "pattern": "^character:.+$" }, "name": {}, "brief": {}, "gender": {}, "tags": {}, "aliases": {},
+                  "visibility": {}, "lifecycle": {}, "identity": {}, "appearance": {}, "attributes": {}, "gauges": {},
+                  "status": {}, "traits": {}, "goals": {}, "background": {}, "history": {}, "containers": {}, "equipment": {}, "extensions": {}
+                }
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "pattern": "^location:.+$" }, "name": {}, "brief": {}, "tags": {}, "aliases": {},
+                  "visibility": {}, "lifecycle": {}, "status": {}, "extensions": {}
+                }
+              },
+              {
+                "additionalProperties": false,
+                "required": ["type", "contents"],
+                "properties": {
+                  "id": { "pattern": "^container:.+$" }, "name": {}, "brief": {}, "type": { "const": "container" },
+                  "contents": {}, "status": {}, "extensions": {}
+                }
+              },
+              {
+                "additionalProperties": false,
+                "required": ["type"],
+                "properties": {
+                  "id": { "pattern": "^item:.+$" }, "name": {}, "brief": {},
+                  "type": { "enum": ["equipment", "material", "consumable", "special", "other"] },
+                  "tags": {}, "equipment": {}, "extensions": {}
+                }
+              }
+            ],
             "properties": {
-              "id": { "type": "string", "description": "仅 character:<localId> 或 location:<localId>。" },
+              "id": { "type": "string", "description": "使用 character/location/container/item:<localId>；字段必须匹配 id 类型对应的正式结构。" },
               "name": { "type": "string" },
               "brief": { "type": "string" },
+              "type": { "type": "string", "enum": ["container", "equipment", "material", "consumable", "special", "other"] },
               "gender": { "type": "string" },
               "tags": { "type": "array", "items": { "type": "string" } },
               "aliases": { "type": "array", "items": { "type": "string" } },
@@ -149,7 +184,7 @@ MVP 开局只提交 `character` 与 `location` entity。不要创建 container/i
                 }
               },
               "appearance": { "type": "string" },
-              "attributes": { "type": "object", "minProperties": 6, "maxProperties": 6, "additionalProperties": { "type": "integer" } },
+              "attributes": { "type": "object", "minProperties": 6, "maxProperties": 6, "additionalProperties": { "type": "integer" }, "description": "角色六维非装备基线；存在 equipment 槽位时，action 按物品规则计算持久化的最终属性。" },
               "gauges": {
                 "type": "array",
                 "maxItems": 32,
@@ -217,6 +252,73 @@ MVP 开局只提交 `character` 与 `location` entity。不要创建 container/i
                   "required": ["event"],
                   "properties": { "event": { "type": "string" } }
                 }
+              },
+              "containers": {
+                "type": "array",
+                "maxItems": 64,
+                "description": "character 持有的根 container 引用。",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["ref"],
+                  "properties": {
+                    "ref": { "type": "string" },
+                    "count": { "type": "integer", "minimum": 1, "maximum": 1 }
+                  }
+                }
+              },
+              "contents": {
+                "type": "array",
+                "maxItems": 256,
+                "description": "container 内的 item 或嵌套 container 引用；嵌套 container 的 count 只能缺省或为 1。",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["ref"],
+                  "properties": {
+                    "ref": { "type": "string" },
+                    "count": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+                  }
+                }
+              },
+              "equipment": {
+                "description": "character 使用槽位类型到固定槽位数组的映射，每槽只传 ref；item 使用 slotType/add/percent/effects 规则。",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "propertyNames": { "type": "string", "minLength": 1, "maxLength": 80 },
+                    "additionalProperties": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 64,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["ref"],
+                        "properties": { "ref": { "anyOf": [{ "type": "string" }, { "type": "null" }] } }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["slotType"],
+                    "properties": {
+                      "slotType": { "type": "string" },
+                      "add": {
+                        "type": "object",
+                        "propertyNames": { "type": "string", "minLength": 1, "maxLength": 80 },
+                        "additionalProperties": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 }
+                      },
+                      "percent": {
+                        "type": "object",
+                        "propertyNames": { "type": "string", "minLength": 1, "maxLength": 80 },
+                        "additionalProperties": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 }
+                      },
+                      "effects": { "type": "array", "maxItems": 32, "items": { "type": "string" } }
+                    }
+                  }
+                ]
               },
               "extensions": { "type": "object" }
             }

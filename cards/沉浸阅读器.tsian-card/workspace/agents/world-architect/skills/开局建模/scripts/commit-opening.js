@@ -64,7 +64,7 @@ async function commitOpening(input, tsian, signal) {
         if (!isRecord(node)) fail('OPENING_EXTENSIONS_INVALID', 'extensions must contain JSON values only.', { owner });
         for (const [key, child] of Object.entries(node)) {
           if (key.length > 120) fail('OPENING_EXTENSIONS_INVALID', 'extension keys are too long.', { owner, key });
-          if (/refs?$/i.test(key)) fail('OPENING_ENTITY_EXTENSION_REF_FORBIDDEN', 'Opening extensions must not contain ref-bearing fields.', { owner, key });
+          if (/refs?$/i.test(key)) fail('OPENING_EXTENSIONS_INVALID', 'extensions contain an unsupported field.', { owner, key });
           visit(child, depth + 1);
         }
       }
@@ -77,8 +77,8 @@ async function commitOpening(input, tsian, signal) {
       if (!isRecord(value) || Object.keys(value).length !== 6) fail('OPENING_ENTITY_ATTRIBUTES_INVALID', 'attributes must contain exactly six dimensions.', { entityId });
       const result = {};
       for (const [rawKey, rawValue] of Object.entries(value)) {
-        const key = normalizeString(rawKey, 'OPENING_ENTITY_ATTRIBUTE_KEY_INVALID', 'attribute key', 80);
-        result[key] = strictInt(rawValue, 'OPENING_ENTITY_ATTRIBUTE_VALUE_INVALID', 'attribute value', -1000000, 1000000);
+        const key = normalizeManagedName(rawKey, 'OPENING_ENTITY_ATTRIBUTE_KEY_INVALID', 'attribute key');
+        result[key] = strictInt(rawValue, 'OPENING_ENTITY_ATTRIBUTE_VALUE_INVALID', 'attribute value', Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
       }
       return result;
     }
@@ -188,34 +188,118 @@ async function commitOpening(input, tsian, signal) {
       });
     }
 
+    function normalizeManagedName(value, code, label) {
+      const name = normalizeString(value, code, label, 80);
+      if (name !== value) fail(code, label + ' must not have surrounding whitespace.', { value });
+      return name;
+    }
+
+    function normalizeCountedRef(raw, expectedTypes, owner, label) {
+      if (!isRecord(raw)) fail('OPENING_ENTITY_REF_INVALID', label + ' must be an object.', { owner });
+      assertAllowedKeys(raw, ['ref', 'count'], 'OPENING_ENTITY_REF_INVALID', label);
+      const parsed = normalizeEntityId(raw.ref, label + ' ref');
+      if (!expectedTypes.includes(parsed.type)) {
+        fail('OPENING_REF_TYPE_INVALID', label + ' has the wrong entity type.', { owner, ref: parsed.id, expected: expectedTypes });
+      }
+      const entry = { ref: parsed.id };
+      if (raw.count !== undefined) {
+        const count = strictInt(raw.count, 'OPENING_ENTITY_COUNT_INVALID', label + ' count', 1, Number.MAX_SAFE_INTEGER);
+        if (parsed.type === 'container' && count !== 1) {
+          fail('OPENING_ENTITY_COUNT_INVALID', 'Container reference count must be 1 when present.', { owner, ref: parsed.id, count });
+        }
+        entry.count = count;
+      }
+      return entry;
+    }
+
+    function normalizeSafeIntegerMap(value, owner, label) {
+      if (value === undefined) return undefined;
+      if (!isRecord(value)) fail('OPENING_ITEM_EQUIPMENT_INVALID', label + ' must be an object.', { owner });
+      const result = {};
+      for (const [rawKey, rawValue] of Object.entries(value)) {
+        const key = normalizeManagedName(rawKey, 'OPENING_ITEM_EQUIPMENT_INVALID', label + ' key');
+        result[key] = strictInt(rawValue, 'OPENING_ITEM_EQUIPMENT_INVALID', label + '.' + key, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+      }
+      return result;
+    }
+
+    function normalizeItemEquipment(value, entityId) {
+      if (value === undefined) return undefined;
+      if (!isRecord(value)) fail('OPENING_ITEM_EQUIPMENT_INVALID', 'item.equipment must be an object.', { entityId });
+      assertAllowedKeys(value, ['slotType', 'add', 'percent', 'effects'], 'OPENING_ITEM_EQUIPMENT_INVALID', 'item.equipment');
+      const equipment = {
+        slotType: normalizeManagedName(value.slotType, 'OPENING_ITEM_EQUIPMENT_INVALID', 'item.equipment.slotType'),
+      };
+      const add = normalizeSafeIntegerMap(value.add, entityId, 'item.equipment.add');
+      const percent = normalizeSafeIntegerMap(value.percent, entityId, 'item.equipment.percent');
+      const effects = normalizeStringList(value.effects, 'OPENING_ITEM_EQUIPMENT_INVALID', 'item.equipment.effects', 32, 300);
+      if (add !== undefined && Object.keys(add).length > 0) equipment.add = add;
+      if (percent !== undefined && Object.keys(percent).length > 0) equipment.percent = percent;
+      if (effects !== undefined && effects.length > 0) equipment.effects = effects;
+      return equipment;
+    }
+
+    function normalizeCharacterEquipment(value, entityId) {
+      if (value === undefined) return undefined;
+      if (!isRecord(value)) fail('OPENING_CHARACTER_EQUIPMENT_INVALID', 'character.equipment must be an object.', { entityId });
+      const equipment = {};
+      for (const [rawSlotType, rawSlots] of Object.entries(value)) {
+        const slotType = normalizeManagedName(rawSlotType, 'OPENING_CHARACTER_EQUIPMENT_INVALID', 'equipment slot type');
+        if (!Array.isArray(rawSlots) || rawSlots.length === 0 || rawSlots.length > 64) {
+          fail('OPENING_CHARACTER_EQUIPMENT_INVALID', 'Each equipment slot type must have a bounded non-empty array.', { entityId, slotType });
+        }
+        equipment[slotType] = rawSlots.map(function (rawSlot, slotIndex) {
+          if (!isRecord(rawSlot)) fail('OPENING_CHARACTER_EQUIPMENT_INVALID', 'Equipment slots must be objects.', { entityId, slotType, slotIndex });
+          assertAllowedKeys(rawSlot, ['ref'], 'OPENING_CHARACTER_EQUIPMENT_INVALID', 'Equipment slot');
+          if (!Object.prototype.hasOwnProperty.call(rawSlot, 'ref')) fail('OPENING_CHARACTER_EQUIPMENT_INVALID', 'Equipment slots require ref.', { entityId, slotType, slotIndex });
+          if (rawSlot.ref === null) return { ref: null };
+          const parsed = normalizeEntityId(rawSlot.ref, 'Equipment item ref');
+          if (parsed.type !== 'item') fail('OPENING_REF_TYPE_INVALID', 'Equipment slot ref must point to an item.', { entityId, slotType, slotIndex, ref: parsed.id });
+          return { ref: parsed.id };
+        });
+      }
+      return equipment;
+    }
+
     function normalizeOpeningEntity(raw, index) {
       if (!isRecord(raw)) fail('OPENING_ENTITY_INVALID', 'Each entity must be an object.', { index });
       const parsed = normalizeEntityId(raw.id, 'Entity id');
-      if (parsed.type !== 'character' && parsed.type !== 'location') fail('OPENING_ENTITY_TYPE_INVALID', 'Opening entities are limited to character and location.', { id: parsed.id, type: parsed.type });
-      const commonKeys = ['id', 'name', 'brief', 'tags', 'aliases', 'visibility', 'lifecycle', 'status', 'extensions'];
-      const characterKeys = commonKeys.concat(['gender', 'identity', 'appearance', 'attributes', 'gauges', 'traits', 'goals', 'background', 'history']);
-      assertAllowedKeys(raw, parsed.type === 'character' ? characterKeys : commonKeys, 'OPENING_ENTITY_FIELD_UNSUPPORTED', 'Entity ' + parsed.id);
+      if (!['character', 'location', 'container', 'item'].includes(parsed.type)) {
+        fail('OPENING_ENTITY_TYPE_INVALID', 'Entity id must use character, location, container, or item.', { id: parsed.id, type: parsed.type });
+      }
+      const locationKeys = ['id', 'name', 'brief', 'tags', 'aliases', 'visibility', 'lifecycle', 'status', 'extensions'];
+      const characterKeys = locationKeys.concat(['gender', 'identity', 'appearance', 'attributes', 'gauges', 'traits', 'goals', 'background', 'history', 'containers', 'equipment']);
+      const containerKeys = ['id', 'name', 'brief', 'type', 'contents', 'status', 'extensions'];
+      const itemKeys = ['id', 'name', 'brief', 'type', 'tags', 'equipment', 'extensions'];
+      const allowedKeys = parsed.type === 'character' ? characterKeys
+        : parsed.type === 'location' ? locationKeys
+          : parsed.type === 'container' ? containerKeys : itemKeys;
+      assertAllowedKeys(raw, allowedKeys, 'OPENING_ENTITY_FIELD_UNSUPPORTED', 'Entity ' + parsed.id);
       const entity = {
         id: parsed.id,
         name: normalizeString(raw.name, 'OPENING_ENTITY_NAME_REQUIRED', 'Entity name', 120),
         brief: normalizeString(raw.brief, 'OPENING_ENTITY_BRIEF_REQUIRED', 'Entity brief', 1000),
       };
-      const tags = normalizeStringList(raw.tags, 'OPENING_ENTITY_TAGS_INVALID', 'tags', 32, 120);
-      const aliases = normalizeStringList(raw.aliases, 'OPENING_ENTITY_ALIASES_INVALID', 'aliases', 32, 120);
-      const status = normalizeStatuses(raw.status, parsed.id);
       const extensions = normalizeExtensions(raw.extensions, parsed.id);
-      if (tags !== undefined) entity.tags = tags;
-      if (aliases !== undefined) entity.aliases = aliases;
-      if (raw.visibility !== undefined) {
-        if (!['player-known', 'hidden', 'future-spoiler'].includes(raw.visibility)) fail('OPENING_ENTITY_VISIBILITY_INVALID', 'Entity visibility is invalid.', { id: parsed.id });
-        entity.visibility = raw.visibility;
-      }
-      if (raw.lifecycle !== undefined) {
-        if (!['candidate', 'active', 'background', 'retired'].includes(raw.lifecycle)) fail('OPENING_ENTITY_LIFECYCLE_INVALID', 'Entity lifecycle is invalid.', { id: parsed.id });
-        entity.lifecycle = raw.lifecycle;
-      }
-      if (status !== undefined) entity.status = status;
       if (extensions !== undefined) entity.extensions = extensions;
+
+      if (parsed.type === 'character' || parsed.type === 'location') {
+        const tags = normalizeStringList(raw.tags, 'OPENING_ENTITY_TAGS_INVALID', 'tags', 32, 120);
+        const aliases = normalizeStringList(raw.aliases, 'OPENING_ENTITY_ALIASES_INVALID', 'aliases', 32, 120);
+        const status = normalizeStatuses(raw.status, parsed.id);
+        if (tags !== undefined) entity.tags = tags;
+        if (aliases !== undefined) entity.aliases = aliases;
+        if (status !== undefined) entity.status = status;
+        if (raw.visibility !== undefined) {
+          if (!['player-known', 'hidden', 'future-spoiler'].includes(raw.visibility)) fail('OPENING_ENTITY_VISIBILITY_INVALID', 'Entity visibility is invalid.', { id: parsed.id });
+          entity.visibility = raw.visibility;
+        }
+        if (raw.lifecycle !== undefined) {
+          if (!['candidate', 'active', 'background', 'retired'].includes(raw.lifecycle)) fail('OPENING_ENTITY_LIFECYCLE_INVALID', 'Entity lifecycle is invalid.', { id: parsed.id });
+          entity.lifecycle = raw.lifecycle;
+        }
+      }
+
       if (parsed.type === 'character') {
         const identity = normalizeIdentity(raw.identity, parsed.id);
         const attributes = normalizeAttributes(raw.attributes, parsed.id);
@@ -223,6 +307,12 @@ async function commitOpening(input, tsian, signal) {
         const traits = normalizeTraits(raw.traits, parsed.id);
         const goals = normalizeGoals(raw.goals, parsed.id);
         const history = normalizeHistory(raw.history, parsed.id);
+        const containers = raw.containers === undefined ? undefined : raw.containers;
+        const equipment = normalizeCharacterEquipment(raw.equipment, parsed.id);
+        if (containers !== undefined) {
+          if (!Array.isArray(containers) || containers.length > 64) fail('OPENING_CHARACTER_CONTAINERS_INVALID', 'character.containers must be a bounded array.', { entityId: parsed.id });
+          entity.containers = containers.map((entry) => normalizeCountedRef(entry, ['container'], parsed.id, 'character container'));
+        }
         if (raw.gender !== undefined) entity.gender = normalizeString(raw.gender, 'OPENING_ENTITY_GENDER_INVALID', 'gender', 80);
         if (identity !== undefined) entity.identity = identity;
         if (raw.appearance !== undefined) entity.appearance = normalizeString(raw.appearance, 'OPENING_ENTITY_APPEARANCE_INVALID', 'appearance', 2000);
@@ -232,8 +322,173 @@ async function commitOpening(input, tsian, signal) {
         if (goals !== undefined) entity.goals = goals;
         if (raw.background !== undefined) entity.background = normalizeString(raw.background, 'OPENING_ENTITY_BACKGROUND_INVALID', 'background', 2000);
         if (history !== undefined) entity.history = history;
+        if (equipment !== undefined) entity.equipment = equipment;
+      } else if (parsed.type === 'container') {
+        if (raw.type !== 'container') fail('OPENING_ENTITY_TYPE_INVALID', 'container entity must have type="container".', { id: parsed.id, type: raw.type });
+        if (!Array.isArray(raw.contents) || raw.contents.length > 256) fail('OPENING_CONTAINER_CONTENTS_INVALID', 'container.contents must be a bounded array.', { entityId: parsed.id });
+        entity.type = 'container';
+        entity.contents = raw.contents.map((entry) => normalizeCountedRef(entry, ['container', 'item'], parsed.id, 'container content'));
+        const status = normalizeStatuses(raw.status, parsed.id);
+        if (status !== undefined) entity.status = status;
+      } else if (parsed.type === 'item') {
+        if (!['equipment', 'material', 'consumable', 'special', 'other'].includes(raw.type)) {
+          fail('OPENING_ENTITY_TYPE_INVALID', 'item entity type is invalid.', { id: parsed.id, type: raw.type });
+        }
+        entity.type = raw.type;
+        const tags = normalizeStringList(raw.tags, 'OPENING_ENTITY_TAGS_INVALID', 'tags', 32, 120);
+        const equipment = normalizeItemEquipment(raw.equipment, parsed.id);
+        if (raw.type === 'equipment' && equipment === undefined) fail('OPENING_ITEM_EQUIPMENT_INVALID', 'Equipment items require equipment rules.', { entityId: parsed.id });
+        if (tags !== undefined) entity.tags = tags;
+        if (equipment !== undefined) entity.equipment = equipment;
       }
       return { id: parsed.id, type: parsed.type, localId: parsed.localId, path: 'save/entities/' + parsed.type + '/' + parsed.localId + '.json', entity };
+    }
+
+    function checkedEquipmentNumber(value, characterRef, stage, attribute) {
+      const min = BigInt(Number.MIN_SAFE_INTEGER);
+      const max = BigInt(Number.MAX_SAFE_INTEGER);
+      if (value < min || value > max) {
+        fail('OPENING_EQUIPMENT_INTEGER_OVERFLOW', 'Equipment arithmetic exceeds the safe integer range.', { characterRef, stage, attribute });
+      }
+      return Number(value);
+    }
+
+    function validateOpeningEntityClosure(entities, entityById) {
+      function requireTarget(ref, owner, expectedTypes) {
+        const target = entityById.get(ref);
+        if (!target) fail('OPENING_REF_UNKNOWN', 'Entity reference must point to this commit.', { owner, ref });
+        if (!expectedTypes.includes(target.type)) fail('OPENING_REF_TYPE_INVALID', 'Entity reference has the wrong type.', { owner, ref, expected: expectedTypes });
+        return target;
+      }
+
+      for (const record of entities) {
+        if (record.type === 'character') {
+          for (const entry of record.entity.containers || []) requireTarget(entry.ref, record.id, ['container']);
+        } else if (record.type === 'container') {
+          for (const entry of record.entity.contents) requireTarget(entry.ref, record.id, ['container', 'item']);
+        }
+      }
+
+      const visitState = new Map();
+      const active = [];
+      function visitContainer(containerRef) {
+        const state = visitState.get(containerRef) || 0;
+        if (state === 2) return;
+        if (state === 1) {
+          const start = active.indexOf(containerRef);
+          fail('OPENING_CONTAINER_CYCLE', 'Container graph contains a cycle.', { containerRefs: active.slice(start).concat(containerRef) });
+        }
+        visitState.set(containerRef, 1);
+        active.push(containerRef);
+        const container = entityById.get(containerRef);
+        for (const entry of container.entity.contents) if (entry.ref.startsWith('container:')) visitContainer(entry.ref);
+        active.pop();
+        visitState.set(containerRef, 2);
+      }
+      for (const record of entities) if (record.type === 'container') visitContainer(record.id);
+
+      const ownerByContainer = new Map();
+      const graphByCharacter = new Map();
+      for (const character of entities.filter((record) => record.type === 'character')) {
+        const available = new Map();
+        const completed = new Set();
+        function walk(containerRef) {
+          if (completed.has(containerRef)) return;
+          const owner = ownerByContainer.get(containerRef);
+          if (owner && owner !== character.id) {
+            fail('OPENING_CONTAINER_SHARED', 'A container is reachable by multiple characters.', { containerRef, characterRefs: [owner, character.id].sort() });
+          }
+          ownerByContainer.set(containerRef, character.id);
+          const container = entityById.get(containerRef);
+          for (const entry of container.entity.contents) {
+            if (entry.ref.startsWith('container:')) walk(entry.ref);
+            else available.set(entry.ref, (available.get(entry.ref) || 0n) + BigInt(entry.count === undefined ? 1 : entry.count));
+          }
+          completed.add(containerRef);
+        }
+        for (const root of character.entity.containers || []) walk(root.ref);
+        graphByCharacter.set(character.id, { available });
+      }
+
+      for (const character of entities.filter((record) => record.type === 'character' && record.entity.equipment !== undefined)) {
+        if (!isRecord(character.entity.attributes)) {
+          fail('OPENING_CHARACTER_EQUIPMENT_INVALID', 'Characters with equipment require attributes.', { characterRef: character.id });
+        }
+        const attributeNames = Object.keys(character.entity.attributes);
+        const baseline = {};
+        const contributionTotals = {};
+        for (const name of attributeNames) {
+          baseline[name] = BigInt(character.entity.attributes[name]);
+          contributionTotals[name] = 0n;
+        }
+        const graph = graphByCharacter.get(character.id);
+        const demanded = new Map();
+        const normalizedEquipment = {};
+
+        function contributionFor(item, attribute) {
+          const add = BigInt(item.entity.equipment.add && item.entity.equipment.add[attribute] || 0);
+          const percent = BigInt(item.entity.equipment.percent && item.entity.equipment.percent[attribute] || 0);
+          const absoluteBaseline = baseline[attribute] < 0n ? -baseline[attribute] : baseline[attribute];
+          const numerator = 100n * add + absoluteBaseline * percent;
+          const magnitude = numerator < 0n ? -numerator : numerator;
+          let quotient = magnitude / 100n;
+          if ((magnitude % 100n) * 2n >= 100n) quotient += 1n;
+          const contribution = numerator < 0n ? -quotient : quotient;
+          checkedEquipmentNumber(contribution, character.id, 'slot-contribution', attribute);
+          return contribution;
+        }
+
+        for (const [slotType, slots] of Object.entries(character.entity.equipment)) {
+          normalizedEquipment[slotType] = slots.map(function (slot, slotIndex) {
+            if (slot.ref === null) return { ref: null };
+            const item = requireTarget(slot.ref, character.id, ['item']);
+            if (item.entity.type !== 'equipment' || !isRecord(item.entity.equipment)) {
+              fail('OPENING_EQUIPMENT_ITEM_INVALID', 'Occupied equipment slots must reference equipment items.', { characterRef: character.id, slotType, slotIndex, itemRef: slot.ref });
+            }
+            if (item.entity.equipment.slotType !== slotType) {
+              fail('OPENING_EQUIPMENT_SLOT_TYPE_MISMATCH', 'Equipment item slotType does not match the character slot.', { characterRef: character.id, slotType, slotIndex, itemRef: slot.ref, actualSlotType: item.entity.equipment.slotType });
+            }
+            if (!graph.available.has(slot.ref)) {
+              fail('OPENING_EQUIPMENT_ITEM_NOT_REACHABLE', 'Equipment item is not reachable from the character containers.', { characterRef: character.id, itemRef: slot.ref });
+            }
+            const unknown = new Set();
+            for (const mapName of ['add', 'percent']) {
+              for (const attribute of Object.keys(item.entity.equipment[mapName] || {})) {
+                if (!Object.prototype.hasOwnProperty.call(baseline, attribute)) unknown.add(attribute);
+              }
+            }
+            if (unknown.size > 0) {
+              fail('OPENING_EQUIPMENT_UNKNOWN_ATTRIBUTE', 'Equipment refers to an unknown character attribute.', { characterRef: character.id, itemRef: slot.ref, attributes: Array.from(unknown).sort() });
+            }
+            demanded.set(slot.ref, (demanded.get(slot.ref) || 0n) + 1n);
+            const applied = {};
+            for (const attribute of attributeNames) {
+              const contribution = contributionFor(item, attribute);
+              contributionTotals[attribute] += contribution;
+              if (contribution !== 0n) applied[attribute] = Number(contribution);
+            }
+            const normalizedSlot = { ref: slot.ref };
+            if (Object.keys(applied).length > 0) normalizedSlot.applied = applied;
+            return normalizedSlot;
+          });
+        }
+
+        for (const [itemRef, demand] of demanded) {
+          const available = graph.available.get(itemRef) || 0n;
+          checkedEquipmentNumber(available, character.id, 'reachable-quantity');
+          checkedEquipmentNumber(demand, character.id, 'reachable-quantity');
+          if (demand > available) {
+            fail('OPENING_EQUIPMENT_QUANTITY_EXHAUSTED', 'Not enough reachable item quantity is available.', { characterRef: character.id, itemRef, available: Number(available), demanded: Number(demand) });
+          }
+        }
+
+        const finalAttributes = {};
+        for (const attribute of attributeNames) {
+          finalAttributes[attribute] = checkedEquipmentNumber(baseline[attribute] + contributionTotals[attribute], character.id, 'final-attribute', attribute);
+        }
+        character.entity.attributes = finalAttributes;
+        character.entity.equipment = normalizedEquipment;
+      }
     }
 
     function normalizeNamedRef(raw, label, entityById, requiredType) {
@@ -431,6 +686,7 @@ async function commitOpening(input, tsian, signal) {
       entityById.set(entity.id, entity);
       writePaths.add(entity.path);
     }
+    validateOpeningEntityClosure(entities, entityById);
 
     if (!Array.isArray(input.scenes) || input.scenes.length === 0 || input.scenes.length > 32) fail('OPENING_SCENES_REQUIRED', 'scenes must be a bounded non-empty array.');
     const scenes = input.scenes.map((raw, index) => normalizeOpeningScene(raw, index, entityById));

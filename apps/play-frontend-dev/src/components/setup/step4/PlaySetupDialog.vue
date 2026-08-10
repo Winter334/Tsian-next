@@ -4,7 +4,6 @@ import { useSetupState } from "../../../composables/useSetupState"
 import NarrativeMessage from "../../story/NarrativeMessage.vue"
 import UserMessage from "../../story/UserMessage.vue"
 import StoryOptions from "../../story/StoryOptions.vue"
-import EmberForge from "../../EmberForge.vue"
 import SetupComposer from "./SetupComposer.vue"
 
 /**
@@ -87,14 +86,12 @@ onUnmounted(() => {
           />
         </template>
 
-        <!-- 等待态：流式文本未到达时用余烬凝笔做过渡；文本到达后展示轻量流式块 -->
-        <template v-if="status === 'running'">
-          <div v-if="streamingText" class="streaming-block">
-            <p class="streaming-text">{{ streamingText }}</p>
-            <span class="streaming-caret" aria-hidden="true" />
-          </div>
-          <EmberForge v-else variant="standalone" />
-        </template>
+        <NarrativeMessage
+          v-if="status === 'running'"
+          :content="streamingText || '正在整理…'"
+          streaming
+          streaming-variant="quiet"
+        />
 
         <!-- 错误态 -->
         <div v-if="status === 'failed' || status === 'recovering'" class="error-card">
@@ -206,49 +203,5 @@ onUnmounted(() => {
 .retry-btn:hover {
   background: rgba(155, 58, 46, 0.15);
   box-shadow: 0 0 14px rgba(155, 58, 46, 0.3);
-}
-
-/* ── 流式文本块：轻量渲染，不复用 NarrativeMessage ──
-   NarrativeMessage 为落定消息设计（含选项块清洗、完整排版），
-   半截 [[选项]] 未闭合时排版会异常；流式用独立的轻量块。 */
-.streaming-block {
-  display: flex;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 14px 18px;
-  margin: 10px 0;
-  background: rgba(20, 12, 8, 0.4);
-  border-left: 2px solid var(--ember);
-  border-radius: 0 6px 6px 0;
-  animation: streaming-fade-in 0.3s ease both;
-}
-
-.streaming-text {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: 0.95rem;
-  line-height: 1.75;
-  color: var(--prose-muted);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.streaming-caret {
-  flex-shrink: 0;
-  width: 7px;
-  height: 1.1em;
-  margin-top: 0.4em;
-  background: var(--ember);
-  animation: streaming-caret-blink 1s steps(2) infinite;
-}
-
-@keyframes streaming-fade-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes streaming-caret-blink {
-  0%, 50% { opacity: 1; }
-  50.01%, 100% { opacity: 0; }
 }
 </style>

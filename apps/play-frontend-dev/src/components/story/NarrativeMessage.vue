@@ -13,15 +13,24 @@ import EmberForge from "../EmberForge.vue"
 const props = defineProps<{
   content: string
   streaming?: boolean
+  streamingVariant?: "default" | "quiet"
 }>()
 
 const html = computed(() => renderMarkdown(props.content || ""))
+const quietStreaming = computed(() => props.streaming === true && props.streamingVariant === "quiet")
 </script>
 
 <template>
-  <div class="narrative" :class="{ streaming }">
+  <div
+    class="narrative"
+    :class="{ streaming, 'streaming--quiet': quietStreaming }"
+    :role="quietStreaming ? 'status' : undefined"
+    :aria-live="quietStreaming ? 'polite' : undefined"
+    :aria-busy="quietStreaming ? 'true' : undefined"
+    :aria-atomic="quietStreaming ? 'false' : undefined"
+  >
     <div class="msg-body prose" v-html="html" />
-    <EmberForge v-if="streaming" variant="inline" />
+    <EmberForge v-if="streaming && !quietStreaming" variant="inline" />
   </div>
 </template>
 
@@ -37,13 +46,40 @@ const html = computed(() => renderMarkdown(props.content || ""))
 }
 
 /* 流式态：正文微暖光晕，提示"正在书写" */
-.narrative.streaming .msg-body {
+.narrative.streaming:not(.streaming--quiet) .msg-body {
   text-shadow: 0 0 12px rgba(232, 169, 72, 0.18);
   animation: narrative-fade-in 0.4s ease both;
 }
 @keyframes narrative-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+.narrative.streaming--quiet :deep(.msg-body > :last-child)::after {
+  content: "";
+  display: inline-block;
+  width: 0.42em;
+  height: 0.42em;
+  margin-left: 0.5em;
+  border-radius: 50%;
+  vertical-align: 0.08em;
+  background: var(--ember-bright);
+  box-shadow: 0 0 8px rgba(232, 169, 72, 0.42);
+  transform-origin: center;
+  animation: quiet-streaming-breath 1.8s ease-in-out infinite;
+}
+
+@keyframes quiet-streaming-breath {
+  0%, 100% { opacity: 0.42; transform: scale(0.82); }
+  50% { opacity: 0.92; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .narrative.streaming--quiet :deep(.msg-body > :last-child)::after {
+    animation: none;
+    opacity: 0.72;
+    transform: none;
+  }
 }
 
 /* markdown 元素样式 */

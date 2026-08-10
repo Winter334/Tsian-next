@@ -16,6 +16,11 @@ const SESSION_SLOT_RE = /^opening-interview-[a-f0-9]{8}$/
 export type CharacterBranch = "canon" | "original"
 export type OpeningInterviewStatus = "idle" | "running" | "ready" | "recovering" | "failed" | "complete"
 
+const OPENING_BRANCH_LABELS: Record<CharacterBranch, string> = {
+  canon: "原著角色",
+  original: "原创角色",
+}
+
 export interface OpeningSourceIdentity {
   importedAt: string
   normalizationVersion: string
@@ -382,8 +387,10 @@ export function createAttemptId(): string {
 }
 
 export function buildOpeningInjection(control: OpeningInterviewControl): string {
+  const branchLabel = OPENING_BRANCH_LABELS[control.branch]
   return [
     "执行《开局建模》Skill，主持本次开局访谈。",
+    `玩家已确认角色类型：${branchLabel}（branch=${control.branch}）。将此选择视为当前会话不变量，第一次提问直接进入该分支。`,
     "会话不变量如下；不得改写 branch/source/session：",
     JSON.stringify({
       sessionId: control.session.id,
