@@ -921,3 +921,25 @@ Reduced the product test inventory to three integration smoke files, aligned rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 191: 开局向导对话与模型一致性优化
+
+**Date**: 2026-08-10
+**Task**: 开局向导对话与模型一致性优化
+**Branch**: `master`
+
+### Summary
+
+移除过时的网页布局观察油猴脚本任务；优化开局访谈角色分支注入与连续流式展示，扩展 commit_opening 对按内容需要创建的容器、物品和装备闭包校验，并通过构建、smoke、action harness、前端包与整卡包验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c2e27cd` | (see git log) |
+| `1bdb21e` | (see git log) |
+
+### Status
+
+[OK] **Completed**

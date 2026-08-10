@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 190
+- **Total Sessions**: 191
 - **Last Active**: 2026-08-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~923 | Active |
+| `journal-4.md` | ~945 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 191 | 2026-08-10 | 开局向导对话与模型一致性优化 | `c2e27cd`, `1bdb21e` | `master` |
 | 190 | 2026-08-10 | 沉浸阅读器整卡打包链 | `214d226` | `chore/trellis-workflow-update-20260808` |
 | 189 | 2026-08-09 | 优化开局向导角色选择体验 | `9dc6da9`, `3c351ed` | `chore/trellis-workflow-update-20260808` |
 | 188 | 2026-08-09 | 访谈驱动的开局建模与游戏卡源码归属 | `6d624de`, `3862b55`, `6537890` | `chore/trellis-workflow-update-20260808` |
