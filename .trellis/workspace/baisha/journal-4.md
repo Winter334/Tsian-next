@@ -943,3 +943,24 @@ Reduced the product test inventory to three integration smoke files, aligned rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 192: 开局访谈 Tool memory 与状态协议
+
+**Date**: 2026-08-10
+**Task**: 开局访谈 Tool memory 与状态协议
+**Branch**: `master`
+
+### Summary
+
+补齐 persistent task-mode invokeAgent 的 Tool memory 写回与按 compression mode 注入；完善沉浸阅读器开局建模 Skill 状态 schema 和阅读范围语义；扩展现有 smoke，平台构建与卡包导入回环通过，浏览器新会话手测登记为 PV-006。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b59943c` | (see git log) |
+
+### Status
+
+[OK] **Completed**
