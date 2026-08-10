@@ -1,0 +1,9 @@
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"遵循 play frontend 的源码权威、invokeAgent 与打包边界。"}
+{"file":".trellis/tasks/08-10-opening-guide-dialogue-experience/research/implementation-contracts.md","reason":"提供未截断的源码权威、recoverable sidecar session 与 smoke-only 测试准入摘要。"}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"修改开局建模 Skill 与 injection 时保持 Agent-facing 内容自包含。"}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"为已观察到的重复询问添加最小且正向的 branch 约束，避免提示噪声。"}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"按真实内容消费者和最小充分闭包处理 character/location/container/item/equipment，不制造特殊类型规则。"}
+{"file":".trellis/spec/guides/player-facing-product-copy.md","reason":"等待状态文案只描述玩家可观察状态，不泄露内部流程。"}
+{"file":".trellis/tasks/08-10-opening-guide-dialogue-experience/research/current-opening-flow.md","reason":"提供现有角色选择、访谈状态、Skill、提交和流式 UI 的代码核对结果。"}
+{"file":".trellis/tasks/08-10-opening-guide-dialogue-experience/research/opening-entity-closure.md","reason":"提供 container/item/equipment 的现有消费者、历史限制原因与提交校验边界。"}
+{"file":".trellis/tasks/archive/2026-07/07-25-deterministic-equipment-management/research/equipment.md","reason":"复用既有容器所有权、装备可达性、数量与确定性属性贡献语义。"}

@@ -1,0 +1,9 @@
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"检查产品改动只落在权威 play frontend 与 card workspace。"}
+{"file":".trellis/tasks/08-10-opening-guide-dialogue-experience/research/implementation-contracts.md","reason":"检查 sidecar branch/revision/attempt、streaming sanitizer、源码权威与验证策略未回归。"}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"审查 Skill/injection 是否自包含且没有开发侧因果解释。"}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"审查新增 branch 指令是否由真实行为触发且没有冗余禁令。"}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"检查实体类型按内容需要统一建模，每个字段有消费者且不存在双重权威。"}
+{"file":".trellis/spec/guides/player-facing-product-copy.md","reason":"审查等待状态文案与动画提示只服务玩家当前状态。"}
+{"file":".trellis/tasks/08-10-opening-guide-dialogue-experience/research/current-opening-flow.md","reason":"对照既有数据流验证实现没有引入第二份 branch 状态或错误源码同步。"}
+{"file":".trellis/tasks/08-10-opening-guide-dialogue-experience/research/opening-entity-closure.md","reason":"检查 container/item/equipment 与角色、场景、runtime、UI 消费端形成完整闭包。"}
+{"file":".trellis/tasks/archive/2026-07/07-25-deterministic-equipment-management/research/equipment.md","reason":"检查开局装备输出与现有装备管理的所有权、可达性和计算语义一致。"}
