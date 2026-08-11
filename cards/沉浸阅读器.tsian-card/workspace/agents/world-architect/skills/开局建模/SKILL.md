@@ -1,7 +1,7 @@
 ---
 name: 开局建模
 title: 开局建模
-description: 通过连续问答确定玩家角色与开局偏好，按需阅读小说，并一次提交首回合所需的最小世界模型。
+description: 通过连续问答确定玩家角色与首回合所需的开局事实，按需阅读小说，并一次提交最小世界模型。
 triggers:
   - 小说导入后主持开局访谈
 appliesTo:
@@ -17,52 +17,44 @@ appliesTo:
 
 ## 每轮目标
 
-1. 从最近一条 assistant 消息的 `[[开局会话]]` 读取完整进度；首轮没有旧状态。
+1. 调用 `read_opening_progress` 读取权威进度；若本轮继续提问，调用一次 `advance_opening_progress` 写入完整下一快照；若本轮正式提交，则由 `commit_opening` 完成 revision 并写 `phase:"complete"`。
 2. 只在当前决策缺口需要小说证据时使用 `inspect_source_opening` 或 `read_opening_slice`。
 3. 直接进入 injection 指定的分支：`canon` 首轮给出小说相关候选并接受玩家指定其他原著角色；`original` 首轮从姓名、身份或切入点中最高价值的一项开始问，不要求表单。
-4. 小说已经明确的事实直接记入进度；只向玩家询问偏好、多种合理选择、冲突信息或阻塞开局且无法可靠推断的内容。
+4. 小说已经明确的事实直接记入进度；只询问会改变本次正式模型或首回合内容的多种合理选择、冲突信息，或阻塞开局且无法可靠推断的内容。
 5. 每轮优先只问一个问题，至多两个紧密相关的问题；给快捷选项时始终允许自由回答。
 6. 玩家明确确认开始，且最小依赖闭包满足后，调用一次 `commit_opening`。成功后不再提问。
 
-访谈中途只维护回复里的完整 `[[开局会话]]` 状态，不写 `save/entities`、scene、relationship、runtime、frontier、turn 或正式 Agent context。
+访谈中途只写 `save/playthrough/opening-progress.json` 与控制文件，不写正式 entity、scene、relationship、runtime、frontier、turn 或正式玩家回合 context。
 
 ## 回复协议
 
-每个成功回复都必须包含一份完整状态快照，不输出 patch。自然语言问题在前，内部块在后：
+玩家回复只包含自然语言问题/说明和可选的快捷选项，不输出内部进度 JSON：
 
 ```text
-你希望开局氛围更庄重，还是更轻松？
-
-[[开局会话]]
-{"schema":"novel-airp.opening-turn.v1","sessionId":"opening-a1b2c3d4","sourceHash":"a1b2c3d4","branch":"canon","revision":2,"processedAttemptId":"attempt-2","readSlices":[{"ref":"source:chapter-0002","start":0,"end":3240,"purpose":"核对萧澈在迎亲前的处境"}],"protagonist":{"mode":"canon","ref":"character:萧澈","name":"萧澈"},"decisions":{"openingEntry":{"value":"迎亲出发前","evidenceRefs":["source:chapter-0002"]}},"unresolved":{"openingTone":{"reason":"等待玩家选择庄重或轻松的开局氛围"}},"phase":"interviewing"}
-[[/开局会话]]
+你想从萧澈在新房苏醒时开始，还是从整装迎亲前开始？
 
 [[开局选项]]
-- 庄重
-- 轻松
+- 新房苏醒
+- 迎亲出发前
 [[/开局选项]]
 ```
 
-状态约束：
+`advance_opening_progress.next` 是完整快照（不是 patch），固定字段为 `protagonist?/decisions/unresolved/readSlices/phase`：
 
-- 顶层固定为 `schema/sessionId/sourceHash/branch/revision/processedAttemptId/readSlices/protagonist?/decisions/unresolved/phase`；`protagonist` 尚未明确时省略，其余字段每轮都保留。
-- 新 attempt 成功时 `revision = basedOnRevision + 1`，`processedAttemptId = attemptId`；首轮使用 `processedAttemptId:"start"`。
-- 如果当前 attemptId 已等于最近状态的 `processedAttemptId`，这是幂等重试：原样重放最近的问题、完整状态和选项，不增加 revision，不重复应用玩家回答。
+- `session` 逐字使用 injection 的 `sessionId/sourceHash/branch/basedOnRevision/attemptId`；脚本负责 revision、幂等与并发校验。
 - `protagonist` 是唯一的主角摘要，固定为 `{mode,ref?,name?}`，其中 `mode` 等于顶层 `branch`；它只放在顶层，主角选择不在 `decisions.protagonist` 中保存第二份。
 - `decisions.<stableKey>` 固定为 `{value,evidenceRefs?}`：`value` 是已确定的字符串，`evidenceRefs` 是支持该决定的去重 ref 数组；玩家偏好不需要原文证据时省略 `evidenceRefs`。
 - `unresolved.<stableKey>` 固定为 `{reason}`：`reason` 是说明仍缺什么的字符串；不要用裸字符串、选项数组或以 `|` 拼接的值代替该对象。
 - stable key 按事项语义命名并跨轮复用。新回答更新同 key；事项解决后从 `unresolved` 移除并写入对应 `decisions`，不保留冲突副本。
-- 每轮以最近完整状态为基础应用一次当前回答，保留仍有效的 `readSlices`、`protagonist`、`decisions` 与 `unresolved`，再输出完整快照。
+- 每轮以读取到的完整状态为基础应用一次当前回答，保留仍有效的 `readSlices`、`protagonist`、`decisions` 与 `unresolved`。
 - `readSlices` 中每个精读章节恰有一条 `{ref,start?,end?,purpose}`，`ref` 必须来自章节索引。`start/end` 是该章节正文内 0-based、end-exclusive 的字符偏移；从章首读取时写 `start:0, end:charactersRead`，确认读完整章时可同时省略 `start/end`。
 - `readSlices.start/end` 只记录章节内字符范围，不填 `window.startIndex/endIndex`，也不填章节序号。
-- 状态及其子对象只使用本节示例列出的字段，不附加临时草稿字段。
-- 不把整段小说、完整 entity/scene/runtime 草稿或开发解释放进状态块。
-- 未完成用 `phase:"interviewing"` 或 `"ready-to-commit"`；`commit_opening` 成功后用 `"complete"`。
-- `[[开局会话]]` 与 `[[开局选项]]` 会从玩家界面隐藏，但会保留在本会话 context。不要改 marker 名称。
+- 不把整段小说或完整 entity/scene/runtime 草稿放进进度。
+- 未完成用 `phase:"interviewing"` 或 `"ready-to-commit"`；`complete` 只由 `commit_opening` 成功事务写入。
 
 ## 阅读策略
 
-- 每轮先核对最近的 `[[开局会话]]` 与近期 Tool 工作记忆（已执行 action 的摘要、参数与 refs）；已有信息足以支撑当前问题时直接复用。
+- 每轮先读取权威进度；已有信息足以支撑当前问题时直接复用。
 - 需要开头结构或候选线索且现有信息不足时使用 `inspect_source_opening`。它提供章节结构与候选预览，不代表精读正文，也不写入 `readSlices`。
 - 预览不足以确认角色事实、开局锚点或其他精确证据时，使用 `read_opening_slice` 定向精读；近期摘要缺少所需细节时可以重读 source 权威。把每个实际精读章节的 ref、章节内字符范围与用途写入 `readSlices`。
 - 原创分支只读取足以提出当前高价值问题的内容。
@@ -93,6 +85,24 @@ appliesTo:
 
 ```json tsian-actions
 [
+  {
+    "name": "read_opening_progress",
+    "description": "读取当前开局控制与权威语义进度；每轮开始时调用。",
+    "inputSchema": { "type": "object" },
+    "outputSchema": { "type": "object" },
+    "executor": { "type": "browser_script", "path": "scripts/read-opening-progress.js", "timeoutMs": 10000, "helpers": ["_common.js", "_progress.js"] }
+  },
+  {
+    "name": "advance_opening_progress",
+    "description": "以 expected revision/attempt 原子写入完整下一进度并推进控制文件。",
+    "inputSchema": {
+      "type": "object",
+      "required": ["session", "next"],
+      "properties": { "session": { "type": "object" }, "next": { "type": "object" } }
+    },
+    "outputSchema": { "type": "object" },
+    "executor": { "type": "browser_script", "path": "scripts/advance-opening-progress.js", "timeoutMs": 10000, "helpers": ["_common.js", "_progress.js"] }
+  },
   {
     "name": "inspect_source_opening",
     "description": "观察导入源 manifest 与开头章节预览，支持提出当前开局问题。",
@@ -481,7 +491,7 @@ appliesTo:
       }
     },
     "outputSchema": { "type": "object" },
-    "executor": { "type": "browser_script", "path": "scripts/commit-opening.js", "timeoutMs": 20000, "helpers": ["_common.js", "_validation.js"] }
+    "executor": { "type": "browser_script", "path": "scripts/commit-opening.js", "timeoutMs": 20000, "helpers": ["_common.js", "_validation.js", "_progress.js"] }
   }
 ]
 ```
@@ -491,11 +501,11 @@ appliesTo:
 1. 必要时调用 storyteller 生成 `openingReply`：只要首回合正文和正式 `[[选项]]`，不要让它参与访谈状态。
 2. `session.revision` 使用本轮将要输出的 revision，`session.attemptId` 使用当前 answer marker id。
 3. 一次调用 `commit_opening`，输入本次最小闭包。脚本返回校验错误时按 code/message 修正同一 payload 后重试。
-4. action 成功后，回复一句自然语言完成提示，并输出 `phase:"complete"` 的完整 `[[开局会话]]`；不要附 `[[开局选项]]`。
+4. action 成功后只回复一句自然语言完成提示；不要附 `[[开局选项]]`。
 
 常见失败：
 
-- `OPENING_SESSION_MISMATCH`：session/source/branch/revision/attempt 与控制文件不一致；重新读取当前 injection 与最近状态。
+- `OPENING_SESSION_MISMATCH`：session/source/branch/revision/attempt 与控制文件不一致；重新调用 `read_opening_progress`。
 - `OPENING_SAVE_NOT_CLEAN`：检测到测试期旧状态或正式模型；停止提交，告知调用方需新存档，不删除旧文件。
 - `OPENING_REF_UNKNOWN`：ref 不在本次闭包；补入必要实体/scene 或修正引用。
 - `OPENING_SOURCE_REF_UNKNOWN`：frontier/read slice ref 不在当前章节索引；使用读取 action 返回的 ref。

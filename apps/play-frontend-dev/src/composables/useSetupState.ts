@@ -25,6 +25,7 @@ import { buildSourceCorpusInWorker } from "../lib/source-import-worker"
 import { loadSourceChapterPreview, type SourceTextCache } from "../lib/source-reader"
 import {
   OPENING_CONTROL_PATH,
+  OPENING_PROGRESS_PATH,
   buildOpeningInjection,
   createAttemptId,
   createOpeningControl,
@@ -33,11 +34,12 @@ import {
   openingControlMatchesManifest,
   openingControlMatchesSession,
   openingInputHash,
-  openingRevisionContinues,
   openingSession,
   openingSourceIdentity,
   parseOpeningAssistant,
   parseOpeningControl,
+  parseOpeningProgress,
+  parseOpeningTranscript,
   parseOpeningUser,
   sanitizeOpeningDisplay,
   serializeOpeningControl,
@@ -45,7 +47,7 @@ import {
   type OpeningAttempt,
   type OpeningInterviewControl,
   type OpeningInterviewStatus,
-  type OpeningTurnState,
+  type OpeningProgress,
 } from "../lib/opening-interview"
 
 export type SetupStep = 1 | 2 | 3
@@ -221,6 +223,14 @@ async function loadOpeningControl(tsian: ReturnType<typeof getTsianClient>): Pro
 
 async function writeOpeningControl(tsian: ReturnType<typeof getTsianClient>, control: OpeningInterviewControl): Promise<void> {
   await tsian.workspace.write(OPENING_CONTROL_PATH, serializeOpeningControl(control))
+}
+
+async function loadOpeningProgress(tsian: ReturnType<typeof getTsianClient>): Promise<OpeningProgress | null> {
+  const file = await tsian.workspace.read(OPENING_PROGRESS_PATH)
+  if (!file?.content) return null
+  const progress = parseOpeningProgress(safeJsonParse(file.content))
+  if (!progress) throw new Error("开局进度文件格式无效。")
+  return progress
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, keys: string[]): boolean {
@@ -412,16 +422,22 @@ async function showBranchChoice(): Promise<void> {
   }
 }
 
-function validateReadSliceRefs(state: OpeningTurnState): void {
+function validateReadSliceRefs(state: OpeningProgress): void {
   const index = chapterIndex.value
   if (!index) throw new Error("小说章节索引尚未就绪，无法校验访谈阅读范围。")
-  const sourceRefs = new Set(index.chapters.map((chapter) => "ref" in chapter ? chapter.ref : chapter.path))
-  if (state.readSlices.some((slice) => !sourceRefs.has(slice.ref))) {
+  const chaptersByRef = new Map(index.chapters.map((chapter) => ["ref" in chapter ? chapter.ref : chapter.path, chapter] as const))
+  if (state.readSlices.some((slice) => {
+    const chapter = chaptersByRef.get(slice.ref)
+    return !chapter || (slice.end !== undefined && typeof chapter.characters === "number" && slice.end > chapter.characters)
+  })) {
     throw new Error("访谈回复包含不属于当前小说的阅读引用，已停止继续写入。")
+  }
+  if (Object.values(state.decisions).some((decision) => decision.evidenceRefs?.some((ref) => !chaptersByRef.has(ref)))) {
+    throw new Error("访谈决定包含不属于当前小说的证据引用，已停止继续写入。")
   }
 }
 
-function validateTurnState(control: OpeningInterviewControl, state: OpeningTurnState, expectedAttemptId: string, expectedRevision: number): void {
+function validateTurnState(control: OpeningInterviewControl, state: OpeningProgress, expectedAttemptId: string, expectedRevision: number): void {
   if (state.sessionId !== control.session.id || state.sourceHash !== control.source.hash || state.branch !== control.branch) {
     throw new Error("访谈回复与当前小说会话不匹配，已停止继续写入。")
   }
@@ -439,8 +455,19 @@ async function finishResolvedInvocation(
   expectedRevision: number,
 ): Promise<void> {
   const parsed = parseOpeningAssistant(response)
-  if (!parsed) throw new Error("访谈回复缺少有效的恢复信息。")
-  validateTurnState(control, parsed.state, expectedAttemptId, expectedRevision)
+  if (!parsed) throw new Error("访谈回复缺少可显示内容。")
+  const [latestControl, progress] = await Promise.all([
+    loadOpeningControl(tsian),
+    loadOpeningProgress(tsian),
+  ])
+  if (!latestControl || !progress) throw new Error("访谈已返回，但权威控制或进度文件缺失。")
+  validateTurnState(control, progress, expectedAttemptId, expectedRevision)
+  if (latestControl.session.revision !== progress.revision
+    || latestControl.session.id !== progress.sessionId
+    || latestControl.source.hash !== progress.sourceHash
+    || latestControl.branch !== progress.branch) {
+    throw new Error("开局控制与权威进度不一致。")
+  }
 
   playSetupStreamingText.value = ""
   rawStreamingText = ""
@@ -460,20 +487,9 @@ async function finishResolvedInvocation(
     statusText.value = "开局已准备完成"
     return
   }
-  if (parsed.state.phase === "complete") {
+  if (progress.phase === "complete") {
     throw new Error("Agent 已声明完成，但正式开局文件尚未提交。")
   }
-
-  const latestControl = await loadOpeningControl(tsian)
-  const nextControl: OpeningInterviewControl = latestControl?.status === "complete"
-    ? latestControl
-    : {
-      ...control,
-      session: { ...control.session, revision: parsed.state.revision },
-      status: "interviewing",
-      attempt: undefined,
-    }
-  if (nextControl.status !== "complete") await writeOpeningControl(tsian, nextControl)
   playSetupStatus.value = "ready"
   playSetupError.value = ""
   statusText.value = "等待你的回答"
@@ -501,6 +517,7 @@ async function invokeOpening(
       purpose: "opening-interview",
       contextSlot: control.session.slot,
       persist: true,
+      transcript: { mode: "full", audience: "player" },
       injection: [{ role: "user", position: "before-input", content: buildOpeningInjection(control) }],
     })
     response = result.response
@@ -628,7 +645,7 @@ async function retryPlaySetupDialog(): Promise<void> {
       return
     }
     if (control.attempt) {
-      await restoreOpeningInterview(tsian, manifest.value)
+      await restoreOpeningInterviewV2(tsian, manifest.value)
       control = await loadOpeningControl(tsian)
       if (!control || control.status !== "interviewing") {
         showInterviewRecovery("重新检查后无法确认当前访谈状态。")
@@ -649,218 +666,124 @@ async function retryPlaySetupDialog(): Promise<void> {
       await invokeOpening(control, openingBootstrapMarker(control.session.id), "start", 1)
       return
     }
-    await restoreOpeningInterview(tsian, manifest.value)
+    await restoreOpeningInterviewV2(tsian, manifest.value)
   } catch (error) {
     showInterviewRecovery(error instanceof Error ? error.message : "重新检查访谈状态失败。")
   }
 }
 
-async function restoreOpeningInterview(
+async function restoreOpeningInterviewV2(
   tsian: ReturnType<typeof getTsianClient>,
   currentManifest: SourceManifest | null,
 ): Promise<boolean> {
   if (!currentManifest) return false
   const identity = openingSourceIdentity(currentManifest)
   const session = openingSession(identity)
-  const control = await loadOpeningControl(tsian)
-  const controlMatchesSource = control ? openingControlMatchesManifest(control, currentManifest) : false
-  if (controlMatchesSource && control && !openingControlMatchesSession(control, currentManifest)) {
-    characterBranch.value = control.branch
-    playSetupStatus.value = "recovering"
-    playSetupError.value = "访谈控制文件与当前小说会话不一致，请使用新存档重新开始。"
-    setView("opening-interview")
+  const [control, progress, transcriptFile, summary] = await Promise.all([
+    loadOpeningControl(tsian),
+    loadOpeningProgress(tsian),
+    tsian.workspace.read(session.transcriptPath),
+    loadSetupSummary(tsian),
+  ])
+  if (!control && !progress && !transcriptFile) return false
+  if (!control || !openingControlMatchesSession(control, currentManifest)) {
+    showInterviewRecovery("访谈控制文件与当前小说会话不一致，请使用新存档重新开始。")
     return true
   }
-  const contextFile = await tsian.workspace.read(session.contextPath)
-  if (!contextFile?.content) {
-    if (control && controlMatchesSource) {
-      characterBranch.value = control.branch
-      if (control.status === "complete" || control.session.revision > 0) {
-        playSetupStatus.value = "recovering"
-        playSetupError.value = "访谈进度文件缺失，无法安全恢复。请使用新存档重新开始。"
-      } else {
-        playSetupStatus.value = "failed"
-        playSetupError.value = "第一次访谈尚未完成，可以原地重试。"
-      }
-      setView("opening-interview")
-      return true
-    }
-    return false
-  }
-
-  const snapshot = safeJsonParse(contextFile.content)
-  if (!isRecord(snapshot) || !Array.isArray(snapshot.recentTurns)) {
-    playSetupStatus.value = "recovering"
-    playSetupError.value = "访谈记录格式无效，请使用新存档重新开始。"
+  characterBranch.value = control.branch
+  if (!progress) {
     setView("opening-interview")
+    playSetupStatus.value = control.session.revision === 0 ? "failed" : "recovering"
+    playSetupError.value = control.session.revision === 0
+      ? "第一次访谈尚未完成，可以原地重试。"
+      : "权威开局进度缺失，请使用新存档重新开始。"
     return true
   }
-
+  validateTurnState(control, progress, progress.processedAttemptId, progress.revision)
+  if (control.session.revision !== progress.revision) {
+    showInterviewRecovery("开局控制 revision 与权威进度冲突。")
+    return true
+  }
+  if (!transcriptFile?.content) {
+    showInterviewRecovery("玩家会话 transcript 缺失，无法恢复完整访谈。")
+    return true
+  }
+  const entries = parseOpeningTranscript(safeJsonParse(transcriptFile.content), session.slot)
+  if (!entries) {
+    showInterviewRecovery("玩家会话 transcript 与权威进度不一致。")
+    return true
+  }
+  const parsedUsers = entries.map((entry) => parseOpeningUser(entry.request))
+  if (parsedUsers.some((user) => !user)
+    || parsedUsers.some((user) => user?.kind === "start" && user.sessionId !== session.id)) {
+    showInterviewRecovery("玩家会话 transcript 包含无法识别的输入。")
+    return true
+  }
+  const processedEntryIndex = parsedUsers.reduce((latest, user, index) => {
+    const matches = user?.kind === "start"
+      ? progress.processedAttemptId === "start"
+      : user?.attemptId === progress.processedAttemptId
+    return matches ? index : latest
+  }, -1)
+  if (processedEntryIndex < 0) {
+    showInterviewRecovery("玩家会话 transcript 缺少权威进度对应的 attempt。")
+    return true
+  }
+  // Retries append transcript entries with the same logical attempt. Rebuild
+  // one player exchange per attempt, choosing its latest accepted archive row,
+  // and ignore later rows not covered by authoritative progress.
+  const latestAcceptedByAttempt = new Map<string, (typeof entries)[number]>()
+  for (let index = 0; index <= processedEntryIndex; index += 1) {
+    const user = parsedUsers[index]!
+    const key = user.kind === "start" ? `start:${user.sessionId}` : `answer:${user.attemptId}`
+    latestAcceptedByAttempt.set(key, entries[index]!)
+  }
+  const acceptedEntries = Array.from(latestAcceptedByAttempt.values())
+    .sort((left, right) => left.sequence - right.sequence)
   const messages: DialogMessage[] = []
-  const shownAttempts = new Set<string>()
-  const assistantTurns = new Map<string, string>()
-  const processedAttemptRevisions = new Map<string, number>()
-  let pendingUser: ReturnType<typeof parseOpeningUser> = null
-  let latestState: OpeningTurnState | null = null
-  let restoredBranch: CharacterBranch | null = null
-
-  for (const entry of snapshot.recentTurns) {
-    if (!isRecord(entry) || typeof entry.role !== "string" || typeof entry.content !== "string") continue
-    if (entry.role === "user") {
-      if (pendingUser) {
-        playSetupStatus.value = "recovering"
-        playSetupError.value = "访谈记录包含连续的玩家轮次，已停止继续发送。"
-        setView("opening-interview")
-        return true
-      }
-      pendingUser = parseOpeningUser(entry.content)
-      if (!pendingUser || (pendingUser.kind === "start" && pendingUser.sessionId !== session.id)) {
-        playSetupStatus.value = "recovering"
-        playSetupError.value = "访谈记录包含无法识别的玩家轮次，请使用新存档重新开始。"
-        setView("opening-interview")
-        return true
-      }
-      if (pendingUser?.kind === "answer" && !shownAttempts.has(pendingUser.attemptId)) {
-        shownAttempts.add(pendingUser.attemptId)
-        messages.push({ id: nextDialogId(), role: "user", content: pendingUser.content })
-      }
-      continue
+  for (const entry of acceptedEntries) {
+    const user = parseOpeningUser(entry.request)
+    if (!user) return true
+    if (user.kind === "answer") {
+      messages.push({ id: nextDialogId(), role: "user", content: user.content })
     }
-    if (entry.role !== "assistant") continue
-    const parsed = parseOpeningAssistant(entry.content)
-    if (!parsed || parsed.state.sessionId !== session.id || parsed.state.sourceHash !== identity.hash) {
-      playSetupStatus.value = "recovering"
-      playSetupError.value = "访谈记录无法通过会话校验，请使用新存档重新开始。"
-      setView("opening-interview")
+    const parsed = parseOpeningAssistant(entry.assistant.content, entry.assistant.projections)
+    const displayContent = entry.assistant.displayContent?.trim() || parsed?.displayContent
+    if (!displayContent) {
+      showInterviewRecovery("玩家会话 transcript 包含无法显示的回复。")
       return true
     }
-    try {
-      validateReadSliceRefs(parsed.state)
-    } catch (error) {
-      playSetupStatus.value = "recovering"
-      playSetupError.value = error instanceof Error ? error.message : "访谈阅读范围无法校验，已停止继续发送。"
-      setView("opening-interview")
-      return true
-    }
-    if (!pendingUser) {
-      playSetupStatus.value = "recovering"
-      playSetupError.value = "访谈回复缺少对应的玩家轮次，已停止继续发送。"
-      setView("opening-interview")
-      return true
-    }
-    const expectedAttempt = pendingUser?.kind === "answer" ? pendingUser.attemptId : "start"
-    if (parsed.state.processedAttemptId !== expectedAttempt) {
-      playSetupStatus.value = "recovering"
-      playSetupError.value = "访谈轮次无法确认，已停止继续发送。"
-      setView("opening-interview")
-      return true
-    }
-    if (latestState && pendingUser.kind === "start") {
-      playSetupStatus.value = "recovering"
-      playSetupError.value = "访谈 bootstrap 轮次位置无效，已停止继续发送。"
-      setView("opening-interview")
-      return true
-    }
-    restoredBranch ??= parsed.state.branch
-    if (restoredBranch !== parsed.state.branch) {
-      playSetupStatus.value = "recovering"
-      playSetupError.value = "访谈分支出现冲突，已停止继续发送。"
-      setView("opening-interview")
-      return true
-    }
-    const turnKey = `${parsed.state.revision}:${parsed.state.processedAttemptId}`
-    const turnSignature = JSON.stringify({ state: parsed.state, content: parsed.displayContent, choices: parsed.choices })
-    const previousSignature = assistantTurns.get(turnKey)
-    if (previousSignature !== undefined) {
-      if (previousSignature !== turnSignature || !latestState || latestState.revision !== parsed.state.revision
-        || latestState.processedAttemptId !== parsed.state.processedAttemptId) {
-        playSetupStatus.value = "recovering"
-        playSetupError.value = "同一访谈轮次出现冲突回复，已停止继续发送。"
-        setView("opening-interview")
-        return true
-      }
-      pendingUser = null
-      continue
-    }
-    const validFirstRevision = pendingUser.kind === "start"
-      ? parsed.state.revision === 1
-      : parsed.state.revision > 1
-    if ((!latestState && !validFirstRevision)
-      || (latestState && !openingRevisionContinues(latestState.revision, parsed.state.revision))) {
-      playSetupStatus.value = "recovering"
-      playSetupError.value = latestState ? "访谈 revision 不连续，已停止继续发送。" : "访谈记录起始 revision 无效，已停止继续发送。"
-      setView("opening-interview")
-      return true
-    }
-    const previousAttemptRevision = processedAttemptRevisions.get(parsed.state.processedAttemptId)
-    if (previousAttemptRevision !== undefined && previousAttemptRevision !== parsed.state.revision) {
-      playSetupStatus.value = "recovering"
-      playSetupError.value = "同一 attemptId 被用于不同 revision，已停止继续发送。"
-      setView("opening-interview")
-      return true
-    }
-    assistantTurns.set(turnKey, turnSignature)
-    processedAttemptRevisions.set(parsed.state.processedAttemptId, parsed.state.revision)
-    latestState = parsed.state
     messages.push({
       id: nextDialogId(),
       role: "agent",
-      content: parsed.displayContent,
-      ...(parsed.choices.length > 0 ? { options: parsed.choices } : {}),
+      content: displayContent,
+      ...(parsed?.choices.length ? { options: parsed.choices } : {}),
     })
-    pendingUser = null
-  }
-
-  if (pendingUser) {
-    playSetupStatus.value = "recovering"
-    playSetupError.value = "访谈记录末尾存在无法确认的玩家轮次，已停止继续发送。"
-    setView("opening-interview")
-    return true
-  }
-  if (!latestState || !restoredBranch) {
-    playSetupStatus.value = "recovering"
-    playSetupError.value = "访谈记录没有可恢复的有效回复，请使用新存档重新开始。"
-    setView("opening-interview")
-    return true
-  }
-  if (latestState.phase === "complete") {
-    playSetupStatus.value = "recovering"
-    playSetupError.value = "访谈已声明完成，但正式开局完成信号缺失。请使用新存档重新开始。"
-    setView("opening-interview")
-    return true
   }
   for (let index = 0; index < messages.length - 1; index += 1) {
-    if (messages[index]?.role === "agent" && messages[index]?.options) messages[index] = { ...messages[index]!, options: undefined }
+    if (messages[index]?.role === "agent" && messages[index]?.options) {
+      messages[index] = { ...messages[index]!, options: undefined }
+    }
   }
   playSetupMessages.value = messages
-  characterBranch.value = restoredBranch
-
-  if (control && controlMatchesSource && (control.status !== "interviewing" || control.branch !== restoredBranch
-    || control.session.revision > latestState.revision)) {
-    playSetupStatus.value = "recovering"
-    playSetupError.value = "访谈控制状态与持久会话冲突，已停止继续发送。"
-    setView("opening-interview")
-    return true
-  }
-  const reconciled: OpeningInterviewControl = control && controlMatchesSource
-    ? { ...control, session: { ...control.session, revision: latestState.revision } }
-    : {
-      ...createOpeningControl(currentManifest, restoredBranch),
-      session: { id: session.id, slot: session.slot, revision: latestState.revision },
+  setView(progress.phase === "complete" || control.status === "complete" ? "opening-confirm" : "opening-interview")
+  if (progress.phase === "complete" || control.status === "complete") {
+    if (progress.phase !== "complete" || control.status !== "complete" || summary?.status !== "complete") {
+      showInterviewRecovery("开局完成信号不一致。")
+      return true
     }
-  const processedAttempt = reconciled.attempt?.id === latestState.processedAttemptId
-  if (reconciled.attempt && !processedAttempt && reconciled.attempt.basedOnRevision !== latestState.revision) {
-    playSetupStatus.value = "recovering"
-    playSetupError.value = "待处理回答与当前访谈 revision 冲突，已停止继续发送。"
-    setView("opening-interview")
+    playSetupStatus.value = "complete"
+    playSetupSummary.value = summary.summary ?? null
+    statusText.value = "开局已准备完成"
     return true
   }
-  const nextControl = processedAttempt ? { ...reconciled, attempt: undefined } : reconciled
-  await writeOpeningControl(tsian, nextControl)
-  setView("opening-interview")
-  if (nextControl.attempt) {
-    if (!shownAttempts.has(nextControl.attempt.id)) {
-      playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: nextControl.attempt.input })
+  if (control.attempt) {
+    const pendingAlreadyShown = acceptedEntries.some((entry) => {
+      const user = parseOpeningUser(entry.request)
+      return user?.kind === "answer" && user.attemptId === control.attempt?.id
+    })
+    if (!pendingAlreadyShown) {
+      playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: control.attempt.input })
     }
     playSetupStatus.value = "recovering"
     playSetupError.value = "上一条回答的提交结果尚未确认；可重新检查或使用同一回答重试。"
@@ -918,7 +841,7 @@ async function initialize(): Promise<void> {
       throw new Error("小说来源清单与章节索引数量不一致。")
     }
     chapterIndex.value = loadedChapterIndex
-    if (await restoreOpeningInterview(tsian, existingManifest)) return
+    if (await restoreOpeningInterviewV2(tsian, existingManifest)) return
     if (await hasLegacyOpeningState(tsian)) {
       playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
       setView("legacy-state")

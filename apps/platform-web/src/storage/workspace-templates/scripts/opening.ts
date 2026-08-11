@@ -515,7 +515,7 @@ export const COMMIT_PLAY_SETUP_SCRIPT_JS = `${text([
   "    if (projectedAssistant && typeof projectedAssistant.displayContent === 'string') assistantItem.displayContent = projectedAssistant.displayContent;",
   "    if (projectedAssistant && isRecord(projectedAssistant.projections)) assistantItem.projections = projectedAssistant.projections;",
   "    const turn0Record = { schema: 'tsian.airp.history.turn.v2', turn: 0, createdAt: now, source: { kind: 'agent-runtime', entryAgentId: playerTurnAgentId }, timeline: [assistantItem] };",
-  "    const contextFile = { schema: 'tsian.agent.context.v1', saveId: '', agentId: playerTurnAgentId, summary: null, recentTurns: [{ turn: 0, role: 'assistant', content: assistantContent }], lastCompressedTurn: null, updatedAt: now };",
+  "    const contextFile = { schema: 'tsian.agent.context.v2', saveId: '', agentId: playerTurnAgentId, sequence: 1, summary: null, recentTurns: [{ sequence: 1, gameTurn: 0, role: 'assistant', content: assistantContent }], lastCompressedSequence: null, updatedAt: now };",
   "    const entityWrite = await tsian.workspace.write({ scope: 'save-runtime', path: entityPath, content: JSON.stringify(updatedEntity, null, 2) + '\\n', mediaType: 'application/json' });",
   "    // 7. 写 setup-summary.json = { status: 'complete', summary, committedAt, enteredPlay:false }",
   "    const summaryFile = { status: 'complete', summary, committedAt: now, enteredPlay: false };",

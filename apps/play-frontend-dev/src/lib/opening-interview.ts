@@ -1,12 +1,12 @@
 import type { SourceManifest } from "./source"
 
 export const OPENING_CONTROL_PATH = "save/playthrough/opening-interview.json"
-export const OPENING_TURN_SCHEMA = "novel-airp.opening-turn.v1"
+export const OPENING_PROGRESS_PATH = "save/playthrough/opening-progress.json"
+export const OPENING_PROGRESS_SCHEMA = "novel-airp.opening-progress.v1"
 export const OPENING_CONTROL_SCHEMA = "novel-airp.opening-interview.v1"
 
-const STATE_BLOCK_RE = /\[\[开局会话\]\]\s*([\s\S]*?)\s*\[\[\/开局会话\]\]/g
 const CHOICES_BLOCK_RE = /\[\[开局选项\]\]\s*([\s\S]*?)\s*\[\[\/开局选项\]\]/g
-const OPENING_HIDDEN_MARKERS = ["[[开局会话]]", "[[/开局会话]]", "[[开局选项]]", "[[/开局选项]]"] as const
+const OPENING_HIDDEN_MARKERS = ["[[开局选项]]", "[[/开局选项]]"] as const
 const START_MARKER_RE = /^opening-interview:start:([a-z0-9-]+)$/
 const ANSWER_MARKER_RE = /^opening-interview:answer:([a-z0-9-]+)\n([\s\S]*)$/
 const SOURCE_HASH_RE = /^[a-f0-9]{8}$/
@@ -29,8 +29,8 @@ export interface OpeningSourceIdentity {
   hash: string
 }
 
-export interface OpeningTurnState {
-  schema: typeof OPENING_TURN_SCHEMA
+export interface OpeningProgress {
+  schema: typeof OPENING_PROGRESS_SCHEMA
   sessionId: string
   sourceHash: string
   branch: CharacterBranch
@@ -50,6 +50,7 @@ export interface OpeningTurnState {
   decisions: Record<string, { value: string; evidenceRefs?: string[] }>
   unresolved: Record<string, { reason: string }>
   phase: "interviewing" | "ready-to-commit" | "complete"
+  updatedAt: string
 }
 
 export interface OpeningAttempt {
@@ -82,7 +83,18 @@ export interface OpeningInterviewControl {
 export interface ParsedOpeningAssistant {
   displayContent: string
   choices: string[]
-  state: OpeningTurnState
+}
+
+export interface OpeningTranscriptEntry {
+  sequence: number
+  invocationId: string
+  request: string
+  assistant: {
+    kind: "assistant"
+    content: string
+    displayContent?: string
+    projections?: Record<string, unknown>
+  }
 }
 
 export type ParsedOpeningUser =
@@ -130,13 +142,13 @@ export function openingSourceIdentity(manifest: SourceManifest): OpeningSourceId
   }
 }
 
-export function openingSession(identity: OpeningSourceIdentity): { id: string; slot: string; contextPath: string } {
+export function openingSession(identity: OpeningSourceIdentity): { id: string; slot: string; transcriptPath: string } {
   const id = `opening-${identity.hash}`
   const slot = `opening-interview-${identity.hash}`
   return {
     id,
     slot,
-    contextPath: `save/agents/world-architect/context-${slot}.json`,
+    transcriptPath: `save/agents/world-architect/transcripts/${slot}.json`,
   }
 }
 
@@ -204,21 +216,23 @@ function parseStringRecord(value: unknown, kind: "decisions" | "unresolved"): Re
   return result
 }
 
-export function parseOpeningTurnState(value: unknown): OpeningTurnState | null {
-  if (!isRecord(value) || value.schema !== OPENING_TURN_SCHEMA
-    || !hasOnlyKeys(value, ["schema", "sessionId", "sourceHash", "branch", "revision", "processedAttemptId", "readSlices", "protagonist", "decisions", "unresolved", "phase"])) return null
+export function parseOpeningProgress(value: unknown): OpeningProgress | null {
+  if (!isRecord(value) || value.schema !== OPENING_PROGRESS_SCHEMA
+    || !hasOnlyKeys(value, ["schema", "sessionId", "sourceHash", "branch", "revision", "processedAttemptId", "readSlices", "protagonist", "decisions", "unresolved", "phase", "updatedAt"])) return null
   const sessionId = cleanString(value.sessionId, 80)
   const sourceHash = cleanString(value.sourceHash, 32)
   const branch = value.branch === "canon" || value.branch === "original" ? value.branch : null
   const revision = typeof value.revision === "number" && Number.isSafeInteger(value.revision) && value.revision > 0 && value.revision <= 999_999 ? value.revision : null
   const processedAttemptId = cleanString(value.processedAttemptId, 100)
   const phase = value.phase === "interviewing" || value.phase === "ready-to-commit" || value.phase === "complete" ? value.phase : null
+  const updatedAt = cleanString(value.updatedAt, 80)
   if (!sessionId || !SESSION_ID_RE.test(sessionId) || !sourceHash || !SOURCE_HASH_RE.test(sourceHash)
     || !branch || revision === null || !processedAttemptId
-    || (processedAttemptId !== "start" && !/^attempt-[a-z0-9-]+$/.test(processedAttemptId)) || !phase) return null
+    || (processedAttemptId !== "start" && !/^attempt-[a-z0-9-]+$/.test(processedAttemptId)) || !phase || !updatedAt) return null
 
   if (!Array.isArray(value.readSlices) || value.readSlices.length > 48) return null
-  const readSlices: OpeningTurnState["readSlices"] = []
+  const readSlices: OpeningProgress["readSlices"] = []
+  const readSliceKeys = new Set<string>()
   for (const rawSlice of value.readSlices) {
     if (!isRecord(rawSlice) || !hasOnlyKeys(rawSlice, ["ref", "start", "end", "purpose"])) return null
     const ref = cleanString(rawSlice.ref, 240)
@@ -226,7 +240,10 @@ export function parseOpeningTurnState(value: unknown): OpeningTurnState | null {
     if (!ref || !purpose) return null
     const start = typeof rawSlice.start === "number" && Number.isSafeInteger(rawSlice.start) && rawSlice.start >= 0 ? rawSlice.start : undefined
     const end = typeof rawSlice.end === "number" && Number.isSafeInteger(rawSlice.end) && rawSlice.end >= 0 ? rawSlice.end : undefined
-    if (start !== undefined && end !== undefined && end < start) return null
+    if ((start === undefined) !== (end === undefined) || (start !== undefined && end !== undefined && end < start)) return null
+    const sliceKey = `${ref}:${start ?? ""}:${end ?? ""}`
+    if (readSliceKeys.has(sliceKey)) return null
+    readSliceKeys.add(sliceKey)
     readSlices.push({ ref, ...(start !== undefined ? { start } : {}), ...(end !== undefined ? { end } : {}), purpose })
   }
 
@@ -234,7 +251,7 @@ export function parseOpeningTurnState(value: unknown): OpeningTurnState | null {
   const unresolved = parseStringRecord(value.unresolved, "unresolved")
   if (!decisions || !unresolved) return null
 
-  let protagonist: OpeningTurnState["protagonist"]
+  let protagonist: OpeningProgress["protagonist"]
   if (value.protagonist !== undefined) {
     if (!isRecord(value.protagonist) || !hasOnlyKeys(value.protagonist, ["mode", "ref", "name"])
       || value.protagonist.mode !== branch) return null
@@ -246,7 +263,7 @@ export function parseOpeningTurnState(value: unknown): OpeningTurnState | null {
   }
 
   return {
-    schema: OPENING_TURN_SCHEMA,
+    schema: OPENING_PROGRESS_SCHEMA,
     sessionId,
     sourceHash,
     branch,
@@ -254,38 +271,30 @@ export function parseOpeningTurnState(value: unknown): OpeningTurnState | null {
     processedAttemptId,
     readSlices,
     ...(protagonist ? { protagonist } : {}),
-    decisions: decisions as OpeningTurnState["decisions"],
-    unresolved: unresolved as OpeningTurnState["unresolved"],
+    decisions: decisions as OpeningProgress["decisions"],
+    unresolved: unresolved as OpeningProgress["unresolved"],
     phase,
+    updatedAt,
   }
 }
 
-export function parseOpeningAssistant(content: string): ParsedOpeningAssistant | null {
+export function parseOpeningAssistant(content: string, projections?: Record<string, unknown>): ParsedOpeningAssistant | null {
   if (content.length > 80_000) return null
-  const stateMatches = [...content.matchAll(STATE_BLOCK_RE)]
-  if (stateMatches.length !== 1) return null
-  const stateSource = stateMatches[0]?.[1]
-  if (!stateSource || stateSource.length > 24_000) return null
-
-  let stateValue: unknown
-  try {
-    stateValue = JSON.parse(stateSource)
-  } catch {
-    return null
-  }
-  const state = parseOpeningTurnState(stateValue)
-  if (!state) return null
-
   const choicesMatches = [...content.matchAll(CHOICES_BLOCK_RE)]
   if (choicesMatches.length > 1) return null
-  const choices = (choicesMatches[0]?.[1] ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^\s*[-*+]\s*/, "").trim())
-    .filter(Boolean)
+  const projectedChoices = Array.isArray(projections?.openingChoices)
+    ? projections.openingChoices.filter((item): item is string => typeof item === "string")
+    : []
+  const choices = projectedChoices.length > 0
+    ? projectedChoices
+    : (choicesMatches[0]?.[1] ?? "")
+        .split(/\r?\n/)
+        .map((line) => line.replace(/^\s*[-*+]\s*/, "").trim())
+        .filter(Boolean)
   if (choices.length > 12 || choices.some((choice) => choice.length > 300)) return null
   const displayContent = sanitizeOpeningDisplay(content)
-  if (displayContent.length > 12_000 || (!displayContent && state.phase !== "complete")) return null
-  return { displayContent, choices, state }
+  if (displayContent.length > 12_000 || !displayContent) return null
+  return { displayContent, choices }
 }
 
 export function sanitizeOpeningDisplay(content: string): string {
@@ -301,11 +310,49 @@ export function sanitizeOpeningDisplay(content: string): string {
       break
     }
   }
-  return visible.replace(STATE_BLOCK_RE, "").replace(CHOICES_BLOCK_RE, "").trim()
+  return visible.replace(CHOICES_BLOCK_RE, "").trim()
 }
 
-export function openingRevisionContinues(previousRevision: number | null, nextRevision: number): boolean {
-  return previousRevision === null ? nextRevision === 1 : nextRevision === previousRevision + 1
+export function parseOpeningTranscript(value: unknown, expectedSlot: string): OpeningTranscriptEntry[] | null {
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, ["schema", "agentId", "slot", "lastSequence", "entries"])
+    || value.schema !== "tsian.agent.invocation-transcript.v1"
+    || value.agentId !== "world-architect"
+    || value.slot !== expectedSlot
+    || typeof value.lastSequence !== "number"
+    || !Number.isSafeInteger(value.lastSequence)
+    || value.lastSequence < 0
+    || !Array.isArray(value.entries)) return null
+  const entries: OpeningTranscriptEntry[] = []
+  let previous = 0
+  for (const raw of value.entries) {
+    if (!isRecord(raw) || !isRecord(raw.assistant)
+      || !hasOnlyKeys(raw, ["sequence", "invocationId", "purpose", "createdAt", "request", "assistant", "timeline"])
+      || !hasOnlyKeys(raw.assistant, ["kind", "content", "displayContent", "projections"])
+      || typeof raw.sequence !== "number" || !Number.isSafeInteger(raw.sequence) || raw.sequence <= previous
+      || typeof raw.invocationId !== "string" || !cleanString(raw.invocationId, 200)
+      || typeof raw.createdAt !== "string" || !raw.createdAt.trim()
+      || typeof raw.request !== "string"
+      || raw.assistant.kind !== "assistant" || typeof raw.assistant.content !== "string") return null
+    if (raw.purpose !== undefined && (typeof raw.purpose !== "string" || !raw.purpose.trim())) return null
+    if (raw.timeline !== undefined && !Array.isArray(raw.timeline)) return null
+    if (raw.assistant.displayContent !== undefined && typeof raw.assistant.displayContent !== "string") return null
+    if (raw.assistant.projections !== undefined && !isRecord(raw.assistant.projections)) return null
+    previous = raw.sequence
+    entries.push({
+      sequence: raw.sequence,
+      invocationId: raw.invocationId,
+      request: raw.request,
+      assistant: {
+        kind: "assistant",
+        content: raw.assistant.content,
+        ...(typeof raw.assistant.displayContent === "string" ? { displayContent: raw.assistant.displayContent } : {}),
+        ...(isRecord(raw.assistant.projections) ? { projections: raw.assistant.projections } : {}),
+      },
+    })
+  }
+  if (previous !== value.lastSequence) return null
+  return entries
 }
 
 export function parseOpeningControl(value: unknown): OpeningInterviewControl | null {

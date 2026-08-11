@@ -8,16 +8,6 @@
   ],
   "contextPaths": [
     {
-      "path": "docs/novel-airp-schema-guide.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
-      "path": "save/source/README.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
       "path": "save/source/manifest.json",
       "role": "user",
       "position": "prelude"
@@ -28,24 +18,9 @@
       "position": "prelude"
     },
     {
-      "path": "save/schema/changelog.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
       "path": "save/playthrough/frontier.json",
       "role": "user",
       "position": "runtime"
-    },
-    {
-      "path": "save/scenes/README.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
-      "path": "save/relationships/README.md",
-      "role": "user",
-      "position": "prelude"
     }
   ],
   "skills": {

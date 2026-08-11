@@ -5,7 +5,7 @@
 Tool 与 Skill 的区别：
 
 - Tool 是**能力**（LLM 原生函数调用直接可见），一次调用 = 一次输入 → 一次输出，无需 `use_skill` 激活。
-- Skill 是**知识 + 一组 action**，需要 `use_skill` 先激活，再 `run_script` 触发脚本。
+- Skill 是**知识 + 一组 action**；`use_skill` 加载完整说明，`run_script` 可直接执行当前可见 Skill 声明的 action。
 
 作用域：
 

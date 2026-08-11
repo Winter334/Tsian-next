@@ -7,6 +7,77 @@ async function commitOpening(input, tsian, signal) {
     try { serializedInput = JSON.stringify(input); } catch (error) { fail('OPENING_COMMIT_INVALID', 'Commit input must be JSON serializable.'); }
     if (serializedInput.length > 256000) fail('OPENING_COMMIT_TOO_LARGE', 'Commit input exceeds the 256000 character limit.', { length: serializedInput.length });
 
+    const issues = [];
+    let issuesTruncated = false;
+    let projectedAssistant = null;
+    function issue(code, path, message, details) {
+      if (issues.length >= 32) { issuesTruncated = true; return; }
+      const item = { code, path, message }; if (details !== undefined) item.details = details; issues.push(item);
+    }
+    function boundedArray(value, path, min, max, code) {
+      if (!Array.isArray(value)) { issue(code, path, path + ' must be an array.'); return null; }
+      if (value.length < min || value.length > max) issue(code, path, path + ' must contain ' + min + '..' + max + ' items.', { count: value.length });
+      return value;
+    }
+    if (!isRecord(input.session)) issue('OPENING_SESSION_MISMATCH', '/session', 'session must be an object.');
+    const shallowEntities = boundedArray(input.entities, '/entities', 1, 64, 'OPENING_ENTITIES_REQUIRED');
+    if (shallowEntities) shallowEntities.forEach(function (entry, index) {
+      if (!isRecord(entry)) issue('OPENING_ENTITY_INVALID', '/entities/' + index, 'Entity must be an object.');
+      else {
+        if (typeof entry.id !== 'string' || !entry.id.trim()) issue('OPENING_ENTITY_ID_REQUIRED', '/entities/' + index + '/id', 'Entity id is required.');
+        if (typeof entry.name !== 'string' || !entry.name.trim()) issue('OPENING_ENTITY_NAME_REQUIRED', '/entities/' + index + '/name', 'Entity name is required.');
+        if (typeof entry.brief !== 'string' || !entry.brief.trim()) issue('OPENING_ENTITY_BRIEF_REQUIRED', '/entities/' + index + '/brief', 'Entity brief is required.');
+      }
+    });
+    const shallowScenes = boundedArray(input.scenes, '/scenes', 1, 32, 'OPENING_SCENES_REQUIRED');
+    if (shallowScenes) shallowScenes.forEach(function (entry, index) {
+      if (!isRecord(entry)) issue('OPENING_SCENE_INVALID', '/scenes/' + index, 'Scene must be an object.');
+      else {
+        if (typeof entry.id !== 'string' || !entry.id.startsWith('scene:')) issue('OPENING_SCENE_TYPE_INVALID', '/scenes/' + index + '/id', 'Scene id must use scene:<localId>.');
+        if (!Array.isArray(entry.present) || entry.present.length === 0) issue('OPENING_SCENE_PRESENT_REQUIRED', '/scenes/' + index + '/present', 'Scene present must be non-empty.');
+      }
+    });
+    const shallowRelationships = boundedArray(input.relationships, '/relationships', 0, 64, 'OPENING_RELATIONSHIPS_INVALID');
+    if (shallowRelationships) shallowRelationships.forEach(function (entry, index) {
+      if (!isRecord(entry)) issue('OPENING_RELATIONSHIP_INVALID', '/relationships/' + index, 'Relationship must be an object.');
+      else if (!Array.isArray(entry.edges) || entry.edges.length === 0) issue('OPENING_RELATIONSHIP_EDGES_REQUIRED', '/relationships/' + index + '/edges', 'Relationship edges must be non-empty.');
+    });
+    if (!isRecord(input.runtime)) issue('OPENING_RUNTIME_INVALID', '/runtime', 'runtime must be an object.');
+    else if (!Array.isArray(input.runtime.activeSceneRefs) || input.runtime.activeSceneRefs.length === 0) issue('OPENING_RUNTIME_ACTIVE_SCENES_REQUIRED', '/runtime/activeSceneRefs', 'runtime.activeSceneRefs must be non-empty.');
+    if (!isRecord(input.frontier)) issue('OPENING_FRONTIER_INVALID', '/frontier', 'frontier must be an object.');
+    else {
+      if (!isRecord(input.frontier.sourceWindow)) issue('OPENING_WINDOW_INVALID', '/frontier/sourceWindow', 'frontier.sourceWindow must be an object.');
+      if (!Array.isArray(input.frontier.timeline) || input.frontier.timeline.length === 0) issue('OPENING_TIMELINE_REQUIRED', '/frontier/timeline', 'frontier.timeline must be non-empty.');
+    }
+    if (typeof input.summary !== 'string' || !input.summary.trim()) issue('OPENING_SETUP_SUMMARY_REQUIRED', '/summary', 'summary must be non-empty.');
+    if (typeof input.openingReply !== 'string' || !input.openingReply.trim()) issue('OPENING_REPLY_REQUIRED', '/openingReply', 'openingReply must be non-empty.');
+    else {
+      let replyShapeValid = true;
+      if (/\[\[(?:\/?开局会话|\/?开局选项)\]\]/.test(input.openingReply)) {
+        replyShapeValid = false;
+        issue('OPENING_REPLY_INVALID', '/openingReply', 'openingReply must not contain internal progress or interview choice blocks.');
+      }
+      const blocks = input.openingReply.match(/\[\[选项\]\][\s\S]*?\[\[\/选项\]\]/g) || [];
+      if (blocks.length !== 1 || !/\[\[选项\]\][\s\S]*?\[\[\/选项\]\]\s*$/.test(input.openingReply)) {
+        replyShapeValid = false;
+        issue('OPENING_REPLY_INVALID', '/openingReply', 'openingReply must end with exactly one complete formal choices block.');
+      }
+      if (replyShapeValid && issues.length < 32) {
+        try { projectedAssistant = await tsian.reply.project(input.openingReply); }
+        catch (error) {
+          issue('OPENING_REPLY_PROJECTION_FAILED', '/openingReply', error && error.message || 'openingReply projection failed.');
+        }
+        if (!projectedAssistant) {
+          issue('OPENING_REPLY_PROJECTION_FAILED', '/openingReply', 'openingReply projection returned no assistant content.');
+        } else if (typeof projectedAssistant.content !== 'string' || !projectedAssistant.content.trim()
+          || typeof projectedAssistant.displayContent !== 'string' || !projectedAssistant.displayContent.trim()
+          || !isRecord(projectedAssistant.projections) || !Array.isArray(projectedAssistant.projections.choices)
+          || projectedAssistant.projections.choices.length === 0 || projectedAssistant.projections.choices.length > 12
+          || projectedAssistant.projections.choices.some((choice) => typeof choice !== 'string' || !choice.trim() || choice.length > 300)) {
+          issue('OPENING_REPLY_PROJECTION_FAILED', '/openingReply', 'openingReply must project a visible story and 1-12 formal choices.');
+        }
+      }
+    }
     function assertAllowedKeys(value, allowed, code, label) {
       const allowedSet = new Set(allowed);
       const unknown = Object.keys(value).filter((key) => !allowedSet.has(key));
@@ -662,6 +733,177 @@ async function commitOpening(input, tsian, signal) {
         && value.status === 'pending' && value.summary === null;
     }
 
+    function captureValidation(path, operation) {
+      try { return operation(); }
+      catch (error) {
+        if (!error || typeof error.code !== 'string' || typeof error.message !== 'string') throw error;
+        issue(error.code, path, error.message, error.details);
+        return null;
+      }
+    }
+
+    function validateRuntimePayload(runtime, entityById, sceneById) {
+      assertAllowedKeys(runtime, ['protagonistRef', 'location', 'activeSceneRefs', 'worldTime', 'weather', 'extensions'], 'OPENING_RUNTIME_INVALID', 'runtime');
+      const protagonistRef = normalizeNamedRef(runtime.protagonistRef, 'Runtime protagonist', entityById, 'character');
+      const location = normalizeNamedRef(runtime.location, 'Runtime location', entityById, 'location');
+      if (!Array.isArray(runtime.activeSceneRefs) || runtime.activeSceneRefs.length === 0 || runtime.activeSceneRefs.length > 32) {
+        fail('OPENING_RUNTIME_ACTIVE_SCENES_REQUIRED', 'runtime.activeSceneRefs must be a bounded non-empty array.');
+      }
+      const seen = new Set();
+      const refs = runtime.activeSceneRefs.map(function (raw, index) {
+        if (!isRecord(raw)) fail('OPENING_RUNTIME_SCENE_INVALID', 'activeSceneRefs entries must be { ref, name }.', { index });
+        assertAllowedKeys(raw, ['ref', 'name'], 'OPENING_RUNTIME_SCENE_INVALID', 'activeSceneRef');
+        const parsed = normalizeEntityId(raw.ref, 'Active scene ref');
+        const target = sceneById.get(parsed.id);
+        if (parsed.type !== 'scene' || !target) fail('OPENING_RUNTIME_SCENE_UNKNOWN', 'Active scene must point to this commit.', { ref: parsed.id });
+        if (seen.has(parsed.id)) fail('OPENING_RUNTIME_SCENE_DUPLICATE', 'Active scene refs must be unique.', { ref: parsed.id });
+        seen.add(parsed.id);
+        const name = normalizeString(raw.name, 'OPENING_RUNTIME_SCENE_NAME_REQUIRED', 'Active scene name', 120);
+        if (name !== target.scene.name) fail('OPENING_REF_NAME_MISMATCH', 'Active scene ref/name must match the target scene.', { ref: parsed.id, expected: target.scene.name, actual: name });
+        return { ref: parsed.id, name };
+      });
+      normalizeExtensions(runtime.extensions, 'runtime');
+      optionalText(runtime.worldTime, 'OPENING_RUNTIME_INVALID', 'runtime.worldTime', 120, true);
+      optionalText(runtime.weather, 'OPENING_RUNTIME_INVALID', 'runtime.weather', 120, true);
+      const activeScenes = refs.map(function (ref) { return sceneById.get(ref.ref); });
+      if (!activeScenes.some(function (scene) { return scene.scene.location.ref === location.ref && scene.scene.present.some(function (item) { return item.ref === protagonistRef.ref; }); })) {
+        fail('OPENING_RUNTIME_CLOSURE_INVALID', 'At least one active scene must use runtime.location and contain the protagonist.', { protagonist: protagonistRef.ref, location: location.ref });
+      }
+    }
+
+    function validateFrontierPayload(frontier, source) {
+      assertAllowedKeys(frontier, ['sourceWindow', 'extractedThrough', 'timeline', 'notes'], 'OPENING_FRONTIER_INVALID', 'frontier');
+      if (!isRecord(frontier.sourceWindow)) fail('OPENING_FRONTIER_INVALID', 'frontier.sourceWindow must be an object.');
+      assertAllowedKeys(frontier.sourceWindow, ['startIndex', 'endIndex', 'reason', 'chapters'], 'OPENING_WINDOW_INVALID', 'frontier.sourceWindow');
+      if (typeof source.manifest.importedAt !== 'string' || typeof source.manifest.normalizationVersion !== 'string'
+        || typeof source.manifest.title !== 'string' || !source.manifest.title.trim()
+        || source.manifest.chapterCount !== source.chapters.length || source.chapters.length === 0) {
+        fail('OPENING_SOURCE_NOT_READY', 'Imported source manifest and chapter index do not describe the same ready source.');
+      }
+      const sourceByIndex = new Map(source.chapters.map(function (chapter) { return [chapter.index, chapter]; }));
+      if (sourceByIndex.size !== source.chapters.length) fail('OPENING_CHAPTER_INDEX_INVALID', 'Imported chapter indexes must be unique.');
+      if (source.chapters.some(function (chapter, index) { return chapter.index !== index + 1; })) fail('OPENING_CHAPTER_INDEX_INVALID', 'Imported chapter indexes must be contiguous from 1.');
+      const startIndex = strictInt(frontier.sourceWindow.startIndex, 'OPENING_WINDOW_INVALID', 'sourceWindow.startIndex', 1, 999999);
+      const endIndex = strictInt(frontier.sourceWindow.endIndex, 'OPENING_WINDOW_INVALID', 'sourceWindow.endIndex', startIndex, 999999);
+      const windowLength = endIndex - startIndex + 1;
+      if (windowLength > 64) fail('OPENING_WINDOW_INVALID', 'sourceWindow may include at most 64 contiguous chapters.', { startIndex, endIndex });
+      if (!Array.isArray(frontier.sourceWindow.chapters) || frontier.sourceWindow.chapters.length !== windowLength) {
+        fail('OPENING_WINDOW_CHAPTERS_INVALID', 'sourceWindow.chapters must cover the full contiguous window.', { expected: windowLength });
+      }
+      frontier.sourceWindow.chapters.forEach(function (raw, offset) {
+        if (!isRecord(raw)) fail('OPENING_WINDOW_CHAPTER_INVALID', 'Window chapters must be objects.', { offset });
+        assertAllowedKeys(raw, ['index', 'title', 'ref', 'path'], 'OPENING_WINDOW_CHAPTER_INVALID', 'Window chapter');
+        const expectedIndex = startIndex + offset;
+        const sourceChapter = sourceByIndex.get(expectedIndex);
+        if (!sourceChapter) fail('OPENING_SOURCE_REF_UNKNOWN', 'Window chapter index is not in the imported source.', { index: expectedIndex });
+        const index = strictInt(raw.index, 'OPENING_WINDOW_CHAPTER_INVALID', 'Window chapter index', 1, 999999);
+        const title = normalizeString(raw.title, 'OPENING_WINDOW_CHAPTER_INVALID', 'Window chapter title', 300);
+        const expectedRef = sourceRefForChapter(sourceChapter);
+        const suppliedRef = isRecord(sourceChapter.source)
+          ? (typeof raw.ref === 'string' && raw.ref.trim() && raw.path === undefined ? raw.ref.trim() : '')
+          : (typeof raw.path === 'string' && raw.path.trim() && raw.ref === undefined ? raw.path.trim() : '');
+        if (index !== expectedIndex || title !== sourceChapter.title || suppliedRef !== expectedRef) {
+          fail('OPENING_SOURCE_REF_UNKNOWN', 'Window chapter identity must match the imported chapter index.', { index, title, ref: suppliedRef, expectedIndex, expectedTitle: sourceChapter.title, expectedRef });
+        }
+      });
+      normalizeString(frontier.sourceWindow.reason, 'OPENING_WINDOW_REASON_REQUIRED', 'sourceWindow.reason', 1000);
+      const lastWindowRef = sourceRefForChapter(sourceByIndex.get(endIndex));
+      const extractedThrough = normalizeString(frontier.extractedThrough, 'OPENING_SOURCE_REF_UNKNOWN', 'frontier.extractedThrough', 240);
+      if (extractedThrough !== lastWindowRef) fail('OPENING_SOURCE_REF_UNKNOWN', 'frontier.extractedThrough must equal the last window chapter ref.', { extractedThrough, expected: lastWindowRef });
+      if (!Array.isArray(frontier.timeline) || frontier.timeline.length === 0 || frontier.timeline.length > 32) {
+        fail('OPENING_TIMELINE_REQUIRED', 'frontier.timeline must contain a bounded source anchor array.');
+      }
+      let previousChapter = 0;
+      frontier.timeline.forEach(function (anchor, index) {
+        if (!isRecord(anchor)) fail('OPENING_TIMELINE_ANCHOR_INVALID', 'Each timeline anchor must be an object.', { index });
+        assertAllowedKeys(anchor, ['kind', 'order', 'chapter', 'time', 'label'], 'OPENING_TIMELINE_ANCHOR_INVALID', 'Timeline anchor');
+        const chapter = strictInt(anchor.chapter, 'OPENING_TIMELINE_ANCHOR_INVALID', 'Timeline chapter', startIndex, endIndex);
+        if (!sourceByIndex.has(chapter) || chapter < previousChapter) fail('OPENING_TIMELINE_ANCHOR_INVALID', 'Timeline chapters must be known and non-decreasing.', { chapter, previousChapter });
+        previousChapter = chapter;
+        if (anchor.kind !== 'source' || anchor.order !== index + 1) fail('OPENING_TIMELINE_ANCHOR_INVALID', 'Timeline anchors must be ordered source anchors.', { index, kind: anchor.kind, order: anchor.order });
+        if (index === 0 && (chapter !== startIndex || anchor.time !== '元年')) fail('OPENING_TIMELINE_ANCHOR_INVALID', 'First source anchor must match the window start and use time 元年.', { chapter, startIndex, time: anchor.time });
+        normalizeString(anchor.time, 'OPENING_TIMELINE_TIME_REQUIRED', 'Timeline time', 120);
+        normalizeString(anchor.label, 'OPENING_TIMELINE_LABEL_REQUIRED', 'Timeline label', 120);
+      });
+      optionalText(frontier.notes, 'OPENING_FRONTIER_INVALID', 'frontier.notes', 2000, false);
+    }
+
+    // Source readiness is an external prerequisite. Fail it directly before
+    // returning payload-edit issues so callers do not repair against stale data.
+    const source = await loadSource(tsian);
+    captureValidation('/', function () {
+      assertAllowedKeys(input, ['session', 'entities', 'scenes', 'relationships', 'runtime', 'frontier', 'summary', 'openingReply'], 'OPENING_COMMIT_INVALID', 'Commit input');
+    });
+    if (isRecord(input.session)) {
+      captureValidation('/session', function () {
+        assertAllowedKeys(input.session, ['sessionId', 'sourceHash', 'branch', 'revision', 'attemptId'], 'OPENING_SESSION_MISMATCH', 'session');
+        const candidate = {
+          sessionId: normalizeString(input.session.sessionId, 'OPENING_SESSION_MISMATCH', 'sessionId', 80),
+          sourceHash: normalizeString(input.session.sourceHash, 'OPENING_SESSION_MISMATCH', 'sourceHash', 32),
+          branch: input.session.branch,
+          revision: strictInt(input.session.revision, 'OPENING_SESSION_MISMATCH', 'revision', 1, 999999),
+          attemptId: normalizeString(input.session.attemptId, 'OPENING_SESSION_MISMATCH', 'attemptId', 100),
+        };
+        if (!/^opening-[a-f0-9]{8}$/.test(candidate.sessionId) || !/^[a-f0-9]{8}$/.test(candidate.sourceHash)
+          || !/^attempt-[a-z0-9-]+$/.test(candidate.attemptId) || (candidate.branch !== 'canon' && candidate.branch !== 'original')) {
+          fail('OPENING_SESSION_MISMATCH', 'session identifiers or branch are invalid.', { session: candidate });
+        }
+      });
+    }
+
+    const validationEntities = [];
+    const entitiesCanValidate = Array.isArray(input.entities) && input.entities.length > 0 && input.entities.length <= 64;
+    if (entitiesCanValidate) {
+      input.entities.forEach(function (raw, index) {
+        const normalized = captureValidation('/entities/' + index, function () { return normalizeOpeningEntity(raw, index); });
+        if (normalized) validationEntities.push(normalized);
+      });
+    }
+    const validationEntityById = new Map();
+    const validationPaths = new Set();
+    const entitiesReady = entitiesCanValidate && validationEntities.length === input.entities.length;
+    if (entitiesReady) {
+      validationEntities.forEach(function (entity) {
+        if (validationEntityById.has(entity.id) || validationPaths.has(entity.path)) issue('OPENING_ENTITY_DUPLICATE', '/entities', 'Duplicate entity id/path.', { id: entity.id, path: entity.path });
+        validationEntityById.set(entity.id, entity);
+        validationPaths.add(entity.path);
+      });
+      captureValidation('/entities', function () { validateOpeningEntityClosure(validationEntities, validationEntityById); });
+    }
+
+    const validationScenes = [];
+    const validationSceneById = new Map();
+    const scenesCanValidate = Array.isArray(input.scenes) && input.scenes.length > 0 && input.scenes.length <= 32;
+    if (entitiesReady && scenesCanValidate) {
+        input.scenes.forEach(function (raw, index) {
+          const normalized = captureValidation('/scenes/' + index, function () { return normalizeOpeningScene(raw, index, validationEntityById); });
+          if (normalized) validationScenes.push(normalized);
+        });
+        if (validationScenes.length === input.scenes.length) {
+          validationScenes.forEach(function (scene) {
+            if (validationSceneById.has(scene.id) || validationPaths.has(scene.path)) issue('OPENING_SCENE_DUPLICATE', '/scenes', 'Duplicate scene id/path.', { id: scene.id, path: scene.path });
+            validationSceneById.set(scene.id, scene);
+            validationPaths.add(scene.path);
+          });
+        }
+    }
+    if (entitiesReady && Array.isArray(input.relationships) && input.relationships.length <= 64) {
+        captureValidation('/relationships', function () { normalizeOpeningRelationships(input.relationships, validationEntityById); });
+    }
+    if (entitiesReady && scenesCanValidate && validationScenes.length === input.scenes.length && isRecord(input.runtime)) {
+      captureValidation('/runtime', function () { validateRuntimePayload(input.runtime, validationEntityById, validationSceneById); });
+    }
+    if (isRecord(input.frontier)) {
+      captureValidation('/frontier', function () { validateFrontierPayload(input.frontier, source); });
+    }
+    if (typeof input.summary === 'string' && input.summary.trim()) {
+      captureValidation('/summary', function () { normalizeString(input.summary, 'OPENING_SETUP_SUMMARY_REQUIRED', 'summary', 2000); });
+    }
+    if (typeof input.openingReply === 'string' && input.openingReply.trim()) {
+      captureValidation('/openingReply', function () { normalizeString(input.openingReply, 'OPENING_REPLY_REQUIRED', 'openingReply', 24000); });
+    }
+    if (issues.length) fail('OPENING_COMMIT_INVALID', 'Opening commit contains multiple independent issues.', { issues, truncated: issuesTruncated });
+
     assertAllowedKeys(input, ['session', 'entities', 'scenes', 'relationships', 'runtime', 'frontier', 'summary', 'openingReply'], 'OPENING_COMMIT_INVALID', 'Commit input');
     if (!isRecord(input.session)) fail('OPENING_SESSION_MISMATCH', 'session must be an object.');
     assertAllowedKeys(input.session, ['sessionId', 'sourceHash', 'branch', 'revision', 'attemptId'], 'OPENING_SESSION_MISMATCH', 'session');
@@ -745,7 +987,6 @@ async function commitOpening(input, tsian, signal) {
     assertAllowedKeys(input.frontier, ['sourceWindow', 'extractedThrough', 'timeline', 'notes'], 'OPENING_FRONTIER_INVALID', 'frontier');
     if (!isRecord(input.frontier.sourceWindow)) fail('OPENING_FRONTIER_INVALID', 'frontier.sourceWindow must be an object.');
     assertAllowedKeys(input.frontier.sourceWindow, ['startIndex', 'endIndex', 'reason', 'chapters'], 'OPENING_WINDOW_INVALID', 'frontier.sourceWindow');
-    const source = await loadSource(tsian);
     if (typeof source.manifest.importedAt !== 'string' || typeof source.manifest.normalizationVersion !== 'string'
       || typeof source.manifest.title !== 'string' || !source.manifest.title.trim()
       || source.manifest.chapterCount !== source.chapters.length || source.chapters.length === 0) {
@@ -824,7 +1065,7 @@ async function commitOpening(input, tsian, signal) {
     if (formalChoiceBlocks.length !== 1 || !/\[\[选项\]\][\s\S]*?\[\[\/选项\]\]\s*$/.test(openingReply)) {
       fail('OPENING_REPLY_INVALID', 'openingReply must end with exactly one complete [[选项]] block.');
     }
-    const projectedAssistant = await tsian.reply.project(openingReply);
+    if (!projectedAssistant) projectedAssistant = await tsian.reply.project(openingReply);
     if (!projectedAssistant || typeof projectedAssistant.content !== 'string' || !projectedAssistant.content.trim()
       || typeof projectedAssistant.displayContent !== 'string' || !projectedAssistant.displayContent.trim()
       || !isRecord(projectedAssistant.projections) || !Array.isArray(projectedAssistant.projections.choices)
@@ -846,13 +1087,15 @@ async function commitOpening(input, tsian, signal) {
     const turn0Path = 'save/history/turns/turn-000000.json';
     const playerContextPath = 'save/agents/' + playerTurnAgentId + '/context.json';
     const controlPath = 'save/playthrough/opening-interview.json';
-    const fixedWritePaths = ['save/playthrough/runtime.json', 'save/playthrough/frontier.json', turn0Path, playerContextPath, controlPath, 'save/playthrough/setup-summary.json'];
+    const progressPath = 'save/playthrough/opening-progress.json';
+    const fixedWritePaths = ['save/playthrough/runtime.json', 'save/playthrough/frontier.json', turn0Path, playerContextPath, controlPath, progressPath, 'save/playthrough/setup-summary.json'];
     for (const path of fixedWritePaths) {
       if (writePaths.has(path)) fail('OPENING_WRITE_PATH_DUPLICATE', 'Planned write paths must be unique.', { path });
       writePaths.add(path);
     }
 
     const control = await readJson(tsian, controlPath);
+    const rawProgress = await readJson(tsian, progressPath);
     const sourceManifest = source.manifest;
     const sourceIdentity = {
       importedAt: sourceManifest.importedAt,
@@ -864,6 +1107,13 @@ async function commitOpening(input, tsian, signal) {
     const expectedSessionId = 'opening-' + expectedSourceHash;
     const expectedSessionSlot = 'opening-interview-' + expectedSourceHash;
     if (!isRecord(control) || control.schema !== 'novel-airp.opening-interview.v1' || !isRecord(control.source) || !isRecord(control.session)) fail('OPENING_SESSION_MISMATCH', 'Opening control file is invalid.');
+    const progress = normalizeStoredOpeningProgress(rawProgress, normalizeOpeningControl(control));
+    if (progress.schema !== 'novel-airp.opening-progress.v1'
+      || progress.sessionId !== expectedSessionId || progress.sourceHash !== expectedSourceHash
+      || progress.branch !== session.branch || progress.revision !== control.session.revision
+      || (progress.phase !== 'ready-to-commit' && progress.phase !== 'complete')) {
+      fail('OPENING_PROGRESS_NOT_READY', 'Authoritative opening progress must match control and be ready-to-commit.', { progressRevision: progress && progress.revision, controlRevision: control && control.session && control.session.revision, phase: progress && progress.phase });
+    }
     if (session.sourceHash !== expectedSourceHash || session.sessionId !== expectedSessionId
       || control.source.hash !== expectedSourceHash || control.source.importedAt !== sourceIdentity.importedAt
       || control.source.normalizationVersion !== sourceIdentity.normalizationVersion || control.source.title !== sourceIdentity.title
@@ -902,6 +1152,7 @@ async function commitOpening(input, tsian, signal) {
       const controlReceipt = isRecord(control.receipt) ? control.receipt : null;
       const summaryReceipt = isRecord(setupSummary && setupSummary.receipt) ? setupSummary.receipt : null;
       if (controlComplete && summaryComplete && controlReceipt && summaryReceipt
+        && progress.phase === 'complete'
         && control.session.revision === session.revision
         && controlReceipt.revision === session.revision && controlReceipt.payloadHash === payloadHash
         && summaryReceipt.revision === session.revision && summaryReceipt.payloadHash === payloadHash
@@ -919,6 +1170,7 @@ async function commitOpening(input, tsian, signal) {
       || control.session.revision !== control.attempt.basedOnRevision || control.attempt.inputHash !== fnvHash(control.attempt.input)) {
       fail('OPENING_SESSION_MISMATCH', 'revision/attempt does not match the current submitted attempt.');
     }
+    if (progress.phase !== 'ready-to-commit') fail('OPENING_PROGRESS_NOT_READY', 'Opening progress is not ready to commit.', { phase: progress.phase });
 
     const [
       entityMatches,
@@ -990,12 +1242,13 @@ async function commitOpening(input, tsian, signal) {
       timeline: [assistantItem],
     };
     const playerContext = {
-      schema: 'tsian.agent.context.v1',
+      schema: 'tsian.agent.context.v2',
       saveId: '',
       agentId: playerTurnAgentId,
+      sequence: 1,
       summary: null,
-      recentTurns: [{ turn: 0, role: 'assistant', content: projectedAssistant.content }],
-      lastCompressedTurn: null,
+      recentTurns: [{ sequence: 1, gameTurn: 0, role: 'assistant', content: projectedAssistant.content }],
+      lastCompressedSequence: null,
       updatedAt: now,
     };
     const receipt = { revision: session.revision, payloadHash, committedAt: now };
@@ -1013,6 +1266,13 @@ async function commitOpening(input, tsian, signal) {
       enteredPlay: false,
       openingSessionId: session.sessionId,
       receipt,
+    };
+    const completedProgress = {
+      ...progress,
+      revision: session.revision,
+      processedAttemptId: session.attemptId,
+      phase: 'complete',
+      updatedAt: now,
     };
     const writtenPaths = [];
 
@@ -1034,12 +1294,14 @@ async function commitOpening(input, tsian, signal) {
       [turn0Path, turn0Record],
       [playerContextPath, playerContext],
       [controlPath, completedControl],
+      [progressPath, completedProgress],
       ['save/playthrough/setup-summary.json', completedSummary],
     ]) {
       const file = await tsian.workspace.write({ scope: 'save-runtime', path, content: JSON.stringify(value, null, 2) + '\n', mediaType: 'application/json' });
       writtenPaths.push(file.path);
     }
     tsian.trace('opening_committed', { sessionId: session.sessionId, revision: session.revision, payloadHash, writes: writtenPaths });
+    tsian.memory.set({ key: 'opening-commit:' + session.sessionId, status: 'success', title: 'Opening committed', summary: 'Opening model, turn 0, player context, progress and receipt were committed.', anchors: writtenPaths, exact: { sessionId: session.sessionId, sourceHash: session.sourceHash, revision: session.revision, receipt } });
     return {
       status: 'complete',
       receipt,

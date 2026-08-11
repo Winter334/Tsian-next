@@ -10,14 +10,6 @@
       }
     },
     {
-      "id": "opening-state",
-      "match": "/\\[\\[开局会话\\]\\]([\\s\\S]*?)\\[\\[\\/开局会话\\]\\]/g",
-      "display": "",
-      "project": {
-        "openingState": "$1"
-      }
-    },
-    {
       "id": "opening-choices",
       "match": "/\\[\\[开局选项\\]\\]([\\s\\S]*?)\\[\\[\\/开局选项\\]\\]/g",
       "display": "",
