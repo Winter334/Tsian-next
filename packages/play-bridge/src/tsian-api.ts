@@ -73,6 +73,8 @@ export interface InvokeAgentOptions {
   /** 是否持久化上下文。true = 读写 context-slot.json（跨调用持久化）；
    *  false/省略 = 不读不写（一次性调用）。默认 false。 */
   persist?: boolean
+  /** Persist an append-only player-visible archive for this named context slot. */
+  transcript?: { mode: "full"; audience: "player" }
 }
 
 export interface FrontendActionOptions {
@@ -388,6 +390,9 @@ export function createTsian(): TsianApi {
       }
       if (options?.persist !== undefined) {
         params.persist = options.persist
+      }
+      if (options?.transcript !== undefined) {
+        params.transcript = options.transcript
       }
       return bridge.call<InvokeAgentResult>("interaction.invokeAgent", params as never)
     },

@@ -126,7 +126,8 @@ export interface AgentRuntimeTurnInput {
 }
 
 export interface AgentRuntimeTurnContextUpdate {
-  turn: number
+  sequence: number
+  gameTurn?: number
   user: string
   assistant: string
   /** 本轮开头压缩后的快照(若触发了压缩).无压缩则 undefined. */
@@ -223,7 +224,7 @@ export interface AgentRuntimeCapabilities {
   /**
    * test_skill_script capability. Locates a Skill by name, resolves the
    * declared browser_script action, and runs it directly — without requiring
-   * use_skill activation first. Lets the assistant agent test/debug scripts
+   * calling use_skill first. Lets the assistant agent test/debug scripts
    * it authored. Implemented in platform-host/index.ts.
    */
   runTestSkillScript?(

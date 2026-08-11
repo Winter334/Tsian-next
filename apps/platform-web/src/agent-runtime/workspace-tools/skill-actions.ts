@@ -249,6 +249,7 @@ export function parseActionDeclarations(content: string): SkillActionParseResult
 function registerLoadedSkill(
   state: RuntimeWorkspaceToolSessionState | undefined,
   skill: SkillRegistryEntry,
+  sourceContent: string,
   actions: RuntimeSkillActionDeclaration[],
 ): void {
   if (!state) {
@@ -256,7 +257,7 @@ function registerLoadedSkill(
   }
 
   const existingIndex = state.loadedSkills.findIndex((entry) => entry.skill.path === skill.path)
-  const loadedSkill = { skill, actions }
+  const loadedSkill = { skill, sourceContent, actions }
   if (existingIndex >= 0) {
     state.loadedSkills[existingIndex] = loadedSkill
     return
@@ -288,7 +289,7 @@ function findDeclaredAction(
   return loadedSkill.actions.find((action) => normalizedLookupKey(action.name) === requestedKey) ?? null
 }
 
-export function activateSkillByName(
+export function loadSkillByName(
   context: RuntimeWorkspaceToolExecutionContext,
   input: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -308,7 +309,7 @@ export function activateSkillByName(
       title: skill.title,
       path: skill.path,
     },
-    activated: true,
+    loaded: true,
     content: file.content,
     actionCount: actions.length,
     executableActionCount: actions.filter((action) =>
@@ -340,10 +341,10 @@ export function activateSkillByName(
     )
   }
 
-  // Activation becomes observable only after its complete Tool result is known
-  // to fit the producer contract. An oversized Skill must not leave run_script
-  // enabled behind a failed use_skill observation.
-  registerLoadedSkill(context.sessionState, skill, actions)
+  // Cache parsed declarations only as a same-loop optimization. run_script
+  // always re-resolves the currently visible Skill and does not treat this as
+  // authorization state.
+  registerLoadedSkill(context.sessionState, skill, file.content, actions)
   context.emitTrace?.({
     type: "skill_loaded",
     ...traceBase(context),
@@ -365,7 +366,11 @@ export function activateSkillByName(
 export async function executeRunScript(
   context: RuntimeWorkspaceToolExecutionContext,
   input: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
+): Promise<{
+  result: Record<string, unknown>
+  memoryProjection?: import("@tsian/contracts").ToolMemoryProjection
+  rollback?: () => void
+}> {
   const skillName = normalizeRequiredString(
     input.skill,
     "ACTION_SKILL_REQUIRED",
@@ -384,20 +389,25 @@ export async function executeRunScript(
     )
   }
 
-  const loadedSkill = findLoadedSkill(context.sessionState, skillName)
-  if (!loadedSkill) {
-    throw toolError(
-      "SKILL_NOT_ACTIVATED",
-      `Skill must be activated with use_skill before running its scripts: ${skillName}`,
-      { skill: skillName },
-    )
+  if (!context.agentContext) {
+    throw toolError("SKILL_CONTEXT_REQUIRED", "run_script requires an active Agent context.")
+  }
+  const visibleSkill = resolveVisibleSkillByName(context.agentContext, skillName)
+  const file = loadSkillEntryFile(context.workspaceFiles, visibleSkill)
+  let loadedSkill = findLoadedSkill(context.sessionState, skillName)
+  if (!loadedSkill
+    || loadedSkill.skill.path !== visibleSkill.path
+    || loadedSkill.sourceContent !== file.content) {
+    const parsed = parseActionDeclarations(file.content)
+    loadedSkill = { skill: visibleSkill, sourceContent: file.content, actions: parsed.actions }
+    registerLoadedSkill(context.sessionState, visibleSkill, file.content, parsed.actions)
   }
 
   const action = findDeclaredAction(loadedSkill, scriptName)
   if (!action) {
     throw toolError(
       "ACTION_NOT_FOUND",
-      `Action is not declared by activated Skill "${loadedSkill.skill.name}": ${scriptName}`,
+      `Action is not declared by visible Skill "${loadedSkill.skill.name}": ${scriptName}`,
       {
         skill: loadedSkill.skill.name,
         action: scriptName,
@@ -439,17 +449,26 @@ export async function executeRunScript(
     runBrowserScript: context.runBrowserScript,
     signal: context.signal,
   })
-  validateActionOutputSchema(action.outputSchema, execution.output, loadedSkill, action)
+  try {
+    validateActionOutputSchema(action.outputSchema, execution.output, loadedSkill, action)
+  } catch (error) {
+    execution.rollback?.()
+    throw error
+  }
 
   return {
-    status: execution.status,
-    skill: {
-      name: loadedSkill.skill.name,
-      title: loadedSkill.skill.title,
+    result: {
+      status: execution.status,
+      skill: {
+        name: loadedSkill.skill.name,
+        title: loadedSkill.skill.title,
+      },
+      action: {
+        name: action.name,
+      },
+      output: execution.output,
     },
-    action: {
-      name: action.name,
-    },
-    output: execution.output,
+    ...(execution.memoryProjection ? { memoryProjection: execution.memoryProjection } : {}),
+    ...(execution.rollback ? { rollback: execution.rollback } : {}),
   }
 }

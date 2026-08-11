@@ -37,7 +37,7 @@ function platformToolEnabled(
 const useSkillSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.useSkill,
   description:
-    "Activate a Skill from the current Agent's visible Skill Index and return its complete SKILL.md instructions. After activation, run_script can execute its declared browser_script actions.",
+    "Load a Skill from the current Agent's visible Skill Index and return its complete SKILL.md instructions and action index.",
   parameters: {
     type: "object",
     required: ["name"],
@@ -54,18 +54,18 @@ const useSkillSchema: ToolSchema = {
 const runScriptSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.runScript,
   description:
-    "Execute a browser_script action declared by a Skill activated with use_skill in this tool loop. Use top-level workspace tools for single read/write operations.",
+    "Execute a browser_script action declared by a currently visible and enabled Skill. Call use_skill only when you need its full instructions; use top-level workspace tools for single read/write operations.",
   parameters: {
     type: "object",
     required: ["skill", "script"],
     properties: {
       skill: {
         type: "string",
-        description: "The name of the previously activated Skill that declares the action.",
+        description: "The name of the visible Skill that declares the action.",
       },
       script: {
         type: "string",
-        description: "The declared action name returned by use_skill to execute.",
+        description: "The action name declared by the visible Skill.",
       },
       input: {
         type: "object",
@@ -206,7 +206,7 @@ const inspectFrontendSchema: ToolSchema = {
 const testSkillScriptSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.testSkillScript,
   description:
-    "Test a browser_script action from any Skill without activating it first (no use_skill needed). Use this to verify scripts you authored or debug failures. " +
+    "Test a browser_script action from any Skill without calling use_skill first. Use this to verify scripts you authored or debug failures. " +
     "Returns { ok: true, output } on success, or { ok: false, error: { code, message, name?, stack?, details? } } on failure. " +
     "Error codes: BROWSER_SCRIPT_SYNTAX_ERROR (fix script syntax), BROWSER_SCRIPT_RUNTIME_ERROR (fix script logic), " +
     "BROWSER_SCRIPT_SDK_ERROR (check tsian.workspace.* call arguments), BROWSER_SCRIPT_TIMEOUT (optimize or increase timeout), " +

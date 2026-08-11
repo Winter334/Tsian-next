@@ -667,6 +667,20 @@ export function createRuntimeWorkspaceTransaction(
       }
       return result
     },
+    createSavepoint() {
+      return {
+        workspaceFiles: stagedFiles.map(cloneWorkspaceFile),
+        writtenPaths: Array.from(writtenPathSet),
+        deletedPaths: Array.from(deletedPathSet),
+      }
+    },
+    rollbackToSavepoint(savepoint) {
+      stagedFiles.splice(0, stagedFiles.length, ...savepoint.workspaceFiles.map(cloneWorkspaceFile))
+      writtenPathSet.clear()
+      for (const path of savepoint.writtenPaths) writtenPathSet.add(path)
+      deletedPathSet.clear()
+      for (const path of savepoint.deletedPaths) deletedPathSet.add(path)
+    },
     finalWorkspaceFiles() {
       return stagedFiles
         .map(cloneWorkspaceFile)

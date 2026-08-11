@@ -8,7 +8,9 @@ import type {
 import { createGameRuntimeEnvironment, runAgentRuntimeTurn } from "../agent-runtime"
 import { assembleAgentContext } from "../agent-runtime/context"
 import {
+  agentContextPath,
   DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
+  normalizeAgentContextSlot,
   resolveTokenBudget,
 } from "../agent-runtime/context-lifecycle"
 import {
@@ -44,6 +46,7 @@ import {
   getMaxTurnFromTurnFiles,
   readAgentContextFromWorkspace,
   stageAgentContextFile,
+  stageAgentInvocationTranscriptFile,
 } from "./history-turns"
 import {
   buildAgentProviderPresetMap,
@@ -198,9 +201,13 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
   const purpose = input.purpose?.trim() || undefined
   const checkpointOption = normalizeInvokeAgentCheckpointOption(input)
 
-  const slot = input.contextSlot
+  const slot = input.contextSlot?.trim() || undefined
+  const normalizedSlot = slot ? normalizeAgentContextSlot(slot) : undefined
   const shouldPersist = input.persist === true
-  const queueKey = `${agentId}:${slot ?? "default"}`
+  if (input.transcript && (!shouldPersist || !slot?.trim())) {
+    throw new Error("interaction.invokeAgent transcript requires persist:true and a non-empty contextSlot.")
+  }
+  const queueKey = agentContextPath(agentId, normalizedSlot)
 
   // 同 slot 串行排队：前一个完成（成功/失败）后后一个才开始执行，
   // 确保 context.json 读写不竞争。不同 slot 或不同 agent 可真并行。
@@ -263,7 +270,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
       // 持久化由 persist 参数控制(默认 false,不读 entryMode)。
       // persist:true → 读写 context-<slot>.json;persist:false → 不读不写,调完即弃。
       const agentContext = shouldPersist
-        ? readAgentContextFromWorkspace(workspaceFiles, currentActiveSaveId, agentId, slot)
+        ? readAgentContextFromWorkspace(workspaceFiles, currentActiveSaveId, agentId, normalizedSlot)
         : null
 
       // resolve target agent 上下文 token 预算.
@@ -466,7 +473,8 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
         })
         stageAgentContextFile(workspaceTransaction!, {
           saveId: currentActiveSaveId,
-          turn: result.contextUpdate.turn,
+          sequence: result.contextUpdate.sequence,
+          gameTurn: result.contextUpdate.gameTurn,
           user: result.contextUpdate.user,
           assistant: projectedReply.content,
           compressedContext: result.contextUpdate.compressedContext,
@@ -474,8 +482,27 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
             ? { toolMemories: result.contextUpdate.toolMemories }
             : {}),
           agentId,
-          slot,
+          slot: normalizedSlot,
         })
+        if (input.transcript && normalizedSlot) {
+          stageAgentInvocationTranscriptFile(workspaceTransaction!, {
+            agentId,
+            slot: normalizedSlot,
+            sequence: result.contextUpdate.sequence,
+            invocationId,
+            ...(purpose ? { purpose } : {}),
+            request: userInput,
+            assistant: {
+              kind: "assistant",
+              content: projectedReply.content,
+              ...(projectedReply.displayContent !== undefined
+                ? { displayContent: projectedReply.displayContent }
+                : {}),
+              ...(projectedReply.projections ? { projections: projectedReply.projections } : {}),
+            },
+            timeline: result.contextUpdate.timelineItems,
+          })
+        }
       }
       // 旁路 trace 落盘（独立路径，不与主 turn trace 混淆）
       trace.emit({

@@ -1,6 +1,9 @@
 import type {
   AgentContextSnapshot,
   AgentContextToolMemory,
+  AgentInvocationTranscript,
+  AgentInvocationTranscriptEntry,
+  AssistantTurnTimelineItem,
   ConversationMessageRecord,
   SessionHistoryEntry,
   TurnTimelineItem,
@@ -9,6 +12,7 @@ import type {
 import type { RuntimeWorkspaceTransaction } from "../storage"
 import {
   agentContextPath,
+  agentInvocationTranscriptPath,
   appendTurnToContext,
   createEmptyAgentContext,
   parseAgentContext,
@@ -112,7 +116,8 @@ export function stageAgentContextFile(
   workspaceTransaction: RuntimeWorkspaceTransaction,
   input: {
     saveId: string
-    turn: number
+    sequence: number
+    gameTurn?: number
     user: string
     assistant: string
     compressedContext?: AgentContextSnapshot
@@ -131,22 +136,232 @@ export function stageAgentContextFile(
   // 追加本轮正文(保持最近 K 轮),saveId 用真实值修正(runtime 兜底时可能为空)
   const appended = appendTurnToContext(
     { ...base, saveId: input.saveId },
-    input.turn,
+    input.sequence,
     input.user,
     input.assistant,
+    input.gameTurn,
   )
   const mergedToolMemories = applyTaskToolMemoryRetention(sortToolMemoriesStable([
     ...(appended.toolMemories ?? []),
     ...(input.toolMemories ?? []),
-  ]))
+  ]), appended.sequence)
   const updated: AgentContextSnapshot = {
     ...appended,
+    saveId: input.saveId,
+    agentId,
     ...(mergedToolMemories.length > 0 ? { toolMemories: mergedToolMemories } : {}),
   }
   return workspaceTransaction.write({
     path: agentContextPath(agentId, slot),
     content: serializeAgentContext(updated),
   })
+}
+
+export function parseAgentInvocationTranscript(
+  content: string,
+  agentId: string,
+  slot: string,
+): AgentInvocationTranscript | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null
+  const record = parsed as Record<string, unknown>
+  if (
+    !hasOnlyTranscriptKeys(record, ["schema", "agentId", "slot", "lastSequence", "entries"])
+    || record.schema !== "tsian.agent.invocation-transcript.v1"
+    || record.agentId !== agentId
+    || record.slot !== slot
+    || typeof record.lastSequence !== "number"
+    || !Number.isSafeInteger(record.lastSequence)
+    || record.lastSequence < 0
+    || !Array.isArray(record.entries)
+  ) return null
+  const entries: AgentInvocationTranscriptEntry[] = []
+  let previousSequence = 0
+  for (const raw of record.entries) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
+    const entry = raw as Record<string, unknown>
+    const assistant = parseTranscriptAssistant(entry.assistant)
+    const timeline = Array.isArray(entry.timeline)
+      ? entry.timeline.map(parseTranscriptTimelineItem)
+      : entry.timeline === undefined
+        ? undefined
+        : null
+    if (
+      !hasOnlyTranscriptKeys(entry, ["sequence", "invocationId", "purpose", "createdAt", "request", "assistant", "timeline"])
+      || typeof entry.sequence !== "number"
+      || !Number.isSafeInteger(entry.sequence)
+      || entry.sequence <= previousSequence
+      || typeof entry.invocationId !== "string"
+      || !entry.invocationId.trim()
+      || entry.invocationId.length > 200
+      || (entry.purpose !== undefined && (typeof entry.purpose !== "string" || !entry.purpose.trim()))
+      || typeof entry.createdAt !== "string"
+      || !entry.createdAt.trim()
+      || typeof entry.request !== "string"
+      || !assistant
+      || timeline === null
+      || timeline?.some((item) => item === null)
+    ) return null
+    previousSequence = entry.sequence
+    entries.push({
+      sequence: entry.sequence,
+      invocationId: entry.invocationId,
+      ...(typeof entry.purpose === "string" && entry.purpose.trim() ? { purpose: entry.purpose } : {}),
+      createdAt: entry.createdAt,
+      request: entry.request,
+      assistant,
+      ...(timeline ? { timeline: timeline as TurnTimelineItem[] } : {}),
+    })
+  }
+  if ((entries.length > 0 ? entries[entries.length - 1]!.sequence : 0) !== record.lastSequence) return null
+  return {
+    schema: "tsian.agent.invocation-transcript.v1",
+    agentId,
+    slot,
+    lastSequence: record.lastSequence,
+    entries,
+  }
+}
+
+function isTranscriptJsonValue(value: unknown): value is import("@tsian/contracts").JsonValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true
+  if (typeof value === "number") return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(isTranscriptJsonValue)
+  return typeof value === "object" && value !== null
+    && Object.values(value as Record<string, unknown>).every(isTranscriptJsonValue)
+}
+
+function hasOnlyTranscriptKeys(record: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys)
+  return Object.keys(record).every((key) => allowed.has(key))
+}
+
+function parseTranscriptAssistant(value: unknown): AssistantTurnTimelineItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (!hasOnlyTranscriptKeys(record, ["kind", "content", "displayContent", "projections"])
+    || record.kind !== "assistant" || typeof record.content !== "string") return null
+  if (record.displayContent !== undefined && typeof record.displayContent !== "string") return null
+  if (record.projections !== undefined
+    && (typeof record.projections !== "object" || record.projections === null || Array.isArray(record.projections)
+      || !isTranscriptJsonValue(record.projections))) return null
+  return {
+    kind: "assistant",
+    content: record.content,
+    ...(typeof record.displayContent === "string" ? { displayContent: record.displayContent } : {}),
+    ...(record.projections && typeof record.projections === "object"
+      ? { projections: record.projections as Record<string, import("@tsian/contracts").JsonValue> }
+      : {}),
+  }
+}
+
+function parseTranscriptTimelineItem(value: unknown): TurnTimelineItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const item = value as Record<string, unknown>
+  if (item.kind === "interim" || item.kind === "thought") {
+    if (!hasOnlyTranscriptKeys(item, ["kind", "id", "round", "agentId", "text", "collapsed"])
+      || typeof item.id !== "string" || typeof item.round !== "number" || !Number.isSafeInteger(item.round)
+      || item.round < 0 || typeof item.text !== "string" || typeof item.collapsed !== "boolean"
+      || (item.agentId !== undefined && typeof item.agentId !== "string")) return null
+    return {
+      kind: item.kind,
+      id: item.id,
+      round: item.round,
+      ...(typeof item.agentId === "string" ? { agentId: item.agentId } : {}),
+      text: item.text,
+      collapsed: item.collapsed,
+    }
+  }
+  if (!hasOnlyTranscriptKeys(item, ["kind", "id", "round", "agentId", "name", "displayName", "status", "presentation", "collapsed"])
+    || item.kind !== "tool"
+    || typeof item.id !== "string"
+    || typeof item.round !== "number"
+    || !Number.isSafeInteger(item.round)
+    || item.round < 0
+    || typeof item.name !== "string"
+    || !["loading", "running", "success", "failed"].includes(String(item.status))
+    || typeof item.collapsed !== "boolean"
+    || (item.agentId !== undefined && typeof item.agentId !== "string")
+    || (item.displayName !== undefined && typeof item.displayName !== "string")
+    || (item.presentation !== undefined && !isTranscriptJsonValue(item.presentation))) return null
+  return {
+    kind: "tool",
+    id: item.id,
+    round: item.round,
+    ...(typeof item.agentId === "string" ? { agentId: item.agentId } : {}),
+    name: item.name,
+    ...(typeof item.displayName === "string" ? { displayName: item.displayName } : {}),
+    status: item.status as "loading" | "running" | "success" | "failed",
+    ...(item.presentation !== undefined ? { presentation: item.presentation as import("@tsian/contracts").UiToolPresentation } : {}),
+    collapsed: item.collapsed,
+  }
+}
+
+export function readAgentInvocationTranscriptFromWorkspace(
+  workspaceFiles: WorkspaceFile[],
+  agentId: string,
+  slot: string,
+): AgentInvocationTranscript | null {
+  const file = workspaceFiles.find((candidate) => candidate.path === agentInvocationTranscriptPath(agentId, slot))
+  return file ? parseAgentInvocationTranscript(file.content, agentId, slot) : null
+}
+
+function boundedTranscriptTimeline(timeline: TurnTimelineItem[] | undefined): TurnTimelineItem[] | undefined {
+  if (!timeline?.length) return undefined
+  return timeline.slice(-100).map((item) => {
+    if (item.kind === "thought" || item.kind === "interim") {
+      return { ...item, text: item.text.slice(0, 4_000) }
+    }
+    return item
+  })
+}
+
+export function stageAgentInvocationTranscriptFile(
+  workspaceTransaction: RuntimeWorkspaceTransaction,
+  input: {
+    agentId: string
+    slot: string
+    sequence: number
+    invocationId: string
+    purpose?: string
+    request: string
+    assistant: AssistantTurnTimelineItem
+    timeline?: TurnTimelineItem[]
+  },
+): WorkspaceFile {
+  const path = agentInvocationTranscriptPath(input.agentId, input.slot)
+  const existingFile = workspaceTransaction.workspaceFiles.find((file) => file.path === path)
+  const existing = existingFile
+    ? parseAgentInvocationTranscript(existingFile.content, input.agentId, input.slot)
+    : null
+  if (existingFile && !existing) {
+    throw new Error(`Agent invocation transcript is invalid: ${path}`)
+  }
+  if ((existing?.lastSequence ?? 0) >= input.sequence) {
+    throw new Error(`Agent invocation transcript sequence must append monotonically: ${path}`)
+  }
+  const entry: AgentInvocationTranscriptEntry = {
+    sequence: input.sequence,
+    invocationId: input.invocationId,
+    ...(input.purpose ? { purpose: input.purpose } : {}),
+    createdAt: new Date().toISOString(),
+    request: input.request,
+    assistant: input.assistant,
+    ...(boundedTranscriptTimeline(input.timeline) ? { timeline: boundedTranscriptTimeline(input.timeline) } : {}),
+  }
+  const transcript: AgentInvocationTranscript = {
+    schema: "tsian.agent.invocation-transcript.v1",
+    agentId: input.agentId,
+    slot: input.slot,
+    lastSequence: input.sequence,
+    entries: [...(existing?.entries ?? []), entry],
+  }
+  return workspaceTransaction.write({ path, content: `${JSON.stringify(transcript, null, 2)}\n` })
 }
 
 export function stageRawAirpHistoryTurnFile(

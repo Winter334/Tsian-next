@@ -2,19 +2,38 @@
 
 import "fake-indexeddb/auto"
 import type {
+  AgentContextToolMemory,
   ConversationMessageRecord,
   DiagnosticAiRequestRecord,
   GameCardManifest,
+  WorkspaceFile,
 } from "@tsian/contracts"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   ASSISTANT_CONTEXT_AGENT_ID,
   ASSISTANT_CONTEXT_SCHEMA,
   agentContextPath,
+  agentInvocationTranscriptPath,
+  compressContext,
+  compressTaskContext,
   createEmptyAgentContext,
   parseAgentContext,
   serializeAgentContext,
+  validateCompressionSummary,
 } from "../agent-runtime/context-lifecycle"
+import { assembleAgentContext } from "../agent-runtime/context"
+import {
+  parseAgentInvocationTranscript,
+} from "../platform-host/history-turns"
+import {
+  applyTaskToolMemoryRetention,
+  projectToolMemoryForContext,
+} from "../agent-runtime/tool-memory"
+import {
+  createRuntimeWorkspaceToolSessionState,
+} from "../agent-runtime/workspace-tools"
+import { executeRunScript } from "../agent-runtime/workspace-tools/skill-actions"
+import type { RuntimeChatMessage } from "../runtime-host/ai"
 import {
   createBrowserAiModelConfig,
   createBrowserAiProviderPreset,
@@ -24,6 +43,11 @@ import {
 import { markPlatformHostReady } from "../platform-host/host-state"
 import { invokeAgent } from "../platform-host/ai-invocation"
 import { runAssistantChat } from "../platform-host/assistant-chat"
+import {
+  WORLD_ARCHITECT_AGENT_FILES,
+  WORLD_ARCHITECT_SKILL_FILES,
+} from "../storage/workspace-templates/agents/world-architect"
+import { DEFAULT_SAVE_RUNTIME_FILES } from "../storage/workspace-templates/files"
 import {
   assistantContextPath,
   createAssistantSession,
@@ -50,6 +74,7 @@ const WORKSPACE_BASELINE = "before"
 const STAGED_VALUE = "same-turn-staged-value"
 const SIDE_AGENT_ID = "world-architect"
 const SIDE_CONTEXT_SLOT = "assistant-smoke-side"
+const BACKGROUND_CONTEXT_SLOT = "assistant-smoke-background"
 
 interface OpenAiRequestBody {
   messages?: Array<{
@@ -165,7 +190,7 @@ async function seedRuntime(input: {
           contextPaths: [],
           skills: { enabled: [], disabled: [] },
           tools: { enabled: [], disabled: [] },
-          platformTools: { enabled: ["workspace_read"], disabled: [] },
+          platformTools: { enabled: ["workspace_read", "workspace_write"], disabled: [] },
           workspaceAccess: { level: 1 },
         }, null, 2),
       },
@@ -240,6 +265,249 @@ afterEach(async () => {
   await localDb.delete()
 })
 
+const CHECKPOINT_SUMMARY = [
+  "## 本轮目标\n继续任务",
+  "## 已验证事实\n已有结果",
+  "## 持久化效果\n见工作区",
+  "## 当前未完成操作\n无",
+  "## 最新有效错误\n无",
+  "## 恢复动作\n继续",
+].join("\n")
+
+function nativeToolRound(
+  index: number,
+  input?: { name?: string; path?: string; failed?: boolean; content?: string; parallel?: boolean },
+): RuntimeChatMessage[] {
+  const name = input?.name ?? "read"
+  const path = input?.path ?? `save/round-${index}.txt`
+  const calls = [{ id: `call-${index}-a`, name, arguments: { path, ...(input?.content ? { content: input.content } : {}) } }]
+  if (input?.parallel) calls.push({ id: `call-${index}-b`, name: "read", arguments: { path: `save/round-${index}-b.txt` } })
+  return [
+    { role: "assistant", content: "", toolCalls: calls },
+    ...calls.map((call, callIndex): RuntimeChatMessage => ({
+      role: "tool",
+      toolCallId: call.id,
+      content: input?.failed && callIndex === 0
+        ? JSON.stringify({ code: "WRITE_FAILED", message: "retry the exact payload" })
+        : JSON.stringify({ path: call.arguments.path, status: "ok" }),
+    })),
+  ]
+}
+
+describe("Agent context contracts smoke", () => {
+  it("upgrades v1 context fields and retains only the newest unresolved semantic memory", () => {
+    const parsed = parseAgentContext(JSON.stringify({
+      schema: "tsian.agent.context.v1",
+      turn: 8,
+      recentTurns: [{ turn: 7, role: "assistant", content: "legacy" }],
+      lastCompressedTurn: 6,
+    }), "save-1")
+    expect(parsed).toMatchObject({
+      schema: "tsian.agent.context.v2",
+      sequence: 8,
+      lastCompressedSequence: 6,
+      recentTurns: [{ sequence: 7, gameTurn: 7, content: "legacy" }],
+    })
+
+    const memory = (sequence: number, status: "success" | "failed", resolves?: string[]): AgentContextToolMemory => ({
+      id: `memory-${sequence}`,
+      sourceToolCallId: `call-${sequence}`,
+      key: "workspace:save/result.json",
+      sequence,
+      toolName: "write",
+      status,
+      title: status,
+      summary: status,
+      ...(resolves ? { resolves } : {}),
+    })
+    const retained = applyTaskToolMemoryRetention([
+      memory(1, "failed"),
+      memory(2, "success", ["workspace:save/result.json"]),
+      memory(3, "failed"),
+    ])
+    expect(retained).toEqual([expect.objectContaining({ sequence: 3, status: "failed" })])
+    expect(applyTaskToolMemoryRetention(retained, 6)).toEqual([])
+  })
+
+  it("keeps atomic native rounds and pins an unresolved exact operation outside lossy compression", async () => {
+    const messages: RuntimeChatMessage[] = [
+      { role: "user", content: "framework" },
+      ...nativeToolRound(0, { name: "write", path: "save/exact.json", failed: true, content: "EXACT-PAYLOAD" }),
+      ...nativeToolRound(1, { parallel: true }),
+      ...nativeToolRound(2),
+      ...nativeToolRound(3),
+      ...nativeToolRound(4),
+      ...nativeToolRound(5),
+      ...nativeToolRound(6),
+    ]
+    const compressor = vi.fn(async () => CHECKPOINT_SUMMARY)
+    const result = await compressTaskContext(
+      messages,
+      { start: 1, end: messages.length },
+      null,
+      compressor,
+      { debugLabel: "agent:compression-smoke" },
+    )
+    expect(result.compressed).toBe(true)
+    expect(JSON.stringify(result.messages)).toContain("EXACT-PAYLOAD")
+    expect(JSON.stringify(compressor.mock.calls)).not.toContain("EXACT-PAYLOAD")
+    expect(JSON.stringify(compressor.mock.calls)).toContain("structuredToolCalls")
+    expect(JSON.stringify(compressor.mock.calls)).toContain("call-1-a")
+    expect(JSON.stringify(compressor.mock.calls)).toContain("call-1-b")
+    expect(JSON.stringify(compressor.mock.calls)).toContain("消息 role 不是权威等级")
+  })
+
+  it("validates all fixed compression contracts and repairs one malformed checkpoint", async () => {
+    const continuation = ["当前目标", "有效约束", "已确认决策", "权威状态与产物", "已完成结果", "当前工作点", "未解决问题", "下一步"]
+      .map((heading) => `## ${heading}\n有内容`).join("\n")
+    const narrative = ["当前场景", "关键因果经过", "玩家选择", "角色与关系变化", "线索与未决事项", "紧接续点"]
+      .map((heading) => `## ${heading}\n有内容`).join("\n")
+    expect(validateCompressionSummary("task-continuation", continuation)).toEqual([])
+    expect(validateCompressionSummary("task-checkpoint", CHECKPOINT_SUMMARY)).toEqual([])
+    expect(validateCompressionSummary("narrative-continuity", narrative)).toEqual([])
+    expect(validateCompressionSummary("task-checkpoint", "## 本轮目标\n")).not.toEqual([])
+
+    const messages: RuntimeChatMessage[] = [
+      { role: "user", content: "framework" },
+      ...nativeToolRound(0),
+      ...nativeToolRound(1),
+      ...nativeToolRound(2),
+      ...nativeToolRound(3),
+      ...nativeToolRound(4),
+      ...nativeToolRound(5),
+    ]
+    const compressor = vi.fn()
+      .mockResolvedValueOnce("malformed")
+      .mockResolvedValueOnce(CHECKPOINT_SUMMARY)
+    await expect(compressTaskContext(
+      messages,
+      { start: 1, end: messages.length },
+      null,
+      compressor,
+      { debugLabel: "agent:compression-repair-smoke" },
+    )).resolves.toMatchObject({ compressed: true, summary: CHECKPOINT_SUMMARY })
+    expect(compressor).toHaveBeenCalledTimes(2)
+
+    const narrativeContext = {
+      ...createEmptyAgentContext("save-narrative"),
+      sequence: 6,
+      recentTurns: Array.from({ length: 6 }, (_, index) => [
+        { sequence: index + 1, gameTurn: index + 1, role: "user" as const, content: `user-${index + 1}` },
+        { sequence: index + 1, gameTurn: index + 1, role: "assistant" as const, content: `assistant-${index + 1}` },
+      ]).flat(),
+      toolMemories: [{
+        id: "narrative-memory-1",
+        sourceToolCallId: "narrative-call-1",
+        key: "opening-progress:fixture",
+        sequence: 1,
+        gameTurn: 1,
+        toolName: "run_script",
+        status: "success" as const,
+        title: "Opening progress advanced",
+        summary: "Revision advanced without replaying the raw script output.",
+        exact: { revision: 2 },
+      }],
+    }
+    const narrativeCompressor = vi.fn(async () => narrative)
+    const compressedNarrative = await compressContext(
+      narrativeContext,
+      1,
+      narrativeCompressor,
+      { debugLabel: "agent:narrative-memory-smoke" },
+    )
+    expect(JSON.stringify(narrativeCompressor.mock.calls)).toContain("Opening progress advanced")
+    expect(JSON.stringify(narrativeCompressor.mock.calls)).toContain('\\"revision\\":2')
+    expect(compressedNarrative.lastCompressedSequence).toBe(1)
+    expect(compressedNarrative.toolMemories).toBeUndefined()
+  })
+
+  it("runs a visible Skill action without use_skill and omits source/read bodies from Tool Memory", async () => {
+    const file = (path: string, content: string): WorkspaceFile => ({ path, content, createdAt: 0, updatedAt: 0 })
+    const skillContent = [
+      "---",
+      "name: demo",
+      "description: Direct action smoke",
+      "---",
+      "# Demo",
+      "```json tsian-actions",
+      JSON.stringify([{ name: "commit_demo", description: "Commit", inputSchema: { type: "object" }, outputSchema: { type: "object" }, executor: { type: "browser_script", path: "scripts/commit.js" } }]),
+      "```",
+    ].join("\n")
+    const workspaceFiles = [
+      file("agents/demo-agent/agent.json", JSON.stringify({ id: "demo-agent", skills: { enabled: ["agents/demo-agent/skills/demo/SKILL.md"], disabled: [] } })),
+      file("agents/demo-agent/AGENT.md", "# Demo Agent"),
+      file("agents/demo-agent/skills/demo/SKILL.md", skillContent),
+      file("agents/demo-agent/skills/demo/scripts/commit.js", "return { receipt: 'r1' };"),
+    ]
+    const agentContext = assembleAgentContext(workspaceFiles, { agentId: "demo-agent", workspaceTrustBoundary: "trusted-authoring" })
+    expect(agentContext).not.toBeNull()
+    const runBrowserScript = vi.fn(async () => ({ ok: true as const, item: { receipt: "r1" } }))
+    const sessionState = createRuntimeWorkspaceToolSessionState()
+    await expect(executeRunScript({
+      workspaceFiles,
+      agentContext: agentContext!,
+      sessionState,
+      runBrowserScript,
+    }, { skill: "demo", script: "commit_demo", input: {} })).resolves.toMatchObject({
+      result: { status: "executed", output: { receipt: "r1" } },
+    })
+    expect(runBrowserScript).toHaveBeenCalledOnce()
+
+    const skillFile = workspaceFiles.find((entry) => entry.path.endsWith("/SKILL.md"))!
+    skillFile.content = "---\nname: demo\n---\n# Demo without actions\n"
+    await expect(executeRunScript({
+      workspaceFiles,
+      agentContext: agentContext!,
+      sessionState,
+      runBrowserScript,
+    }, { skill: "demo", script: "commit_demo", input: {} })).rejects.toMatchObject({ code: "ACTION_NOT_FOUND" })
+    expect(runBrowserScript).toHaveBeenCalledOnce()
+
+    const disabledFiles = workspaceFiles.map((entry) => entry.path === "agents/demo-agent/agent.json"
+      ? file(entry.path, JSON.stringify({ id: "demo-agent", skills: { enabled: [], disabled: ["agents/demo-agent/skills/demo/SKILL.md"] } }))
+      : entry)
+    const disabledContext = assembleAgentContext(disabledFiles, { agentId: "demo-agent", workspaceTrustBoundary: "trusted-authoring" })
+    await expect(executeRunScript({
+      workspaceFiles: disabledFiles,
+      agentContext: disabledContext!,
+      sessionState: createRuntimeWorkspaceToolSessionState(),
+      runBrowserScript,
+    }, { skill: "demo", script: "commit_demo", input: {} })).rejects.toMatchObject({ code: "SKILL_NOT_FOUND" })
+
+    expect(projectToolMemoryForContext({
+      sequence: 1,
+      call: { id: "use-1", name: "use_skill", arguments: { name: "demo" } },
+      observation: { index: 0, name: "use_skill", ok: true, result: { content: "FULL-SKILL-BODY" } },
+      sourceIndex: 0,
+    })).toBeNull()
+    expect(projectToolMemoryForContext({
+      sequence: 1,
+      call: { id: "read-1", name: "read", arguments: { path: "source/chapter.txt" } },
+      observation: { index: 0, name: "read", ok: true, result: { content: "FULL-SOURCE-BODY" } },
+      sourceIndex: 0,
+    })).toBeNull()
+  })
+
+  it("keeps the world architect template synchronized and its resident context minimal", () => {
+    const agentFile = WORLD_ARCHITECT_AGENT_FILES.find((file) => file.path === "agents/world-architect/agent.json")
+    const config = JSON.parse(agentFile?.content ?? "null") as { contextPaths?: Array<{ path?: string }> }
+    expect(config.contextPaths?.map((entry) => entry.path)).toEqual([
+      "save/source/manifest.json",
+      "save/schema/current.md",
+      "save/playthrough/frontier.json",
+    ])
+    expect(WORLD_ARCHITECT_SKILL_FILES.map((file) => file.path)).toEqual(expect.arrayContaining([
+      "agents/world-architect/skills/开局建模/scripts/_progress.js",
+      "agents/world-architect/skills/开局建模/scripts/read-opening-progress.js",
+      "agents/world-architect/skills/开局建模/scripts/advance-opening-progress.js",
+      "agents/world-architect/skills/开局建模/scripts/commit-opening.js",
+    ]))
+    const currentSchema = DEFAULT_SAVE_RUNTIME_FILES.find((file) => file.path === "save/schema/current.md")?.content ?? ""
+    expect(currentSchema.length).toBeLessThan(1_000)
+    expect(currentSchema).toContain("save-specific")
+  })
+})
+
 describe("Assistant Runtime transaction smoke", () => {
   it("commits staged Tool work, conversation/context, and sanitized diagnostics", async () => {
     const seeded = await seedRuntime({ contextMarker: "success-context-baseline" })
@@ -262,15 +530,18 @@ describe("Assistant Runtime transaction smoke", () => {
         return openAiFinalResponse("Assistant smoke completed")
       }
       if (requests.length === 4) {
-        return openAiToolResponse("side-read-1", "read", { path: WORKSPACE_PATH })
+        return openAiToolResponse("side-write-1", "write", { path: WORKSPACE_PATH, content: STAGED_VALUE })
       }
       if (requests.length === 5) {
-        expect(toolObservation(body, "side-read-1")).toContain(STAGED_VALUE)
+        expect(toolObservation(body, "side-write-1")).toContain(WORKSPACE_PATH)
         return openAiFinalResponse("Side invocation recorded")
       }
-      expect(JSON.stringify(body.messages)).toContain("最近工具工作记录")
-      expect(JSON.stringify(body.messages)).toContain(WORKSPACE_PATH)
-      return openAiFinalResponse("Side invocation resumed")
+      if (requests.length === 6) {
+        expect(JSON.stringify(body.messages)).toContain("已保留的语义工具结果")
+        expect(JSON.stringify(body.messages)).toContain(WORKSPACE_PATH)
+        return openAiFinalResponse("Side invocation resumed")
+      }
+      return openAiFinalResponse("Background invocation completed")
     }))
 
     await expect(runAssistantChat({
@@ -307,32 +578,67 @@ describe("Assistant Runtime transaction smoke", () => {
       input: "Read the smoke workspace file.",
       contextSlot: SIDE_CONTEXT_SLOT,
       persist: true,
+      transcript: { mode: "full", audience: "player" },
     })).resolves.toMatchObject({ response: "Side invocation recorded" })
 
     const sideContextPath = agentContextPath(SIDE_AGENT_ID, SIDE_CONTEXT_SLOT)
+    const firstSideContextRaw = JSON.parse(
+      (await readWorkspaceFileForSave(seeded.saveId, sideContextPath))?.content ?? "null",
+    )
+    expect(firstSideContextRaw).toMatchObject({
+      schema: "tsian.agent.context.v2",
+      agentId: SIDE_AGENT_ID,
+      sequence: 1,
+    })
     const firstSideContext = parseAgentContext(
-      (await readWorkspaceFileForSave(seeded.saveId, sideContextPath))?.content ?? "",
+      JSON.stringify(firstSideContextRaw),
       seeded.saveId,
       { agentId: SIDE_AGENT_ID },
     )
     expect(firstSideContext?.toolMemories).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        sourceToolCallId: "side-read-1",
-        toolName: "read",
+        sourceToolCallId: "side-write-1",
+        toolName: "write",
         status: "success",
       }),
     ]))
+    expect(firstSideContext.sequence).toBe(1)
+    const transcriptPath = agentInvocationTranscriptPath(SIDE_AGENT_ID, SIDE_CONTEXT_SLOT)
+    const firstTranscript = JSON.parse((await readWorkspaceFileForSave(seeded.saveId, transcriptPath))?.content ?? "null")
+    expect(firstTranscript).toMatchObject({ lastSequence: 1, entries: [{ sequence: 1, request: "Read the smoke workspace file." }] })
+    expect(parseAgentInvocationTranscript(JSON.stringify(firstTranscript), SIDE_AGENT_ID, SIDE_CONTEXT_SLOT)?.entries).toHaveLength(1)
+    expect(parseAgentInvocationTranscript(JSON.stringify({ ...firstTranscript, unknown: true }), SIDE_AGENT_ID, SIDE_CONTEXT_SLOT)).toBeNull()
 
     await expect(invokeAgent({
       agentId: SIDE_AGENT_ID,
       input: "Continue using the previous work record.",
       contextSlot: SIDE_CONTEXT_SLOT,
       persist: true,
+      transcript: { mode: "full", audience: "player" },
     })).resolves.toMatchObject({ response: "Side invocation resumed" })
-    expect(requests).toHaveLength(6)
+    const finalSideContext = parseAgentContext(
+      (await readWorkspaceFileForSave(seeded.saveId, sideContextPath))?.content ?? "",
+      seeded.saveId,
+      { agentId: SIDE_AGENT_ID },
+    )
+    expect(finalSideContext.sequence).toBe(2)
+    const finalTranscript = JSON.parse((await readWorkspaceFileForSave(seeded.saveId, transcriptPath))?.content ?? "null")
+    expect(finalTranscript.lastSequence).toBe(2)
+    expect(finalTranscript.entries).toHaveLength(2)
+    await expect(invokeAgent({
+      agentId: SIDE_AGENT_ID,
+      input: "Run a background persistent task without a player archive.",
+      contextSlot: BACKGROUND_CONTEXT_SLOT,
+      persist: true,
+    })).resolves.toMatchObject({ response: "Background invocation completed" })
+    expect(await readWorkspaceFileForSave(
+      seeded.saveId,
+      agentInvocationTranscriptPath(SIDE_AGENT_ID, BACKGROUND_CONTEXT_SLOT),
+    )).toBeNull()
+    expect(requests).toHaveLength(7)
 
     const diagnostics = await diagnosticRequests("succeeded")
-    expect(diagnostics).toHaveLength(6)
+    expect(diagnostics).toHaveLength(7)
     expect(diagnostics.every((record) => record.attempts.length === 1)).toBe(true)
     expect(JSON.stringify(diagnostics)).not.toContain(PROVIDER_CREDENTIAL)
   })

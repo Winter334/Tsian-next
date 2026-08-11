@@ -28,6 +28,7 @@ export type {
   InspectFrontendResult,
   RuntimeControlledExecutorContext,
   RuntimeBrowserScriptExecutorRequest,
+  RuntimeBrowserScriptResult,
   RuntimeActionExecutorPolicyRequest,
   RuntimeActionExecutorPolicyDecision,
   RuntimeActionExecutorPolicy,

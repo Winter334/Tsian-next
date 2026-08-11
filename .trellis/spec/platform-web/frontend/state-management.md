@@ -802,14 +802,14 @@ The setup wizard (`useSetupState`) consumes `onAgentInvocation` in two distinct 
 
 ### 1. Scope / Trigger
 
-- Trigger: changing `formatSkillIndex`, `use_skill`, Skill action registration, native/text Tool result assembly, or the Skill description shown to an Agent before activation.
+- Trigger: changing `formatSkillIndex`, `use_skill`, Skill action discovery/cache, `run_script`, native/text Tool result assembly, or the Skill description shown to an Agent.
 
 ### 2. Signatures
 
 ```ts
 interface UseSkillResult {
   skill: { name: string; title: string; path: string }
-  activated: true
+  loaded: true
   content: string
   actionCount: number
   executableActionCount: number
@@ -821,35 +821,41 @@ interface UseSkillResult {
 ### 3. Contracts
 
 - `formatSkillIndex` emits one line per visible Skill in the stable prompt: `- name: description` plus `triggers=...` when present. It does not emit internal scope/path, full instructions, action schemas, resource contents, or `appliesTo`.
-- `use_skill` is the only full-instruction delivery channel. Its successful Tool observation returns one complete `SKILL.md` in `content`, activation metadata, action counts, and declaration diagnostics.
-- The `tsian-actions` declarations remain inside `content`; do not duplicate their full `inputSchema`/`outputSchema`/executor payload as a structured `actions` field. `run_script` uses the parsed declarations registered in session state, not a second model-facing copy.
-- Native and Text Tool Protocol consume the same accepted Tool result. Do not append a synthetic `user` message, maintain post-round injection de-dup state, collect activated Skill bodies after the round, or keep an injection fallback.
-- Compute the complete result-envelope size before registering activation. A Skill that cannot fit the producer budget remains inactive and must be split or move optional reference material into separately read resources.
+- `use_skill` is the only full-instruction delivery channel. Its successful Tool observation returns one complete `SKILL.md` in `content`, load metadata, action counts, and declaration diagnostics.
+- The `tsian-actions` declarations remain inside `content`; do not duplicate their full `inputSchema`/`outputSchema`/executor payload as a structured `actions` field. `run_script` parses the current visible Skill source (or an exact-content cache hit), not a second model-facing copy.
+- Native and Text Tool Protocol consume the same accepted Tool result. Do not append a synthetic `user` message, maintain post-round injection de-dup state, collect loaded Skill bodies after the round, or keep an injection fallback.
+- `run_script` does not require a preceding `use_skill`. On every call it resolves a currently visible and enabled Skill, loads its current `SKILL.md`, parses its declarations, then applies action schema, executor-policy, workspace-scope, and output validation. Missing, hidden, disabled, malformed, or undeclared actions fail closed.
+- Parsed declarations may be cached only as a same-loop optimization. A cache hit is valid only when the canonical Skill path and exact current `SKILL.md` content still match; editing the Skill in the same turn must invalidate stale declarations.
+- Compute the complete `use_skill` result-envelope size before caching declarations. A Skill whose full detail cannot fit the producer budget fails with no model-visible partial body; this does not change whether its actions are callable through `run_script`.
 - Repeating an explicit `use_skill` call produces one complete body in that call's Tool result; no automatic extra copy is added in the same or next model request.
-- Skill `description` states what activation enables in one sentence. Keep implementation status, subject-name prefixes, frontend rendering details, and trigger conditions out; triggers belong in frontmatter.
+- Skill `description` states what the Skill helps accomplish in one sentence. Keep implementation status, subject-name prefixes, frontend rendering details, and trigger conditions out; triggers belong in frontmatter.
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required result |
 |---|---|
-| Visible Skill with bounded body | Return `UseSkillResult`, then register parsed actions |
+| Visible Skill with bounded body | Return `UseSkillResult`; declarations may populate the same-loop cache |
 | Body contains malformed `tsian-actions` blocks | Return full body plus bounded declaration diagnostics; valid declarations may still register |
-| Complete result exceeds producer budget | `SKILL_DETAIL_TOO_LARGE` with path/actual/max/remediation; no activation |
-| Missing or invisible Skill | Existing `SKILL_*` failure; no body and no activation |
+| Complete result exceeds producer budget | `SKILL_DETAIL_TOO_LARGE` with path/actual/max/remediation; no body or cache update |
+| Missing or invisible Skill | Existing `SKILL_*` failure; no body |
 | Native vs text mode | Same semantic Tool result; zero synthetic Skill message |
-| Repeated explicit activation | One body per Tool result; session registration remains an upsert |
+| Repeated explicit load | One body per Tool result; session cache remains an upsert |
+| `run_script` before `use_skill` | Resolve and execute a valid action from the current visible Skill source |
+| Skill source changed after cache fill | Reparse exact current content; never execute the stale declaration |
 
 ### 5. Good / Base / Bad Cases
 
-- Good: a Skill body contains its script schema once; `use_skill` returns that body and counts, and the next Agent round calls `run_script` from the parsed declaration.
+- Good: a Skill body contains its script schema once; `use_skill` returns that body and counts, while `run_script` independently authorizes from the current visible source.
 - Base: a prose-only Skill returns `actionCount: 0` with its complete instructions.
+- Base: an Agent already knows the action contract and calls `run_script` without `use_skill`; the runtime resolves and validates the declaration lazily.
 - Bad: return the body, copy all action schemas into `result.actions`, then append the body again as a `user` message.
-- Bad: register an oversized Skill before discovering that the Tool result cannot be delivered, leaving `run_script` enabled behind a failed activation.
+- Bad: treat a prior `use_skill` result or persisted Tool Memory as authorization for `run_script`.
+- Bad: reuse declarations after a same-turn write changed `SKILL.md`.
 
 ### 6. Verification Required
 
 - Run `npm run build:web` and grep the runtime for retired post-round Skill injection state, collectors, and formatters.
-- Manually inspect native/text direct delivery, oversize failure, activation state, `run_script`, and `workspaceFileFilter` propagation when these contracts change.
+- Verify native/text direct delivery, oversize failure, direct `run_script`, stale-cache invalidation, and `workspaceFileFilter` propagation when these contracts change.
 - Do not restore the retired Skill-loop/producer/action unit files.
 
 ### 7. Wrong vs Correct
@@ -857,17 +863,20 @@ interface UseSkillResult {
 #### Wrong
 
 ```ts
-registerLoadedSkill(sessionState, skill, actions)
-return { content, actions }
+if (!sessionState.loadedSkills.includes(skill.name)) throw PRIOR_SKILL_LOAD_REQUIRED
+return { content, actions, loaded: true }
 // Later: messages.push({ role: "user", content })
 ```
 
 #### Correct
 
 ```ts
-const result = { skill: metadata, activated: true, content, ...counts }
+const result = { skill: metadata, loaded: true, content, ...counts }
 assertUseSkillResultFits(result)
-registerLoadedSkill(sessionState, skill, actions)
+cacheDeclarations(sessionState, skill.path, content, actions)
 return result // native/text Tool result is the only full-content channel
+
+// run_script independently re-resolves the visible Skill and accepts the cache
+// only when both path and exact current content match.
 ```
 

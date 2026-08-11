@@ -139,13 +139,10 @@ function readAssistantContextFromFiles(
 
 /**
  * 从 context 快照推算下一 turn 号(修复助手 fake snapshot turn 恒为 1 的缺陷).
- * 取 recentTurns 与 lastCompressedTurn 的最大值 +1,使 turn 号单调递增,
- * compressContext 的 lastCompressedTurn 去重正确工作.
+ * 取 snapshot.sequence + 1，使助手上下文序列单调递增。
  */
-function nextAssistantTurnNumber(snapshot: AgentContextSnapshot): number {
-  const maxRecent = snapshot.recentTurns.reduce((max, e) => Math.max(max, e.turn), 0)
-  const maxCompressed = snapshot.lastCompressedTurn ?? 0
-  return Math.max(maxRecent, maxCompressed) + 1
+function nextAssistantSequence(snapshot: AgentContextSnapshot): number {
+  return snapshot.sequence + 1
 }
 
 /**
@@ -159,7 +156,7 @@ function nextAssistantTurnNumber(snapshot: AgentContextSnapshot): number {
 async function stageAssistantContextFile(
   input: {
     sessionId: string
-    turn: number
+    sequence: number
     user: string
     assistant: string
     compressedContext?: AgentContextSnapshot
@@ -179,14 +176,14 @@ async function stageAssistantContextFile(
   // 追加本轮正文(保持 text-only recentTurns),saveId 用 sessionId(语义复用)
   const appended = appendTurnToContext(
     { ...base, saveId: input.sessionId },
-    input.turn,
+    input.sequence,
     input.user,
     input.assistant,
   )
   const mergedToolMemories = applyTaskToolMemoryRetention(sortToolMemoriesStable([
     ...(appended.toolMemories ?? []),
     ...(input.toolMemories ?? []),
-  ]))
+  ]), appended.sequence)
   const updated: AgentContextSnapshot = {
     ...appended,
     ...(mergedToolMemories.length > 0 ? { toolMemories: mergedToolMemories } : {}),
@@ -449,9 +446,8 @@ export async function runAssistantChat(
         schema: ASSISTANT_CONTEXT_SCHEMA,
         agentId: ASSISTANT_CONTEXT_AGENT_ID,
       })
-  // 从快照推算下一 turn 号(修复 fake snapshot turn 恒为 1 的缺陷),使
-  // compressContext 的 lastCompressedTurn 去重正确工作.
-  const nextAssistantTurn = nextAssistantTurnNumber(assistantContext)
+  // 从快照分配下一 context sequence；桌面助手不依赖游戏 turn。
+  const nextAssistantTurn = nextAssistantSequence(assistantContext)
   // resolve 助手 model contextWindow 预算(对称 master 的 contextTokenBudget 注入).
   const assistantContextTokenBudget = resolveTokenBudget(
     assistantModelConfig?.parameters.common.contextWindow ?? null,
@@ -473,8 +469,7 @@ export async function runAssistantChat(
         userInput: messageText,
         userInputAttachments,
         recentHistory: history,
-        // 修正 turn 号:传 nextAssistantTurn - 1,使 currentRuntimeTurnNumber 返回 nextAssistantTurn
-        // (之前恒传 turn:0 → 每轮 turn=1,破坏 lastCompressedTurn 去重).
+        // 诊断事件仍沿用 turn 数字；上下文持久化使用独立 sequence。
         turn: nextAssistantTurn - 1,
         signal: compositeSignal,
         traceContext,
@@ -787,7 +782,7 @@ export async function runAssistantChat(
     if (assistantContextUpdate) {
       await stageAssistantContextFile({
         sessionId: input.sessionId,
-        turn: assistantContextUpdate.turn,
+        sequence: assistantContextUpdate.sequence,
         user: assistantContextUpdate.user,
         assistant: assistantContextUpdate.assistant,
         compressedContext: assistantContextUpdate.compressedContext,

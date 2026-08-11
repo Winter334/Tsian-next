@@ -562,6 +562,15 @@ function runWithExecutorTimeout<T>(
   }
 
   const timeoutMs = effectiveExecutorTimeoutMs(executor)
+  let running: Promise<T>
+  try {
+    // Start the controlled executor first. Browser runners install their own
+    // equal-duration timeout/abort handlers and must settle (including staged
+    // workspace rollback) before this defensive outer guard settles.
+    running = run()
+  } catch (error) {
+    return Promise.reject(error)
+  }
   return new Promise<T>((resolve, reject) => {
     let settled = false
     let timeoutId: ReturnType<typeof setTimeout> | undefined
@@ -598,15 +607,12 @@ function runWithExecutorTimeout<T>(
     }, timeoutMs)
 
     signal?.addEventListener("abort", onAbort, { once: true })
+    if (signal?.aborted) onAbort()
 
-    try {
-      run().then(
-        (result) => settle(resolve, result),
-        (error) => settle(reject, error),
-      )
-    } catch (error) {
-      settle(reject, error as RuntimeWorkspaceToolError)
-    }
+    running.then(
+      (result) => settle(resolve, result),
+      (error) => settle(reject, error),
+    )
   })
 }
 
@@ -820,6 +826,8 @@ export async function executeSkillAction(
   return {
     status: "executed",
     output: result.item ?? null,
+    ...(result.memoryProjection ? { memoryProjection: result.memoryProjection } : {}),
+    ...(result.rollback ? { rollback: result.rollback } : {}),
   }
 }
 
@@ -843,7 +851,11 @@ export async function executeUserTool(
   context: RuntimeWorkspaceToolExecutionContext,
   tool: ToolRegistryEntry,
   input: Record<string, unknown>,
-): Promise<Record<string, unknown> | null | boolean | number | string> {
+): Promise<{
+  output: Record<string, unknown> | null | boolean | number | string
+  memoryProjection?: import("@tsian/contracts").ToolMemoryProjection
+  rollback?: () => void
+}> {
   if (!context.runBrowserScript) {
     throw toolError(
       "BROWSER_SCRIPT_UNAVAILABLE",
@@ -930,14 +942,26 @@ export async function executeUserTool(
   }
 
   const output = result.item
-  if (output === undefined || output === null) return null
+  if (output === undefined || output === null) return {
+    output: null,
+    ...(result.memoryProjection ? { memoryProjection: result.memoryProjection } : {}),
+    ...(result.rollback ? { rollback: result.rollback } : {}),
+  }
   if (
     typeof output === "boolean" ||
     typeof output === "number" ||
     typeof output === "string" ||
     (typeof output === "object" && output !== null)
   ) {
-    return output as Record<string, unknown>
+    return {
+      output: output as Record<string, unknown>,
+      ...(result.memoryProjection ? { memoryProjection: result.memoryProjection } : {}),
+      ...(result.rollback ? { rollback: result.rollback } : {}),
+    }
   }
-  return null
+  return {
+    output: null,
+    ...(result.memoryProjection ? { memoryProjection: result.memoryProjection } : {}),
+    ...(result.rollback ? { rollback: result.rollback } : {}),
+  }
 }

@@ -343,17 +343,21 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     if (contextUpdate) {
       const stagedContext = stageAgentContextFile(workspaceTransaction, {
         saveId: activeSaveId,
-        turn: contextUpdate.turn,
+        sequence: contextUpdate.sequence,
+        gameTurn: contextUpdate.gameTurn,
         user: contextUpdate.user,
         assistant: assistantItem.content,
         compressedContext: contextUpdate.compressedContext,
+        ...(contextUpdate.toolMemories && contextUpdate.toolMemories.length > 0
+          ? { toolMemories: contextUpdate.toolMemories }
+          : {}),
         agentId: playerTurnAgentId,
       })
       trace.emit({
         type: "agent_context_staged",
         ok: true,
         data: {
-          turn: contextUpdate.turn,
+          sequence: contextUpdate.sequence,
           path: stagedContext.path,
           summaryPresent: !!contextUpdate.compressedContext?.summary,
         },

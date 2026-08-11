@@ -8,6 +8,7 @@ import type {
 } from "@tsian/contracts"
 import type {
   RuntimeBrowserScriptExecutorRequest,
+  RuntimeBrowserScriptResult,
   RuntimeControlledExecutorContext,
 } from "../agent-runtime/workspace-tools"
 import type {
@@ -35,7 +36,8 @@ import { normalizeWorkspacePath } from "../lib/workspace-path"
 import { projectAssistantReply } from "./reply-projection"
 
 interface BrowserSkillScriptRunnerOptions {
-  workspaceTransaction: Pick<RuntimeWorkspaceTransaction, "workspaceFiles" | "write" | "delete">
+  workspaceTransaction: Pick<RuntimeWorkspaceTransaction,
+    "workspaceFiles" | "write" | "delete" | "createSavepoint" | "rollbackToSavepoint">
   signal?: AbortSignal
   emitTrace?: RuntimeTraceEmitter
 }
@@ -51,12 +53,14 @@ interface BrowserScriptWorkerMessage {
   level?: unknown
   message?: unknown
   data?: unknown
+  memoryProjection?: unknown
 }
 
 const BROWSER_SCRIPT_WORKER_SOURCE = String.raw`
 const pending = new Map();
 let nextRpcId = 1;
 let aborted = false;
+let currentMemoryProjection = null;
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -88,6 +92,37 @@ function toJsonValue(value, seen) {
     return output;
   }
   return String(value);
+}
+
+function strictMemoryJsonValue(value, seen, depth) {
+  const activeSeen = seen || new WeakSet();
+  const currentDepth = depth || 0;
+  if (currentDepth > 16) throw new Error("Memory projection nesting is too deep.");
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Memory projection numbers must be finite.");
+    return value;
+  }
+  if (Array.isArray(value)) {
+    if (activeSeen.has(value)) throw new Error("Memory projection must not contain cycles.");
+    activeSeen.add(value);
+    const output = value.map((item) => strictMemoryJsonValue(item, activeSeen, currentDepth + 1));
+    activeSeen.delete(value);
+    return output;
+  }
+  if (isRecord(value)) {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) throw new Error("Memory projection must contain plain JSON objects.");
+    if (activeSeen.has(value)) throw new Error("Memory projection must not contain cycles.");
+    activeSeen.add(value);
+    const output = {};
+    for (const [key, entry] of Object.entries(value)) {
+      output[key] = strictMemoryJsonValue(entry, activeSeen, currentDepth + 1);
+    }
+    activeSeen.delete(value);
+    return output;
+  }
+  throw new Error("Memory projection must contain JSON values only.");
 }
 
 function errorPayload(error) {
@@ -213,6 +248,27 @@ const tsian = Object.freeze({
   reply: Object.freeze({
     project(text) {
       return rpc("reply.project", { text: String(text || "") });
+    }
+  }),
+  memory: Object.freeze({
+    set(projection) {
+      let normalized;
+      try {
+        if (currentMemoryProjection !== null) throw new Error("Only one memory projection may be set per script execution.");
+        normalized = strictMemoryJsonValue(projection);
+      } catch (error) {
+        throw Object.assign(new Error("tsian.memory.set requires one JSON object within 8000 characters."), {
+          code: "TSIAN_MEMORY_PROJECTION_INVALID",
+          details: { reason: error && error.message || String(error) }
+        });
+      }
+      const encoded = JSON.stringify(normalized);
+      if (!isRecord(normalized) || encoded.length > 8000) {
+        throw Object.assign(new Error("tsian.memory.set requires one JSON object within 8000 characters."), {
+          code: "TSIAN_MEMORY_PROJECTION_INVALID"
+        });
+      }
+      currentMemoryProjection = normalized;
     }
   }),
   // config 通过 Proxy 动态读取 currentConfig（execute 消息到达后赋值），
@@ -349,6 +405,7 @@ self.onmessage = async (event) => {
 
   // 把 execute 消息里的 config 存到模块级变量，供 tsian.config Proxy 动态读取
   currentConfig = isRecord(message.config) ? message.config : {};
+  currentMemoryProjection = null;
 
   try {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
@@ -399,7 +456,8 @@ self.onmessage = async (event) => {
     self.postMessage({
       type: "script-result",
       ok: true,
-      output: toJsonValue(output)
+      output: toJsonValue(output),
+      memoryProjection: currentMemoryProjection
     });
   } catch (error) {
     self.postMessage({
@@ -448,6 +506,43 @@ function toJsonValue(value: unknown, seen = new WeakSet<object>()): JsonValue {
   }
 
   return String(value)
+}
+
+function normalizeMemoryProjection(value: unknown): import("@tsian/contracts").ToolMemoryProjection | undefined {
+  if (!isRecord(value)) return undefined
+  const text = (entry: unknown, limit: number): string | undefined =>
+    typeof entry === "string" && entry.trim() && entry.trim().length <= limit ? entry.trim() : undefined
+  const key = text(value.key, 240)
+  const title = text(value.title, 240)
+  const summary = text(value.summary, 2_000)
+  const status: "success" | "failed" | undefined = value.status === "success" || value.status === "failed" ? value.status : undefined
+  if (!key || !title || !summary || !status) return undefined
+  const anchors = Array.isArray(value.anchors)
+    ? Array.from(new Set(value.anchors.map((item) => text(item, 300)).filter((item): item is string => Boolean(item)))).slice(0, 20)
+    : []
+  const resolves = Array.isArray(value.resolves)
+    ? Array.from(new Set(value.resolves.map((item) => text(item, 240)).filter((item): item is string => Boolean(item)))).slice(0, 20)
+    : []
+  const exact = isRecord(value.exact) && isJsonValue(value.exact)
+    ? value.exact as Record<string, JsonValue>
+    : undefined
+  const projection = {
+    key,
+    status,
+    title,
+    summary,
+    ...(anchors.length > 0 ? { anchors } : {}),
+    ...(exact ? { exact } : {}),
+    ...(resolves.length > 0 ? { resolves } : {}),
+  }
+  return JSON.stringify(projection).length <= 8_000 ? projection : undefined
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true
+  if (typeof value === "number") return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(isJsonValue)
+  return isRecord(value) && Object.values(value).every(isJsonValue)
 }
 
 function actionError(
@@ -927,7 +1022,7 @@ async function runWorkerScript(
   source: string,
   executorContext: RuntimeControlledExecutorContext | undefined,
   config: Record<string, string>,
-): Promise<PlatformActionResult> {
+): Promise<RuntimeBrowserScriptResult> {
   if (typeof Worker === "undefined" || typeof Blob === "undefined") {
     return actionError(
       "BROWSER_SCRIPT_UNAVAILABLE",
@@ -936,7 +1031,7 @@ async function runWorkerScript(
   }
 
   const { worker, url } = createWorker()
-  return new Promise<PlatformActionResult>((resolve) => {
+  return new Promise<RuntimeBrowserScriptResult>((resolve) => {
     let settled = false
     let timeoutId: ReturnType<typeof setTimeout> | undefined
 
@@ -949,7 +1044,7 @@ async function runWorkerScript(
       URL.revokeObjectURL(url)
     }
 
-    const settle = (result: PlatformActionResult) => {
+    const settle = (result: RuntimeBrowserScriptResult) => {
       if (settled) {
         return
       }
@@ -1036,7 +1131,20 @@ async function runWorkerScript(
 
       if (message.type === "script-result") {
         if (message.ok) {
-          settle({ ok: true, item: toJsonValue(message.output) })
+          const memoryProjection = normalizeMemoryProjection(message.memoryProjection)
+          if (message.memoryProjection !== null && message.memoryProjection !== undefined && !memoryProjection) {
+            settle(actionError(
+              "TSIAN_MEMORY_PROJECTION_INVALID",
+              "Browser script supplied an invalid semantic memory projection.",
+              { scriptPath: request.scriptPath },
+            ))
+            return
+          }
+          settle({
+            ok: true,
+            item: toJsonValue(message.output),
+            ...(memoryProjection ? { memoryProjection } : {}),
+          })
           return
         }
 
@@ -1101,7 +1209,7 @@ export function createBrowserSkillScriptRunner(
   return async (
     request: RuntimeBrowserScriptExecutorRequest,
     executorContext?: RuntimeControlledExecutorContext,
-  ): Promise<PlatformActionResult> => {
+  ): Promise<RuntimeBrowserScriptResult> => {
     if (!isScriptUnderOwnerDirectory(request)) {
       return actionError(
         "BROWSER_SCRIPT_PATH_INVALID",
@@ -1183,7 +1291,21 @@ export function createBrowserSkillScriptRunner(
       ? {}
       : mergeSkillConfig(request.configItems, playerValues)
 
-    return runWorkerScript(options, request, finalSource, executorContext, mergedConfig)
+    const savepoint = options.workspaceTransaction.createSavepoint()
+    try {
+      const result = await runWorkerScript(options, request, finalSource, executorContext, mergedConfig)
+      if (!result.ok) {
+        options.workspaceTransaction.rollbackToSavepoint(savepoint)
+        return result
+      }
+      return {
+        ...result,
+        rollback: () => options.workspaceTransaction.rollbackToSavepoint(savepoint),
+      }
+    } catch (error) {
+      options.workspaceTransaction.rollbackToSavepoint(savepoint)
+      throw error
+    }
   }
 }
 
@@ -1290,7 +1412,8 @@ export function createTestSkillScriptRunner(
  * 只需在此处加一行，三处自动生效。
  */
 export function createBrowserScriptRunners(options: {
-  workspaceTransaction: Pick<RuntimeWorkspaceTransaction, "workspaceFiles" | "write" | "delete">
+  workspaceTransaction: Pick<RuntimeWorkspaceTransaction,
+    "workspaceFiles" | "write" | "delete" | "createSavepoint" | "rollbackToSavepoint">
   signal?: AbortSignal
   emitTrace?: RuntimeTraceEmitter
 }): {

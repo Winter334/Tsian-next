@@ -101,6 +101,8 @@ export interface RuntimeWorkspaceToolObservation {
   ok: boolean
   result?: unknown
   error?: RuntimeWorkspaceToolError
+  /** Explicit semantic cross-sequence projection; never included in the current observation JSON. */
+  memoryProjection?: import("@tsian/contracts").ToolMemoryProjection
   /** 图片 ContentPart 列表(workspace_read 读图片时提取). 不进 text observation
    *  (避免 base64 爆文本上下文),由消息注入层追加到 user 消息的 ContentPart[]. */
   imageParts?: ContentPart[]
@@ -131,6 +133,14 @@ export interface RuntimeActionExecutorReference {
 export interface RuntimeActionExecutorResult {
   status: "executed"
   output: unknown
+  memoryProjection?: import("@tsian/contracts").ToolMemoryProjection
+  /** Restores script-staged workspace changes if post-execution validation fails. */
+  rollback?: () => void
+}
+
+export type RuntimeBrowserScriptResult = PlatformActionResult & {
+  memoryProjection?: import("@tsian/contracts").ToolMemoryProjection
+  rollback?: () => void
 }
 
 export type RuntimeAgentCallHistoryMode = "minimal" | "recent" | "scene"
@@ -445,7 +455,7 @@ export interface RuntimeBrowserScriptExecutorRequest {
 export type RuntimeBrowserScriptRunner = (
   request: RuntimeBrowserScriptExecutorRequest,
   context?: RuntimeControlledExecutorContext,
-) => Promise<PlatformActionResult>
+) => Promise<RuntimeBrowserScriptResult>
 
 export interface RuntimeTestSkillScriptInput {
   skillName: string
@@ -496,6 +506,8 @@ export interface RuntimeActionExecutorContext {
 
 export interface RuntimeLoadedSkill {
   skill: SkillRegistryEntry
+  /** Exact SKILL.md content used to parse actions; binds cache hits to the current declaration. */
+  sourceContent: string
   actions: RuntimeSkillActionDeclaration[]
 }
 

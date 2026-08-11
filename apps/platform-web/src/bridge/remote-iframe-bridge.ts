@@ -428,6 +428,18 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
       ? record.contextSlot.trim()
       : undefined
   const persist = typeof record.persist === "boolean" ? record.persist : undefined
+  let transcript: InvokeAgentRequest["transcript"]
+  if (record.transcript !== undefined) {
+    if (!isRecord(record.transcript)
+      || record.transcript.mode !== "full"
+      || record.transcript.audience !== "player") {
+      throw new RemoteBridgeRpcError(
+        "INVALID_INVOKE_AGENT_TRANSCRIPT",
+        'interaction.invokeAgent transcript must be { mode: "full", audience: "player" }.',
+      )
+    }
+    transcript = { mode: "full", audience: "player" }
+  }
   return {
     agentId: record.agentId,
     input: record.input,
@@ -439,6 +451,7 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
     ...(injection ? { injection } : {}),
     ...(contextSlot ? { contextSlot } : {}),
     ...(persist !== undefined ? { persist } : {}),
+    ...(transcript ? { transcript } : {}),
   }
 }
 

@@ -209,6 +209,7 @@ interface WorkspaceToolLoopOptions {
    * 未传(narrative 兜底路径)→ 工具循环不做 turn 内压剧情,但仍做预算兜底.
    */
   agentContextSnapshot?: AgentContextSnapshot
+  contextSequence: number
   /** token 预算(turn 开头已 resolve).达 85% 触发压缩/兜底.两模式共用. */
   contextTokenBudget?: number
   requestInputBudgetTokens?: number
@@ -956,6 +957,7 @@ function createAgentCallRunner(
           contextTokenBudget: resolveTokenBudget(undefined),
           requestInputBudgetTokens: input.requestInputBudgetTokens,
           compressCallModel: capabilities.callModel,
+          contextSequence: 1,
           lastActivityAt,
           inactivityTimeoutMs,
         },
@@ -1451,8 +1453,9 @@ async function callAgentModelWithWorkspaceToolsNative(
     collectedToolMemories.push(...collectToolMemoriesForContext(
       result.toolCalls,
       observations,
-      currentRuntimeTurnNumber(input),
+      toolOptions.contextSequence,
       round,
+      currentRuntimeTurnNumber(input),
     ))
 
     // Inject image ContentParts from workspace_read image results as a user
@@ -1925,8 +1928,9 @@ async function callAgentModelWithWorkspaceTools(
       collectedToolMemories.push(...collectToolMemoriesForContext(
         alignedToolCalls,
         alignedObservations,
-        currentRuntimeTurnNumber(input),
+        toolOptions?.contextSequence ?? 1,
         round,
+        currentRuntimeTurnNumber(input),
       ))
     }
   }
@@ -2001,6 +2005,7 @@ export async function runAgentRuntimeTurn(
       "",
       input.recentHistory,
       currentRuntimeTurnNumber(input),
+      { agentId: entryContext.agent.id },
     )
   }
 
@@ -2013,6 +2018,7 @@ export async function runAgentRuntimeTurn(
   // turn 内压本轮 messages 的工具调用段.压缩失败 → throw
   // ContextCompressionFailedError(温和兜底,经 AssistantView 显示).
   const entryCompressionMode = resolveEntryCompressionMode(input)
+  const contextSequence = agentContext.sequence + 1
   let compressedContext: AgentContextSnapshot | undefined
   const budget = resolveTokenBudget(input.contextTokenBudget)
   const triggerThreshold = budget * (entryCompressionMode === "task" ? getTaskContextCompressTriggerRatio() : getNarrativeContextCompressTriggerRatio())
@@ -2028,6 +2034,7 @@ export async function runAgentRuntimeTurn(
       ...(entryCompressionMode === "task"
         ? {
             systemPrompt: ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT,
+            compressionKind: "task-continuation" as const,
             userLabel: "用户",
             assistantLabel: "助手",
           }
@@ -2074,11 +2081,10 @@ export async function runAgentRuntimeTurn(
   // 跨 turn 只保留 model 工具记忆投影 + UI presentation timeline.
   let collectedToolMemories: AgentContextToolMemory[] | undefined
   let collectedTimelineItems: TurnTimelineItem[] | undefined
-  // turn 内压剧情就地把压缩结果写进 agentContext(对象引用),循环结束后
-  // 用它覆盖 compressedContext 透传给 host 落盘(design §3.5).标记位区分
-  // "turn 开头压过" 与 "turn 内又压过",取最后一次压缩快照.
-  let compressedInTurn = false
+  // turn 内 narrative 压缩会 Object.assign 回这个快照。保存压缩边界的值，
+  // 不比较对象/时间戳：turn-start compressedContext 与它可能是同一引用。
   const agentContextSnapshotForLoop = agentContext
+  const lastCompressedSequenceBeforeLoop = agentContextSnapshotForLoop.lastCompressedSequence
   try {
     const loopResult = await callAgentModelWithWorkspaceTools(
       buildEntryAgentMessages(
@@ -2110,6 +2116,7 @@ export async function runAgentRuntimeTurn(
         workspaceTrustBoundary: input.workspaceTrustBoundary ?? "runtime-game-agent",
         compressionMode: entryCompressionMode,
         agentContextSnapshot: agentContextSnapshotForLoop ?? undefined,
+        contextSequence,
         contextTokenBudget: budget,
         requestInputBudgetTokens: input.requestInputBudgetTokens,
         compressCallModel: capabilities.callModel,
@@ -2125,15 +2132,6 @@ export async function runAgentRuntimeTurn(
     turnUsage = loopResult.usage
     collectedToolMemories = loopResult.collectedToolMemories
     collectedTimelineItems = loopResult.collectedTimelineItems
-    // 工具循环内若压过剧情,agentContextSnapshotForLoop 已被 Object.assign 就地更新;
-    // 通过对比 updatedAt 判断是否发生 turn 内压缩(底层压缩必更新 updatedAt).
-    if (
-      agentContextSnapshotForLoop
-      && compressedContext
-      && agentContextSnapshotForLoop.updatedAt !== compressedContext.updatedAt
-    ) {
-      compressedInTurn = true
-    }
     if (!replyText) {
       throw new Error(`Entry agent "${input.agentId}" returned an empty reply.`)
     }
@@ -2156,10 +2154,13 @@ export async function runAgentRuntimeTurn(
   return {
     replyText,
     contextUpdate: {
-      turn: currentRuntimeTurnNumber(input),
+      sequence: contextSequence,
+      gameTurn: currentRuntimeTurnNumber(input),
       user: input.userInput,
       assistant: replyText,
-      compressedContext: compressedInTurn ? agentContextSnapshotForLoop! : compressedContext,
+      compressedContext: agentContextSnapshotForLoop.lastCompressedSequence !== lastCompressedSequenceBeforeLoop
+        ? agentContextSnapshotForLoop
+        : compressedContext,
       ...(collectedToolMemories && collectedToolMemories.length > 0 ? { toolMemories: collectedToolMemories } : {}),
       // 过程节点 timeline items(thought/tool/interim)供 host 写入会话消息存储 timeline,UI 重建 timeline.
       ...(collectedTimelineItems && collectedTimelineItems.length > 0 ? { timelineItems: collectedTimelineItems } : {}),

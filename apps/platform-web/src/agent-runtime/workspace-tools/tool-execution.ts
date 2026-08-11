@@ -20,7 +20,7 @@ import {
 import { normalizeAgentCallArguments } from "./agent-call"
 import { executeUserTool } from "./action-executors"
 import { acceptToolObservationForAgent, buildToolPresentation } from "./observations"
-import { activateSkillByName, executeRunScript } from "./skill-actions"
+import { executeRunScript, loadSkillByName } from "./skill-actions"
 import { isRecord, normalizeRequiredString, toolError } from "./shared"
 import { deliverInspectFrontendResultToAgent } from "./specialized-delivery"
 import {
@@ -470,6 +470,7 @@ async function executeRuntimeWorkspaceToolCall(
   context.onTool?.(callId, call.name, "loading", undefined, displayName)
 
   const toolStartedAt = Date.now()
+  let rollbackScriptWrites: (() => void) | undefined
   let observation: RuntimeWorkspaceToolObservation
   try {
     if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.useSkill) {
@@ -477,14 +478,17 @@ async function executeRuntimeWorkspaceToolCall(
         index,
         name: call.name,
         ok: true,
-        result: activateSkillByName(context, call.arguments),
+        result: loadSkillByName(context, call.arguments),
       }
     } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.runScript) {
+      const execution = await executeRunScript(context, call.arguments)
+      rollbackScriptWrites = execution.rollback
       observation = {
         index,
         name: call.name,
         ok: true,
-        result: await executeRunScript(context, call.arguments),
+        result: execution.result,
+        ...(execution.memoryProjection ? { memoryProjection: execution.memoryProjection } : {}),
       }
     } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.agentCall) {
       if (!context.agentContext) {
@@ -617,11 +621,14 @@ async function executeRuntimeWorkspaceToolCall(
       // unsupported branch below.
       if (visibleTool) {
         const toolInput = isRecord(call.arguments) ? call.arguments : {}
+        const execution = await executeUserTool(context, visibleTool, toolInput)
+        rollbackScriptWrites = execution.rollback
         observation = {
           index,
           name: call.name,
           ok: true,
-          result: await executeUserTool(context, visibleTool, toolInput),
+          result: execution.output,
+          ...(execution.memoryProjection ? { memoryProjection: execution.memoryProjection } : {}),
         }
       } else {
         observation = {
@@ -654,6 +661,7 @@ async function executeRuntimeWorkspaceToolCall(
   }
 
   const agentObservation = acceptToolObservationForAgent(call, observation)
+  if (observation.ok && !agentObservation.ok) rollbackScriptWrites?.()
   emitToolObservationTrace(
     context,
     call,
@@ -682,9 +690,8 @@ async function executeRuntimeWorkspaceToolCall(
  * each other, so `executeRuntimeWorkspaceToolCalls` runs them concurrently in a
  * dedicated agentCallGroup instead. `run_script` is kept serial as a whole
  * because it runs a browser_script (side effects + bounded timeout) and
- * resolving its action requires a use_skill activation + action resolution up
- * front. `use_skill` is parallel-safe: it only registers actions into session
- * state and does not mutate the workspace.
+ * resolving its action may populate the same-loop declaration cache. `use_skill`
+ * is parallel-safe: it only loads instructions/cache and does not mutate the workspace.
  * See `06-19-ai-agent-process-visible` design §2 (scheme A) and
  * `06-20-agent-call-concurrency` design §2.2 (agent_call separate group).
  */

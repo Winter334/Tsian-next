@@ -33,14 +33,22 @@ import { extractTextToolNameFromMessage } from "./text-tool-protocol"
  *  contextSlot 参数(task 07-01):不同调用方传不同 slot,读写不同 context-<slot>.json,
  *  实现上下文隔离。slot 省略时路径不变(向后兼容)。slot 经消毒只保留 [a-zA-Z0-9_-],
  *  防路径穿越/特殊字符注入。 */
+export function normalizeAgentContextSlot(slot: string): string {
+  return slot.replace(/[^a-zA-Z0-9_-]/g, "-")
+}
+
 export function agentContextPath(agentId: string, slot?: string): string {
   const base = `save/agents/${agentId}`
   if (!slot) return `${base}/context.json`
-  const safeSlot = slot.replace(/[^a-zA-Z0-9_-]/g, "-")
+  const safeSlot = normalizeAgentContextSlot(slot)
   return `${base}/context-${safeSlot}.json`
 }
+export function agentInvocationTranscriptPath(agentId: string, slot: string): string {
+  const safeSlot = normalizeAgentContextSlot(slot)
+  return `save/agents/${agentId}/transcripts/${safeSlot}.json`
+}
 /** context.json 的 schema 标记,用于 parse 时校验. */
-export const AGENT_CONTEXT_SCHEMA = "tsian.agent.context.v1"
+export const AGENT_CONTEXT_SCHEMA = "tsian.agent.context.v2"
 /** master agent 固定 id(context.json 只服务 master). */
 export const AGENT_CONTEXT_AGENT_ID = "master" as const
 
@@ -50,8 +58,8 @@ export const AGENT_CONTEXT_AGENT_ID = "master" as const
 // schema/agentId 与 master 区分(语义分明),复用 AgentContextSnapshot 类型.
 // ─────────────────────────────────────────────────────────────────────────
 
-/** 助手 context 快照 schema 标记(与 master 的 tsian.agent.context.v1 区分,语义分明). */
-export const ASSISTANT_CONTEXT_SCHEMA = "tsian.assistant.context.v1" as const
+/** 助手 context 快照 schema 标记(与 master 的 tsian.agent.context.v2 区分,语义分明). */
+export const ASSISTANT_CONTEXT_SCHEMA = "tsian.assistant.context.v2" as const
 /** 助手 agent 固定 id. */
 export const ASSISTANT_CONTEXT_AGENT_ID = "assistant" as const
 
@@ -157,9 +165,9 @@ export function estimateContextTokens(context: AgentContextSnapshot): number {
   const toolMemoryTokens = (context.toolMemories ?? []).reduce((sum, memory) => {
     const parts = [
       memory.title,
-      memory.summaryText,
-      memory.argsSummary ?? "",
+      memory.summary,
       ...(memory.anchors ?? []),
+      memory.exact ? JSON.stringify(memory.exact) : "",
     ]
     return sum + estimateTokenCount(parts.join("\n"))
   }, 0)
@@ -193,7 +201,7 @@ export function serializeAgentContext(snapshot: AgentContextSnapshot): string {
  * 缺字段时兜底(不抛错,保证旧/损坏文件不崩).
  *
  * `options.schema`/`options.agentId` 标记本次解析的快照类型(默认 master);
- * parse 时用 options 值而非硬编码,使助手快照(tsian.assistant.context.v1)能正确保留
+ * parse 时用 options 值而非硬编码,使助手快照(tsian.assistant.context.v2)能正确保留
  * schema/agentId.原文的 schema 字段不参与校验(向前兼容旧 schema 演进),由 options 决定.
  */
 export function parseAgentContext(
@@ -222,15 +230,30 @@ export function parseAgentContext(
         .map(parseToolMemoryEntry)
         .filter((memory): memory is AgentContextToolMemory => memory !== null)
     : []
+  const storedSequence = typeof obj.sequence === "number" && Number.isSafeInteger(obj.sequence) && obj.sequence >= 0
+    ? obj.sequence
+    : typeof obj.turn === "number" && Number.isSafeInteger(obj.turn) && obj.turn >= 0
+      ? obj.turn
+      : 0
+  const lastCompressedSequence = typeof obj.lastCompressedSequence === "number" && Number.isSafeInteger(obj.lastCompressedSequence) && obj.lastCompressedSequence >= 0
+    ? obj.lastCompressedSequence
+    : typeof obj.lastCompressedTurn === "number" && Number.isSafeInteger(obj.lastCompressedTurn) && obj.lastCompressedTurn >= 0
+      ? obj.lastCompressedTurn
+      : null
   return {
     schema: (options?.schema ?? AGENT_CONTEXT_SCHEMA) as AgentContextSnapshot["schema"],
     saveId,
     agentId: options?.agentId ?? AGENT_CONTEXT_AGENT_ID,
+    sequence: Math.max(
+      storedSequence,
+      lastCompressedSequence ?? 0,
+      recentTurns.reduce((max, entry) => Math.max(max, entry.sequence), 0),
+      toolMemories.reduce((max, memory) => Math.max(max, memory.sequence), 0),
+    ),
     summary: typeof obj.summary === "string" ? obj.summary : null,
     recentTurns,
     ...(toolMemories.length > 0 ? { toolMemories: sortToolMemoriesStable(toolMemories) } : {}),
-    lastCompressedTurn:
-      typeof obj.lastCompressedTurn === "number" ? obj.lastCompressedTurn : null,
+    lastCompressedSequence,
     updatedAt: typeof obj.updatedAt === "string" ? obj.updatedAt : new Date(0).toISOString(),
   }
 }
@@ -238,8 +261,9 @@ export function parseAgentContext(
 function parseTurnEntry(raw: unknown): AgentContextTurnEntry | null {
   if (!raw || typeof raw !== "object") return null
   const obj = raw as Record<string, unknown>
+  const sequence = typeof obj.sequence === "number" ? obj.sequence : obj.turn
   if (
-    typeof obj.turn !== "number" ||
+    typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 0 ||
     (obj.role !== "user" && obj.role !== "assistant") ||
     typeof obj.content !== "string"
   ) {
@@ -247,7 +271,12 @@ function parseTurnEntry(raw: unknown): AgentContextTurnEntry | null {
   }
   // 旧 context.json 可能有 turn-level toolCalls；项目未上线,无需迁移,新结构直接忽略。
   return {
-    turn: obj.turn,
+    sequence,
+    ...(typeof obj.gameTurn === "number" && Number.isSafeInteger(obj.gameTurn) && obj.gameTurn >= 0
+      ? { gameTurn: obj.gameTurn }
+      : typeof obj.turn === "number" && Number.isSafeInteger(obj.turn) && obj.turn >= 0
+        ? { gameTurn: obj.turn }
+        : {}),
     role: obj.role,
     content: obj.content,
   }
@@ -257,15 +286,15 @@ function parseTurnEntry(raw: unknown): AgentContextTurnEntry | null {
 function parseToolMemoryEntry(raw: unknown): AgentContextToolMemory | null {
   if (!raw || typeof raw !== "object") return null
   const obj = raw as Record<string, unknown>
+  const sequence = typeof obj.sequence === "number" ? obj.sequence : obj.turn
   if (
     typeof obj.id !== "string" ||
     typeof obj.sourceToolCallId !== "string" ||
-    typeof obj.turn !== "number" ||
+    typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 0 ||
     typeof obj.toolName !== "string" ||
     (obj.status !== "success" && obj.status !== "failed") ||
-    (obj.visibility !== "summary" && obj.visibility !== "placeholder") ||
     typeof obj.title !== "string" ||
-    typeof obj.summaryText !== "string"
+    (typeof obj.summary !== "string" && typeof obj.summaryText !== "string")
   ) {
     return null
   }
@@ -275,17 +304,38 @@ function parseToolMemoryEntry(raw: unknown): AgentContextToolMemory | null {
   return {
     id: obj.id,
     sourceToolCallId: obj.sourceToolCallId,
-    turn: obj.turn,
+    key: typeof obj.key === "string" && obj.key.trim() ? obj.key : obj.id,
+    sequence,
+    ...(typeof obj.gameTurn === "number" && Number.isSafeInteger(obj.gameTurn) && obj.gameTurn >= 0
+      ? { gameTurn: obj.gameTurn }
+      : typeof obj.turn === "number" && Number.isSafeInteger(obj.turn) && obj.turn >= 0
+        ? { gameTurn: obj.turn }
+        : {}),
     ...(typeof obj.round === "number" ? { round: obj.round } : {}),
     toolName: obj.toolName,
     status: obj.status,
-    visibility: obj.visibility,
     title: obj.title,
-    summaryText: obj.summaryText,
+    summary: typeof obj.summary === "string" ? obj.summary : obj.summaryText as string,
     ...(anchors && anchors.length > 0 ? { anchors } : {}),
-    ...(typeof obj.argsSummary === "string" ? { argsSummary: obj.argsSummary } : {}),
+    ...(isJsonRecord(obj.exact) ? { exact: obj.exact } : {}),
+    ...(Array.isArray(obj.resolves)
+      ? { resolves: obj.resolves.filter((value): value is string => typeof value === "string") }
+      : {}),
     ...(typeof obj.tokenEstimate === "number" ? { tokenEstimate: obj.tokenEstimate } : {}),
   }
+}
+
+function isJsonValue(value: unknown): value is import("@tsian/contracts").JsonValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true
+  if (typeof value === "number") return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(isJsonValue)
+  return typeof value === "object" && value !== null
+    && Object.values(value as Record<string, unknown>).every(isJsonValue)
+}
+
+function isJsonRecord(value: unknown): value is Record<string, import("@tsian/contracts").JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    && Object.values(value as Record<string, unknown>).every(isJsonValue)
 }
 
 /** 创建空快照(无历史,首次或损坏时). */
@@ -297,9 +347,10 @@ export function createEmptyAgentContext(
     schema: (options?.schema ?? AGENT_CONTEXT_SCHEMA) as AgentContextSnapshot["schema"],
     saveId,
     agentId: options?.agentId ?? AGENT_CONTEXT_AGENT_ID,
+    sequence: 0,
     summary: null,
     recentTurns: [],
-    lastCompressedTurn: null,
+    lastCompressedSequence: null,
     updatedAt: new Date(0).toISOString(),
   }
 }
@@ -324,16 +375,18 @@ export function createInitialAgentContext(
   // (currentTurn 是即将开始的轮,历史最后一条是上一轮结束时的 assistant).
   const baseTurn = currentTurn - Math.ceil(recent.length / 2)
   let turnCursor = baseTurn
+  let sequence = 0
   let pendingUser: string | null = null
   for (const record of recent) {
     if (record.role === "user") {
       pendingUser = record.content
     } else if (record.role === "assistant") {
+      sequence += 1
       if (pendingUser !== null) {
-        recentTurns.push({ turn: turnCursor, role: "user", content: pendingUser })
+        recentTurns.push({ sequence, gameTurn: turnCursor, role: "user", content: pendingUser })
         pendingUser = null
       }
-      recentTurns.push({ turn: turnCursor, role: "assistant", content: record.content })
+      recentTurns.push({ sequence, gameTurn: turnCursor, role: "assistant", content: record.content })
       turnCursor += 1
     }
   }
@@ -341,9 +394,10 @@ export function createInitialAgentContext(
     schema: (options?.schema ?? AGENT_CONTEXT_SCHEMA) as AgentContextSnapshot["schema"],
     saveId,
     agentId: options?.agentId ?? AGENT_CONTEXT_AGENT_ID,
+    sequence,
     summary: null,
     recentTurns,
-    lastCompressedTurn: null,
+    lastCompressedSequence: null,
     updatedAt: new Date().toISOString(),
   }
 }
@@ -370,6 +424,8 @@ export interface CompressCallOptions {
    * design 06-20-assistant-context-persistence §2.2.
    */
   systemPrompt?: string
+  /** Fixed continuation contract selected by the owning call chain. */
+  compressionKind?: CompressionKind
   /** 可选:user 轮次的角色标签(默认"玩家",助手传"用户"). */
   userLabel?: string
   /** 可选:assistant 轮次的角色标签(默认"叙事",助手传"助手"). */
@@ -422,17 +478,34 @@ export class TaskCompressionStalledError extends Error {
   }
 }
 
-/** 压缩摘要 system prompt:叙事梗概风格(非要点列表),保留情节推进/人物状态/场景/伏笔.master 快照用. */
-const COMPRESSION_SYSTEM_PROMPT = [
-  "你正在为一段互动剧情的 AI 叙事者压缩对话历史。",
-  "请将以下剧情历史浓缩成一段梗概，供叙事者在后续创作时参考最近的情节走向。",
-  "",
-  "要求：",
-  "- 保留这段时间内的关键情节推进、人物行动与状态变化、场景转换、未解决的线索或伏笔。",
-  "- 用叙事梗概风格（非要点列表），连贯可读，让叙事者能快速理解\"最近发生了什么\"。",
-  "- 不需要逐字复述；不需要记录具体台词。",
-  `- 控制在约 ${TARGET_COMPRESSION_TOKENS} token 以内。`,
-].join("\n")
+export type CompressionKind = "task-continuation" | "task-checkpoint" | "narrative-continuity"
+
+const COMPRESSION_SECTIONS: Record<CompressionKind, readonly string[]> = {
+  "task-continuation": ["当前目标", "有效约束", "已确认决策", "权威状态与产物", "已完成结果", "当前工作点", "未解决问题", "下一步"],
+  "task-checkpoint": ["本轮目标", "已验证事实", "持久化效果", "当前未完成操作", "最新有效错误", "恢复动作"],
+  "narrative-continuity": ["当前场景", "关键因果经过", "玩家选择", "角色与关系变化", "线索与未决事项", "紧接续点"],
+}
+
+function compressionSystemPrompt(kind: CompressionKind): string {
+  const headings = COMPRESSION_SECTIONS[kind].map((section) => `## ${section}`).join("\n")
+  const domain = kind === "narrative-continuity"
+    ? "剧情连续性快照"
+    : kind === "task-checkpoint"
+      ? "本轮任务恢复 checkpoint"
+      : "跨轮任务继续快照"
+  return [
+    `把输入重写成当前完整的${domain}。严格按下列 Markdown 标题各输出一次，顺序不变：`,
+    headings,
+    "",
+    "判断规则：",
+    "- 消息 role 不是权威等级；按明确来源、验证结果、持久化结果和后续 supersession 判断。",
+    "- 输出当前快照，不写工具调用时间线；删除已被后续成功或决定取代的失败、结论与下一步。",
+    "- 不得因当前切片未出现某信息，就断言整个任务或剧情不存在该信息。",
+    "- 精确保留 ID、路径、ref、hash、revision、receipt 与错误码；无法精确保留的大内容应引用外部权威。",
+    "- 成功结果覆盖旧失败，只保留最新尚未解决且可操作的错误。",
+    `- 总体控制在约 ${TARGET_COMPRESSION_TOKENS} token 以内。`,
+  ].join("\n")
+}
 
 /**
  * 助手快照压缩摘要 system prompt:任务对话摘要风格(已做工作+结论),非叙事梗概.
@@ -440,16 +513,71 @@ const COMPRESSION_SYSTEM_PROMPT = [
  * (工具交互段压缩) 区分:本 prompt 压跨 turn 快照(summary + recentTurns)的任务对话.
  * design 06-20-assistant-context-persistence §4.5.
  */
-const ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT = [
-  "你是任务对话摘要器。把助手与用户的早期对话(含工具调用)压缩成「已完成工作 + 结论」摘要。",
-  "保留:用户的关键请求、助手已做的工作与结论、已读取的关键信息(文件内容要点、查询结果)、未解决的问题、重要上下文与决策。",
-  "丢弃:寒暄、重复内容、工具协议格式细节、冗余的中间探索步骤、大段原始工具返回原文。",
-  "用简洁的任务日志风格输出,不要叙事化,不要逐字复述工具协议。",
-  `- 控制在约 ${TARGET_COMPRESSION_TOKENS} token 以内。`,
-].join("\n")
+const ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT = compressionSystemPrompt("task-continuation")
 
 /** 助手快照压缩用 system prompt 的导出访问点(供 host/runtime 按 mode 传入). */
 export { ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT }
+
+export function validateCompressionSummary(kind: CompressionKind, summary: string): string[] {
+  const trimmed = summary.trim()
+  if (!trimmed) return ["summary is empty"]
+  const headingMatches = Array.from(trimmed.matchAll(/^##\s+(.+?)\s*$/gm))
+  const headings = headingMatches.map((match) => match[1]?.trim() ?? "")
+  const expected = [...COMPRESSION_SECTIONS[kind]]
+  const errors: string[] = []
+  if (headingMatches[0]?.index !== 0) errors.push(`summary must start with ## ${expected[0]}`)
+  if (headings.length !== expected.length) {
+    errors.push(`expected ${expected.length} sections, received ${headings.length}`)
+  }
+  expected.forEach((section, index) => {
+    if (headings[index] !== section) errors.push(`section ${index + 1} must be ## ${section}`)
+    const heading = headingMatches[index]
+    if (!heading || headings[index] !== section) return
+    const bodyStart = (heading.index ?? 0) + heading[0].length
+    const bodyEnd = headingMatches[index + 1]?.index ?? trimmed.length
+    if (!trimmed.slice(bodyStart, bodyEnd).trim()) errors.push(`section ## ${section} must not be empty`)
+  })
+  if (estimateTokenCount(trimmed) > TARGET_COMPRESSION_TOKENS * 2) {
+    errors.push("summary exceeds the bounded continuation contract")
+  }
+  return errors
+}
+
+async function callCompressionWithRepair(
+  kind: CompressionKind,
+  prompt: string,
+  callModel: CompressCallModel,
+  options: CompressCallOptions,
+): Promise<string> {
+  const systemPrompt = options.systemPrompt ?? compressionSystemPrompt(kind)
+  let output: string
+  try {
+    output = await callModel([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+    ], options)
+  } catch {
+    throw new ContextCompressionFailedError()
+  }
+  let errors = validateCompressionSummary(kind, output)
+  if (errors.length === 0) return output.trim()
+  try {
+    output = await callModel([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+      { role: "assistant", content: output },
+      {
+        role: "user",
+        content: `上面的快照不符合固定结构：\n- ${errors.join("\n- ")}\n请只输出修复后的完整快照。`,
+      },
+    ], options)
+  } catch {
+    throw new ContextCompressionFailedError()
+  }
+  errors = validateCompressionSummary(kind, output)
+  if (errors.length > 0) throw new ContextCompressionFailedError()
+  return output.trim()
+}
 
 const COMPRESSION_TOOL_MEMORY_PREVIEW_LIMIT = 1_200
 
@@ -459,11 +587,12 @@ function previewCompressionToolText(text: string, limit: number): string {
 }
 
 function formatCompressionToolMemory(memory: AgentContextToolMemory): string {
-  const summary = previewCompressionToolText(memory.summaryText, COMPRESSION_TOOL_MEMORY_PREVIEW_LIMIT)
+  const summary = previewCompressionToolText(memory.summary, COMPRESSION_TOOL_MEMORY_PREVIEW_LIMIT)
   const anchors = memory.anchors && memory.anchors.length > 0
     ? ` anchors=${memory.anchors.join(", ")}`
     : ""
-  return `  工具记忆 ${memory.title} [${memory.toolName}/${memory.status}/${memory.visibility}]${anchors} → ${summary}`
+  const exact = memory.exact ? ` exact=${JSON.stringify(memory.exact)}` : ""
+  return `  工具记忆 ${memory.title} [${memory.toolName}/${memory.status}]${anchors}${exact} → ${summary}`
 }
 
 /** 构建压缩调用的 user prompt:旧 summary(若有) + 被压缩轮次正文 + 相关工具记忆.
@@ -475,20 +604,20 @@ function buildCompressionPrompt(
   userLabel = "玩家",
   assistantLabel = "叙事",
 ): string {
-  const memoriesByTurn = new Map<number, AgentContextToolMemory[]>()
+  const memoriesBySequence = new Map<number, AgentContextToolMemory[]>()
   for (const memory of sortToolMemoriesStable(toolMemories)) {
-    const list = memoriesByTurn.get(memory.turn) ?? []
+    const list = memoriesBySequence.get(memory.sequence) ?? []
     list.push(memory)
-    memoriesByTurn.set(memory.turn, list)
+    memoriesBySequence.set(memory.sequence, list)
   }
   return [
     oldSummary ? `此前的梗概：\n${oldSummary}\n` : "",
     "需要压缩的剧情正文：",
     ...compressEntries.map((entry) => {
       const label = entry.role === "user" ? userLabel : assistantLabel
-      const base = `${entry.turn}. ${label}: ${entry.content}`
+      const base = `${entry.sequence}${entry.gameTurn !== undefined ? ` (gameTurn=${entry.gameTurn})` : ""}. ${label}: ${entry.content}`
       if (entry.role === "assistant") {
-        const toolLines = memoriesByTurn.get(entry.turn)?.map(formatCompressionToolMemory).join("\n")
+        const toolLines = memoriesBySequence.get(entry.sequence)?.map(formatCompressionToolMemory).join("\n")
         if (toolLines) return `${base}\n${toolLines}`
       }
       return base
@@ -513,13 +642,13 @@ export async function compressContext(
   callModel: CompressCallModel,
   options: CompressCallOptions,
 ): Promise<AgentContextSnapshot> {
-  // 1. 保留最近 keepRecentTurns 轮(按 turn 去重取最近 N 个 turn 的全部 entry)
+  // 1. 保留最近 keepRecentTurns 个 context sequence 的全部 entry.
   const keepRecentTurns = getContextKeepRecentTurns()
-  const turnNumbers = uniqueSortedTurnNumbers(context.recentTurns)
-  const keepTurns = new Set(turnNumbers.slice(-keepRecentTurns))
-  const keepEntries = context.recentTurns.filter((entry) => keepTurns.has(entry.turn))
+  const sequenceNumbers = uniqueSortedSequences(context.recentTurns)
+  const keepSequences = new Set(sequenceNumbers.slice(-keepRecentTurns))
+  const keepEntries = context.recentTurns.filter((entry) => keepSequences.has(entry.sequence))
   const compressEntries = context.recentTurns.filter(
-    (entry) => !keepTurns.has(entry.turn),
+    (entry) => !keepSequences.has(entry.sequence),
   )
 
   // 无可压缩内容(消息少于 K 轮)→ 原样返回(由调用方判断是否抛 budget 错)
@@ -528,9 +657,10 @@ export async function compressContext(
   }
 
   // 2. 被压缩轮次 + 旧 summary 一起送 model 生成摘要
-  const systemPrompt = options.systemPrompt ?? COMPRESSION_SYSTEM_PROMPT
-  const compressedTurns = new Set(compressEntries.map((entry) => entry.turn))
-  const compressionToolMemories = (context.toolMemories ?? []).filter((memory) => compressedTurns.has(memory.turn))
+  const kind = options.compressionKind
+    ?? (options.systemPrompt === ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT ? "task-continuation" : "narrative-continuity")
+  const compressedSequences = new Set(compressEntries.map((entry) => entry.sequence))
+  const compressionToolMemories = (context.toolMemories ?? []).filter((memory) => compressedSequences.has(memory.sequence))
   const prompt = buildCompressionPrompt(
     context.summary,
     compressEntries,
@@ -538,31 +668,15 @@ export async function compressContext(
     options.userLabel,
     options.assistantLabel,
   )
-  let newSummary: string
-  try {
-    newSummary = await callModel(
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: prompt },
-      ],
-      options,
-    )
-  } catch (error) {
-    throw new ContextCompressionFailedError()
-  }
-  const trimmedSummary = newSummary.trim()
-  if (!trimmedSummary) {
-    throw new ContextCompressionFailedError()
-  }
+  const trimmedSummary = await callCompressionWithRepair(kind, prompt, callModel, options)
 
-  // 3. 计算新的 lastCompressedTurn(被压缩轮次的最大 turn)
-  const maxCompressedTurn = compressEntries.reduce(
-    (max, entry) => Math.max(max, entry.turn),
-    context.lastCompressedTurn ?? 0,
+  const maxCompressedSequence = compressEntries.reduce(
+    (max, entry) => Math.max(max, entry.sequence),
+    context.lastCompressedSequence ?? 0,
   )
 
   const remainingToolMemories = (context.toolMemories ?? []).filter(
-    (memory) => memory.turn > maxCompressedTurn,
+    (memory) => memory.sequence > maxCompressedSequence,
   )
   const contextWithoutToolMemories = Object.fromEntries(
     Object.entries(context).filter(([key]) => key !== "toolMemories"),
@@ -573,13 +687,13 @@ export async function compressContext(
     summary: trimmedSummary,
     recentTurns: keepEntries,
     ...(remainingToolMemories.length > 0 ? { toolMemories: remainingToolMemories } : {}),
-    lastCompressedTurn: maxCompressedTurn,
+    lastCompressedSequence: maxCompressedSequence,
     updatedAt: new Date().toISOString(),
   }
 }
 
-function uniqueSortedTurnNumbers(entries: AgentContextTurnEntry[]): number[] {
-  const set = new Set(entries.map((entry) => entry.turn))
+function uniqueSortedSequences(entries: AgentContextTurnEntry[]): number[] {
+  const set = new Set(entries.map((entry) => entry.sequence))
   return Array.from(set).sort((a, b) => a - b)
 }
 
@@ -592,13 +706,7 @@ function uniqueSortedTurnNumbers(entries: AgentContextTurnEntry[]): number[] {
 // ─────────────────────────────────────────────────────────────────────────
 
 /** 任务压缩摘要 system prompt:任务日志风格(已做工作+结论),非叙事梗概. */
-const TASK_COMPRESSION_SYSTEM_PROMPT = [
-  "你是任务执行摘要器。把子代理/助手的早期工具交互过程压缩成「已完成工作 + 结论」摘要。",
-  "保留:已读取/写入的关键信息、已做出的判断、已达成的中间结论、未解决的问题。",
-  "丢弃:工具调用的具体命令与参数、工具返回的原始大段内容、重复的探索步骤。",
-  "用简洁的任务日志风格输出,不要叙事化,不要复述工具协议。",
-  `- 控制在约 ${TARGET_COMPRESSION_TOKENS} token 以内。`,
-].join("\n")
+const TASK_COMPRESSION_SYSTEM_PROMPT = compressionSystemPrompt("task-checkpoint")
 
 /** 任务压缩可处理的 message 形态(native RuntimeChatMessage 与 text AiChatMessage 的公共结构).
  *  content 放宽为 string | ContentPart[] 以兼容多模态消息;压缩场景只处理
@@ -608,6 +716,17 @@ interface TaskCompressionMessage {
   role: string
   content: string | ContentPart[]
   toolCalls?: unknown[]
+}
+
+interface TaskCompressionCall {
+  name: string
+  arguments: Record<string, unknown>
+  status: "success" | "failed" | "unknown"
+}
+
+interface TaskInteractionGroup<T extends TaskCompressionMessage> {
+  messages: T[]
+  calls: TaskCompressionCall[]
 }
 
 /** 任务压缩结果:新 messages + 是否压动 + 摘要文本(供下次压缩作为 oldSummary). */
@@ -631,7 +750,10 @@ function buildTaskCompressionPrompt(
     ...interactionEntries.map((entry, index) => {
       const toolName = extractToolNameFromMessage(entry)
       const tag = toolName ? `[${entry.role}:${toolName}]` : `[${entry.role}]`
-      return `${index + 1}. ${tag} ${messageContentToText(entry.content)}`
+      const structuredCalls = entry.role === "assistant" && Array.isArray(entry.toolCalls) && entry.toolCalls.length > 0
+        ? `\nstructuredToolCalls=${JSON.stringify(entry.toolCalls)}`
+        : ""
+      return `${index + 1}. ${tag} ${messageContentToText(entry.content)}${structuredCalls}`
     }),
   ]
     .filter(Boolean)
@@ -651,6 +773,150 @@ function extractToolNameFromMessage(message: TaskCompressionMessage): string | u
   const textToolName = extractTextToolNameFromMessage(message)
   if (textToolName) return textToolName
   return undefined
+}
+
+function taskRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function parseTaggedArray(text: string, tag: string): unknown[] | undefined {
+  const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const match = new RegExp(`<${escapedTag}>\\s*([\\s\\S]*?)\\s*</${escapedTag}>`).exec(text)
+  if (!match) return undefined
+  try {
+    const parsed = JSON.parse(match[1] ?? "")
+    return Array.isArray(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function nativeObservationFailed(content: string | ContentPart[]): boolean {
+  const text = messageContentToText(content)
+  try {
+    const parsed = JSON.parse(text)
+    return taskRecord(parsed)
+      && typeof parsed.code === "string"
+      && typeof parsed.message === "string"
+      && !("status" in parsed)
+  } catch {
+    return false
+  }
+}
+
+function taskCallKey(call: Pick<TaskCompressionCall, "name" | "arguments">): string {
+  const args = call.arguments
+  if (["write", "edit", "delete"].includes(call.name)) {
+    return `workspace:${typeof args.path === "string" ? args.path : call.name}`
+  }
+  if (call.name === "copy" || call.name === "move") {
+    const target = typeof args.targetPath === "string"
+      ? args.targetPath
+      : typeof args.path === "string"
+        ? args.path
+        : call.name
+    return `workspace:${target}`
+  }
+  if (call.name === "run_script") {
+    return `action:${typeof args.skill === "string" ? args.skill : "skill"}/${typeof args.script === "string" ? args.script : "script"}`
+  }
+  if (call.name === "agent_call") {
+    return `agent_call:${typeof args.agentId === "string" ? args.agentId : "agent"}`
+  }
+  const anchor = [args.path, args.id, args.ref]
+    .find((value): value is string => typeof value === "string" && Boolean(value.trim()))
+  return `${call.name}:${anchor ?? call.name}`
+}
+
+function nativeTaskGroup<T extends TaskCompressionMessage>(
+  messages: T[],
+  start: number,
+): { group: TaskInteractionGroup<T>; next: number } | null {
+  const assistant = messages[start]
+  if (assistant?.role !== "assistant" || !Array.isArray(assistant.toolCalls) || assistant.toolCalls.length === 0) return null
+  const rawCalls = assistant.toolCalls.filter(taskRecord)
+  const toolMessages: T[] = []
+  let next = start + 1
+  while (next < messages.length && messages[next]?.role === "tool") {
+    toolMessages.push(messages[next]!)
+    next += 1
+  }
+  const observationsById = new Map<string, T>()
+  for (const message of toolMessages) {
+    const id = taskRecord(message) && typeof message.toolCallId === "string" ? message.toolCallId : undefined
+    if (id) observationsById.set(id, message)
+  }
+  const calls = rawCalls.map((raw, index): TaskCompressionCall => {
+    const id = typeof raw.id === "string" ? raw.id : undefined
+    const observation = id ? observationsById.get(id) : toolMessages[index]
+    return {
+      name: typeof raw.name === "string" ? raw.name : "unknown",
+      arguments: taskRecord(raw.arguments) ? raw.arguments : {},
+      status: observation ? (nativeObservationFailed(observation.content) ? "failed" : "success") : "unknown",
+    }
+  })
+  return { group: { messages: [assistant, ...toolMessages], calls }, next }
+}
+
+function textTaskGroup<T extends TaskCompressionMessage>(
+  messages: T[],
+  start: number,
+): { group: TaskInteractionGroup<T>; next: number } | null {
+  const assistant = messages[start]
+  if (assistant?.role !== "assistant") return null
+  const records = parseTaggedArray(messageContentToText(assistant.content), "tsian-tool-call-records")
+  if (!records?.length) return null
+  const observationMessage = messages[start + 1]
+  const observations = observationMessage?.role === "user"
+    ? parseTaggedArray(messageContentToText(observationMessage.content), "tsian-tool-observations")
+    : undefined
+  const observationsById = new Map<string, Record<string, unknown>>()
+  for (const raw of observations ?? []) {
+    if (taskRecord(raw) && typeof raw.id === "string") observationsById.set(raw.id, raw)
+  }
+  const calls = records.filter(taskRecord).map((raw): TaskCompressionCall => {
+    const observation = typeof raw.id === "string" ? observationsById.get(raw.id) : undefined
+    return {
+      name: typeof raw.name === "string" ? raw.name : "unknown",
+      arguments: taskRecord(raw.arguments) ? raw.arguments : {},
+      status: observation ? (observation.ok === true ? "success" : "failed") : "unknown",
+    }
+  })
+  return {
+    group: {
+      messages: observationMessage && observations ? [assistant, observationMessage] : [assistant],
+      calls,
+    },
+    next: start + (observationMessage && observations ? 2 : 1),
+  }
+}
+
+function groupTaskInteractions<T extends TaskCompressionMessage>(messages: T[]): TaskInteractionGroup<T>[] {
+  const groups: TaskInteractionGroup<T>[] = []
+  let index = 0
+  while (index < messages.length) {
+    const parsed = nativeTaskGroup(messages, index) ?? textTaskGroup(messages, index)
+    if (parsed) {
+      groups.push(parsed.group)
+      index = parsed.next
+      continue
+    }
+    groups.push({ messages: [messages[index]!], calls: [] })
+    index += 1
+  }
+  return groups
+}
+
+function pinnedTaskGroupIndexes(groups: readonly TaskInteractionGroup<TaskCompressionMessage>[]): Set<number> {
+  const unresolved = new Map<string, number>()
+  groups.forEach((group, groupIndex) => {
+    for (const call of group.calls) {
+      const key = taskCallKey(call)
+      if (call.status === "success") unresolved.delete(key)
+      else unresolved.set(key, groupIndex)
+    }
+  })
+  return new Set(unresolved.values())
 }
 
 /**
@@ -681,12 +947,21 @@ export async function compressTaskContext<T extends TaskCompressionMessage>(
     return { messages, compressed: false, summary: oldSummary }
   }
 
-  // 1. 切工具交互段,保留最近 N 轮(2N 条),早期送摘要
+  // 1. Group complete tool rounds atomically. A native round may contain
+  // multiple parallel calls and therefore more than two messages.
   const interaction = messages.slice(start, end)
-  const keepCount = getTaskKeepRecentRounds() * 2 // N 轮 = 2N 条(assistant + tool/observation)
-  // 早期段 = interaction 前部,保留段 = interaction 后部
-  const earlyEntries = interaction.slice(0, Math.max(0, interaction.length - keepCount))
-  const recentEntries = interaction.slice(Math.max(0, interaction.length - keepCount))
+  const groups = groupTaskInteractions(interaction)
+  const recentStart = Math.max(0, groups.length - getTaskKeepRecentRounds())
+  const pinnedIndexes = pinnedTaskGroupIndexes(groups)
+  const earlyEntries = groups
+    .slice(0, recentStart)
+    .filter((_group, index) => !pinnedIndexes.has(index))
+    .flatMap((group) => group.messages)
+  const pinnedEntries = groups
+    .slice(0, recentStart)
+    .filter((_group, index) => pinnedIndexes.has(index))
+    .flatMap((group) => group.messages)
+  const recentEntries = groups.slice(recentStart).flatMap((group) => group.messages)
 
   // 无可压缩早期内容 → 未压动(调用方走兜底)
   if (earlyEntries.length === 0) {
@@ -695,30 +970,21 @@ export async function compressTaskContext<T extends TaskCompressionMessage>(
 
   // 2. 早期段 + 旧摘要送 model 生成任务摘要
   const prompt = buildTaskCompressionPrompt(oldSummary, earlyEntries)
-  let newSummary: string
-  try {
-    newSummary = await callModel(
-      [
-        { role: "system", content: TASK_COMPRESSION_SYSTEM_PROMPT },
-        { role: "user", content: prompt },
-      ],
-      options,
-    )
-  } catch {
-    throw new ContextCompressionFailedError()
-  }
-  const trimmedSummary = newSummary.trim()
-  if (!trimmedSummary) {
-    throw new ContextCompressionFailedError()
-  }
+  const trimmedSummary = await callCompressionWithRepair(
+    "task-checkpoint",
+    prompt,
+    callModel,
+    { ...options, systemPrompt: TASK_COMPRESSION_SYSTEM_PROMPT },
+  )
 
   // 3. 拼新 messages:框架段[0,start) + 摘要 user + 最近 N 轮
   // 摘要 message 是 {role:"user",content} 形态——满足 RuntimeChatMessage(user 变体)
   // 与 AiChatMessage 的公共结构.用 as unknown as T 打断泛型推断循环(T 是联合类型时
   // as T 会触发 result 类型隐式 any).
-  const summaryMessage = { role: "user", content: `已完成工作摘要：\n${trimmedSummary}` } as unknown as T
+  const summaryMessage = { role: "user", content: `任务恢复 checkpoint：\n${trimmedSummary}` } as unknown as T
   const newMessages: T[] = [
     ...messages.slice(0, start),
+    ...pinnedEntries,
     summaryMessage,
     ...recentEntries,
   ]
@@ -745,16 +1011,18 @@ export async function compressTaskContext<T extends TaskCompressionMessage>(
  */
 export function appendTurnToContext(
   context: AgentContextSnapshot,
-  turn: number,
+  sequence: number,
   user: string,
   assistant: string,
+  gameTurn?: number,
 ): AgentContextSnapshot {
   return {
     ...context,
+    sequence: Math.max(context.sequence, sequence),
     recentTurns: [
       ...context.recentTurns,
-      { turn, role: "user", content: user },
-      { turn, role: "assistant", content: assistant },
+      { sequence, ...(gameTurn !== undefined ? { gameTurn } : {}), role: "user", content: user },
+      { sequence, ...(gameTurn !== undefined ? { gameTurn } : {}), role: "assistant", content: assistant },
     ],
     updatedAt: new Date().toISOString(),
   }

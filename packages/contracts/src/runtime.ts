@@ -118,8 +118,21 @@ export type TurnTimelineItem =
     }
   | { kind: "options"; items: string[] }
 
-export type AgentContextToolMemoryVisibility = "summary" | "placeholder"
 export type AgentContextToolMemoryStatus = "success" | "failed"
+
+/** Semantic projection explicitly retained across Agent context sequences. */
+export interface ToolMemoryProjection {
+  /** Supersession identity. A newer projection with the same key replaces the old one. */
+  key: string
+  status: AgentContextToolMemoryStatus
+  title: string
+  summary: string
+  anchors?: string[]
+  /** Small exact values that must survive verbatim (revision/hash/receipt/error code). */
+  exact?: Record<string, JsonValue>
+  /** Failed projection keys resolved by this successful result. */
+  resolves?: string[]
+}
 
 /**
  * Model-facing task-mode tool memory. This is a bounded deterministic
@@ -131,23 +144,24 @@ export interface AgentContextToolMemory {
   id: string
   /** Raw tool call id for UI/debug correlation; not a model raw-log handle. */
   sourceToolCallId: string
-  /** Assistant turn number that produced this memory. */
-  turn: number
+  /** Supersession identity for semantic replacement. */
+  key: string
+  /** Agent context sequence that produced this memory. */
+  sequence: number
+  /** Associated formal game turn, when one exists. */
+  gameTurn?: number
   /** Tool-loop round if known. */
   round?: number
   /** Tool name such as read / agent_call / inspect_frontend. */
   toolName: string
   status: AgentContextToolMemoryStatus
-  /** summary = bounded summaryText visible; placeholder = action trace only. */
-  visibility: AgentContextToolMemoryVisibility
-  /** Short model-facing title, e.g. "read apps/foo.ts". */
+  /** Short model-facing title, e.g. "wrote save/runtime.json". */
   title: string
-  /** Bounded model-facing summary or placeholder line. */
-  summaryText: string
-  /** File/resource anchors extracted from args/result. */
+  /** Bounded semantic result. Source/Skill bodies must not be copied here. */
+  summary: string
   anchors?: string[]
-  /** Bounded argument summary; avoid full JSON for large args. */
-  argsSummary?: string
+  exact?: Record<string, JsonValue>
+  resolves?: string[]
   /** Coarse estimate used for deterministic budget decisions. */
   tokenEstimate?: number
 }
@@ -159,7 +173,8 @@ export interface AgentContextToolMemory {
  * Task-mode 工具行动痕迹独立存到 snapshot.toolMemories。
  */
 export interface AgentContextTurnEntry {
-  turn: number
+  sequence: number
+  gameTurn?: number
   role: "user" | "assistant"
   content: string
 }
@@ -172,27 +187,29 @@ export interface AgentContextTurnEntry {
  * (每 turn 现构建),这里只存跨 turn 需保持的上下文段.
  *
  * 两种实例:
- * - master:schema `tsian.agent.context.v1`,agentId `"master"`,落 save runtime
+ * - master:schema `tsian.agent.context.v2`,agentId `"master"`,落 save runtime
  *   `save/agents/master/context.json`,summary 是叙事梗概.
- * - 助手:schema `tsian.assistant.context.v1`,agentId `"assistant"`,落虚拟文件
+ * - 助手:schema `tsian.assistant.context.v2`,agentId `"assistant"`,落虚拟文件
  *   `.tsian/local/assistant/sessions/<sessionId>/context.json`,summary 是任务摘要.
  * 类型复用(master/助手结构同构),agentId/schema 值层面区分语义.
  */
 export interface AgentContextSnapshot {
-  /** schema 标记.master=tsian.agent.context.v1;助手=tsian.assistant.context.v1. */
-  schema: "tsian.agent.context.v1" | "tsian.assistant.context.v1"
+  /** Writers always emit v2. Parsers may upgrade legacy v1 data in memory. */
+  schema: "tsian.agent.context.v2" | "tsian.assistant.context.v2"
   /** master=saveId;助手=sessionId(语义复用,定位靠文件路径不靠此字段). */
   saveId: string
   /** master="master";助手="assistant".放宽为 string 以复用类型. */
   agentId: string
+  /** Last successfully persisted Agent interaction sequence. */
+  sequence: number
   /** 早期摘要(压缩后产生).null = 尚未触发压缩.master 叙事梗概,助手任务摘要. */
   summary: string | null
-  /** 最近 K=5 轮正文(user+assistant 对,带 turn 索引,原文).按 turn 升序；不含工具原文. */
+  /** 最近 K=5 个 context sequence 的正文(user+assistant 对,原文).按 sequence 升序；不含工具原文. */
   recentTurns: AgentContextTurnEntry[]
   /** task 模式 model-facing 工具记忆投影；与 UI timeline 独立。 */
   toolMemories?: AgentContextToolMemory[]
-  /** 上次压缩覆盖到第几轮(防重复压缩).null = 未压缩过. */
-  lastCompressedTurn: number | null
+  /** Highest sequence covered by summary. */
+  lastCompressedSequence: number | null
   /** ISO timestamp,最后一次更新时间. */
   updatedAt: string
 }
@@ -659,7 +676,7 @@ export interface SkillDetailEntry {
  *
  * A Tool is an atomic callable capability declared by a `tool.json` manifest
  * plus a sibling `browser_script`. Tools are exposed directly to the Agent's
- * native function calling schemas — no `use_skill` activation required. See
+ * native function calling schemas — no prior `use_skill` call required. See
  * `.trellis/spec/*` for the Tool vs Skill boundary.
  *
  * Path layout (mirrors the Skill layer):
@@ -841,6 +858,30 @@ export interface InvokeAgentRequest {
   /** 是否持久化上下文。true = 读写 context-slot.json（跨调用持久化）；
    *  false/省略 = 不读不写（一次性调用）。默认 false。 */
   persist?: boolean
+  /** Full player-visible archive, valid only with persist:true + contextSlot. */
+  transcript?: {
+    mode: "full"
+    audience: "player"
+  }
+}
+
+export interface AgentInvocationTranscriptEntry {
+  sequence: number
+  invocationId: string
+  purpose?: string
+  createdAt: string
+  request: string
+  assistant: AssistantTurnTimelineItem
+  /** Bounded process timeline for UI recovery; never fed back to the model. */
+  timeline?: TurnTimelineItem[]
+}
+
+export interface AgentInvocationTranscript {
+  schema: "tsian.agent.invocation-transcript.v1"
+  agentId: string
+  slot: string
+  lastSequence: number
+  entries: AgentInvocationTranscriptEntry[]
 }
 
 /** invokeAgent 返回：agent 的回复文本。不含 snapshot（不进运行时状态）。 */

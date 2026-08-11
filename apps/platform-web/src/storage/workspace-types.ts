@@ -19,11 +19,19 @@ export interface RuntimeWorkspaceChanges {
   deletedPaths: string[]
 }
 
+export interface RuntimeWorkspaceSavepoint {
+  workspaceFiles: WorkspaceFile[]
+  writtenPaths: string[]
+  deletedPaths: string[]
+}
+
 export interface RuntimeWorkspaceTransaction {
   readonly workspaceFiles: WorkspaceFile[]
   write(input: WorkspaceWriteInput): WorkspaceFile
   writePlatformFile(input: WorkspaceWriteInput): WorkspaceFile
   delete(path: unknown): { deletedPaths: string[] }
+  createSavepoint(): RuntimeWorkspaceSavepoint
+  rollbackToSavepoint(savepoint: RuntimeWorkspaceSavepoint): void
   finalWorkspaceFiles(): WorkspaceFile[]
   finalWorkspaceChanges(): RuntimeWorkspaceChanges
   discard(): void

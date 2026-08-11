@@ -438,7 +438,7 @@ await reloadAuthoritativeState()
 ### Contracts
 
 - Add a platform runtime primitive only when the ability is small, stable, cross-playstyle, and requires runtime internals such as Agent registry, Skill registry, context assembly, model invocation, trace, checkpoint behavior, workspace indexes, or tool/session state.
-- Keep primitives few. Current examples: `use_skill` (progressively disclose one full `SKILL.md` through its Tool result and register its actions), `run_script` (execute an activated Skill's `browser_script` action), generic workspace operations (`workspace.read/list/search/...`), and contacts-gated `agent_call`.
+- Keep primitives few. Current examples: `use_skill` (progressively disclose one full `SKILL.md` through its Tool result), `run_script` (execute a currently visible Skill's declared `browser_script` action), generic workspace operations (`workspace.read/list/search/...`), and contacts-gated `agent_call`.
 - Add a platform controlled action/executor when the ability performs side effects or needs platform execution control (scoped workspace mutation, browser-limited script execution, remote HTTP, WASM, abort/timeout, result normalization, frontend-data mutation).
 - Add a Skill action when the ability is gameplay/world/memory/rules/narrative/style/author-policy specific, or when it packages several primitive/controlled actions into a reusable business operation.
 - Keep gameplay data structures in Runtime Workspace files, README files, and schemas. Platform code should not hardcode world-state semantics when a Skill plus workspace schema can own them.
@@ -449,7 +449,7 @@ await reloadAuthoritativeState()
 
 - New runtime primitive without runtime-internal dependency -> reject in review; implement as Skill action.
 - New platform action that mutates workspace/state without allow-listing and input validation -> reject in review.
-- New Skill action that bypasses `use_skill` activation gating -> reject in review.
+- New Skill action that bypasses current Skill visibility, declaration, executor-policy, or workspace-scope checks -> reject in review. `use_skill` is not an authorization gate.
 - New Skill action declaring a non-`browser_script` executor -> reject in review.
 - New platform code that hardcodes gameplay-specific state semantics -> reject in review unless a task explicitly promotes that semantic to platform scope.
 - New tool/action that can produce large raw prompt/context output -> require summary behavior, pagination, or explicit read-by-path semantics.
@@ -495,19 +495,19 @@ await reloadAuthoritativeState()
 - Effective runtime permissions are derived from the current Agent's `agent.json` (`platformTools` and `workspaceAccess`).
 - `use_skill`/`run_script` are available by default (Skill installation/enablement is player/card-author controlled). `ask_user` is on for the assistant by default, off for game agents by default. `agent_call` only with contacts + `agent_call` enabled. Workspace read tools under `workspace_read`; workspace write/delete/move/validate under `workspace_write`.
 - `workspace_read` maps to `list`, `search`, `read` (+ `semantic_search`). `workspace_write` maps to `diff`, `write`, `edit`, `move`, `delete`, `validate`.
-- **`use_skill` is the two-step flow's first step**: it declares intent, parses `tsian-actions` fenced JSON blocks from the `SKILL.md` body, and registers declared actions into the session state. Its successful Tool observation contains activation metadata, the complete `SKILL.md` in `content`, action counts, and declaration diagnostics. It must not repeat the full action declarations/schema as a second structured `actions` list, expose resource contents, or emit a second synthetic `user` message.
-- `use_skill` must size the complete result envelope before registering activation. If it cannot fit the producer budget, return `SKILL_DETAIL_TOO_LARGE` with `actualChars`, `maxChars`, path, and split-resource guidance; the Skill remains inactive. Native and Text Tool Protocol both deliver the same accepted result, so there is no per-skill injection de-dup state, post-round content collector, or compatibility injection path.
-- `use_skill` resolves only against the current Agent's visible `skillIndex` (a Skill on disk but removed by `disabledSkills` or a non-matching non-empty `enabledSkills` list cannot be activated). Match `name` first, then `id` for compatibility. If a local and shared Skill share a name, prefer the current Agent's local Skill. `use_skill` is parallel-safe (only mutates session state, not workspace).
+- **`use_skill` is instruction loading only**: it resolves a currently visible Skill, parses `tsian-actions` for action counts, and delivers the complete `SKILL.md` in one Tool observation with `loaded:true`. It must not repeat full action schemas as a second structured list, expose referenced resource bodies, emit a synthetic `user` message, or create authorization state.
+- `use_skill` sizes the complete result envelope before caching parsed declarations. If it cannot fit, return `SKILL_DETAIL_TOO_LARGE` with `actualChars`, `maxChars`, path, and split-resource guidance. This does not disable the Skill's actions: `run_script` independently resolves the current visible declaration. Native and Text Tool Protocol still deliver the same accepted result.
+- `use_skill` resolves only against the current Agent's visible `skillIndex` (disabled or non-enabled Skills are unavailable). Match `name` first, then `id`; prefer the current Agent's local Skill on a local/shared name collision. It is parallel-safe because its session cache is only an optimization and it does not mutate workspace.
 - Declared Skill action summaries (name + description + `browser_script` executor type) are parsed at registry build time into the Skill Index so the model can see which actions a Skill offers before `use_skill`. Full action declarations (inputSchema/outputSchema/executor path) are NOT in the eager Skill Index or `agent-context` — progressive disclosure is preserved.
-- `run_script` requires that the named Skill has already been activated via `use_skill` by the same Agent during the same tool loop; otherwise `SKILL_NOT_ACTIVATED`. It validates action availability, executor type (`browser_script` only), and input before invoking the executor. It checks the lightweight executor-class policy before running (default allows `browser_script`; injected policy may deny it — no Settings UI/localStorage/trust state for this slice). It may validate successful executor output when the action declares optional `outputSchema`. It is kept serial (not parallel) because `browser_script` has side effects and a bounded timeout.
+- `run_script` does not require a prior `use_skill`. Every call re-resolves the named Skill from the current Agent's visible/enabled `skillIndex`, reads the current `SKILL.md`, and parses the declared action; a same-loop cache may be used only when both path and exact source content still match. It then validates executor type, input, executor policy, workspace scope, and optional output schema. It stays serial because `browser_script` has side effects and a bounded timeout.
 - `agent_call` is exposed only when the current Agent has visible contacts, the tool loop allows Agent calls, and the Agent's platform tool config enables `agent_call`. It validates the target against the caller's `contacts` (a runtime stability boundary, not a full security model). It builds the target Agent's own context (`AGENT.md`, optional `SOUL.md`, notes/session, declared context files, filtered lightweight Skill Index) and returns a structured observation; the target response does not directly become player-visible history. `historyMode` defaults to `recent`.
 - Agent Runtime collaboration policy is code-level/default-only: defaults are `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`; runtime capabilities may inject policy overrides, but there is no Settings UI/localStorage/trust state. The tool loop has **no per-Agent round limit** and `agent_call` has **no per-turn call-count limit** — termination relies on `finishReason: stop`, abort, and the mode-specific budget fallback. `maxDepth=2` remains as the recursion safety net. The root turn shares one `agent_call` budget across the entry agent and nested delegated steps.
 - Delegated Agents re-derive registry, Tool/Skill view, permissions, and runtime-game WorkspaceView from the target Agent. Desktop tool filters, diagnostics/inspect/test ports, local files, and trusted authoring mutations must not be inherited. Delegated mutation adapters allow only the game-runtime save/platform envelope. They may use their own workspace operations, `use_skill`/`run_script`, and limited nested `agent_call` (contacts-gated at every hop, depth-limited).
 - `SKILL.md` action declarations use a fenced JSON block whose info string includes `tsian-actions`. Each action specifies `{ name, description, inputSchema, outputSchema?, executor: { type: "browser_script", path, timeoutMs? } }`. `browser_script` is the only supported executor type; `builtin`/`platform_action`/`workspace_operation` are rejected at parse time and reported in `actionDeclarationErrors`. `path` resolves relative to the declaring Skill directory and must stay under that directory.
-- The first browser script capability profile is a strong Tsian SDK, not raw browser/internal access. Scripts can use SDK workspace read/list/search/glob/diff/patch/write/copy/move/delete/validate, SDK fetch where browser policy permits, structured log/trace, timeout/abort, and JSON-compatible input/output. SDK `tsian.workspace` methods mirror the top-level workspace tools and must pass the same Agent `workspace_read`/`workspace_write` exposure gates — they must not bypass the operation allow-list, actor-level checks, or the Environment's `workspaceFileFilter`. `executeRunScript` must carry that filter through `executeSkillAction` into every browser-script SDK request. The first slice must not expose raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals as supported script APIs.
+- The browser script SDK exposes workspace operations, reply projection, structured log/trace, timeout/abort, JSON-compatible input/output, and one optional `tsian.memory.set(ToolMemoryProjection)` side channel. Workspace methods pass the same exposure, actor-level, and `workspaceFileFilter` gates as top-level tools. The memory projection must be one plain strict-JSON object, at most 8,000 serialized characters, and pass host key/status/title/summary/anchor/exact validation; it never changes the current Tool observation. Raw DOM, `window`, internal bridge objects, Vue state, and platform-host internals remain unsupported.
 - Generic workspace operations pass two hard gates: the operation must be exposed in the current runtime context, and the actor level must satisfy the target read/edit level. Missing/invalid `workspaceAccess.level` defaults to `1`. **Exception — desktop assistant**: its actor level is resolved live from `.tsian/local/assistant/agent.json` (default `4`), not from the runtime agent context. The `executePlatformAction` path must never hardcode `actorLevel`.
 - Every Tool producer owns its Agent delivery shape before the result enters a model message. Read/search/list/glob/diff/mutation/diagnostics/inspector producers return bounded pages, summaries, counts, IDs, paths, or honest narrowing hints. The shared acceptance gate only validates strict JSON compatibility and the fixed 32-KiB serialized ceiling; it never truncates, compacts, normalizes, or synthesizes a success preview. Native parallel calls remain one assistant tool-calls message followed by one independent `role:"tool"` message per provider `toolCallId`; role merging must never combine those messages.
-- Inside `interaction.sendMessage`, save-runtime workspace mutations run against one staged transaction whose `workspaceFiles` array is the turn's live source of truth. Environment construction and entry/delegated Tool loops must retain that array by identity; trust-boundary projections are allowed for context/registry assembly, while each Tool/script SDK operation applies `workspaceFileFilter` against the current live array. Same-turn `read/list/search/glob/diff`, custom Tools, and Skill scripts therefore see prior staged writes/deletes without exposing `frontend-actions/**` or `.tsian/local/**` to runtime game Agents. Successful turns commit the staged state atomically with accepted snapshot/history and after-turn checkpoint creation; failed or aborted turns discard ordinary staged mutations.
+- Inside `interaction.sendMessage`, save-runtime workspace mutations use one staged transaction whose `workspaceFiles` array is the turn's live source of truth. Every browser-script execution creates a transaction savepoint. A failed script or failed post-execution output validation rolls staged save-runtime files and change sets back to that savepoint, preventing a caught Tool failure from leaking a partial multi-file action into a later successful turn. Same-turn reads still see prior successful staged writes. Direct assistant authoring writes that intentionally bypass the save transaction remain outside this savepoint contract.
 - Ordinary Agent/Skill workspace mutations must reject `.tsian/*` targets — that is platform-owned metadata space.
 - Frontend bridge `platform.runAction` workspace actions remain immediate platform actions, not part of the Agent Runtime turn transaction.
 - Runtime prompts should display Skill Index entries as `name/description/triggers/applicability` (plus parsed `actions` summaries) and should not default to exposing `path=...`.
@@ -522,15 +522,15 @@ await reloadAuthoritativeState()
 - Strict JSON-invalid Tool delivery -> `TOOL_OBSERVATION_INVALID`; oversized delivery -> `TOOL_OBSERVATION_TOO_LARGE` with `actualChars`/`maxChars` and remediation, without the rejected raw body. Both are failed observations and failed terminal Tool status.
 - Text Protocol v2 malformed executable block (missing close tag, multiple `<tsian-tool-calls>` blocks, invalid JSON, non-array content, or empty array) -> `protocol_error` observation and at most `TEXT_TOOL_PROTOCOL_MAX_RETRIES` retry.
 - Text Protocol v2 non-executable runtime-history tag echoed by the model (`<tsian-tool-call-records>`, `<tsian-tool-observations>`, `<tsian-tool-protocol-error>`) -> `TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG` protocol error + retry; do not strip it to an empty final reply.
-- `use_skill`: missing/blank name -> `SKILL_NAME_REQUIRED`; unknown/invisible Skill -> `SKILL_NOT_FOUND`; ambiguous after local/shared priority -> `SKILL_NAME_AMBIGUOUS`; missing `SKILL.md` after resolution -> `SKILL_DETAIL_NOT_FOUND`; complete direct result exceeds the producer budget -> `SKILL_DETAIL_TOO_LARGE` and no activation is registered.
-- `run_script`: missing skill/action -> required errors; before `use_skill` -> `SKILL_NOT_ACTIVATED`; undeclared action -> `ACTION_NOT_FOUND`; non-`browser_script` executor -> `ACTION_NOT_BROWSER_SCRIPT`; schema-invalid input -> `ACTION_INPUT_INVALID`; executor denied by policy -> `ACTION_EXECUTOR_DISABLED`; timeout -> `ACTION_EXECUTOR_TIMEOUT`; abort -> `ACTION_EXECUTOR_ABORTED`; output fails `outputSchema` -> `ACTION_OUTPUT_INVALID` (with output summary, not raw large output); malformed `outputSchema` -> `ACTION_OUTPUT_SCHEMA_INVALID`; path outside declaring Skill directory -> `BROWSER_SCRIPT_PATH_INVALID`.
+- `use_skill`: missing/blank name -> `SKILL_NAME_REQUIRED`; unknown/invisible Skill -> `SKILL_NOT_FOUND`; ambiguous after local/shared priority -> `SKILL_NAME_AMBIGUOUS`; missing `SKILL.md` -> `SKILL_DETAIL_NOT_FOUND`; oversized direct result -> `SKILL_DETAIL_TOO_LARGE` and no cache update.
+- `run_script`: missing skill/action -> required errors; invisible/disabled Skill -> `SKILL_NOT_FOUND`; undeclared action -> `ACTION_NOT_FOUND`; non-`browser_script` executor -> `ACTION_NOT_BROWSER_SCRIPT`; schema-invalid input -> `ACTION_INPUT_INVALID`; executor denied by policy -> `ACTION_EXECUTOR_DISABLED`; timeout/abort/script/output failure -> roll back the action savepoint; malformed memory side channel -> `TSIAN_MEMORY_PROJECTION_INVALID`; output fails `outputSchema` -> `ACTION_OUTPUT_INVALID`; malformed `outputSchema` -> `ACTION_OUTPUT_SCHEMA_INVALID`; path outside owner directory -> `BROWSER_SCRIPT_PATH_INVALID`.
 - `agent_call`: missing agentId/request -> required errors; no active Agent context -> `AGENT_CALL_CONTEXT_REQUIRED`; target not found -> `AGENT_CALL_TARGET_NOT_FOUND`; target not in contacts -> `AGENT_CALL_TARGET_NOT_CONTACT`; beyond `maxDepth` or unavailable -> `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata (no per-turn call-count limit; `callCount` is diagnostic only); invalid `historyMode` -> `AGENT_CALL_HISTORY_MODE_INVALID`; delegated execution failure -> `AGENT_CALL_FAILED` (timeout -> `{ timeout: true }`).
 - Workspace: unexposed operation or disabled read/write group (generic or browser script SDK) -> `WORKSPACE_OPERATION_NOT_EXPOSED`; actor level below target read/edit level -> `WORKSPACE_READ_ACCESS_DENIED`/`WORKSPACE_EDIT_ACCESS_DENIED`; `.tsian/*` without level 4 -> structured workspace error; missing file on read -> `WORKSPACE_FILE_NOT_FOUND`; invalid path -> workspace path error.
 - Action executor declaration missing or non-`browser_script` type, or invalid `path`/`timeoutMs` -> `ACTION_EXECUTOR_INVALID` at parse time, reported in `actionDeclarationErrors`, that action not registered.
 - Runtime turn fails/aborts after staged ordinary workspace writes -> persisted state remains equivalent to the pre-turn accepted state (except host-owned failed trace diagnostics).
 - Custom Tool or Skill script stages a write/delete, then a later Tool/script reads in the same turn -> `read/list/search/glob/diff` observes the current transaction array; Environment construction must not freeze a turn-start copy.
 - Runtime game Agent executes `run_script` or a custom browser-script Tool -> every SDK Workspace operation applies the same runtime-game `workspaceFileFilter`; live-array coherence must not reveal `frontend-actions/**` or `.tsian/local/**`.
-- Malformed `tsian-actions` blocks -> report declaration errors without failing the whole Skill activation.
+- Malformed `tsian-actions` blocks -> report declaration errors in `use_skill`; `run_script` can execute only declarations that parsed successfully from the current source.
 - **Narrative mode**: turn token budget reached a second time after one in-turn narrative compression (or budget reached when no agent-context snapshot is available) -> return the last round's stripped text if present; otherwise throw a budget-exhausted error surfaced as a soft "上下文已满" prompt (keeps already-streamed thought, not a hard error). The first budget crossing triggers in-turn compression on the narrative span (tool interactions preserved). No per-Agent round limit.
 - **Task mode** (delegated + assistant): budget crossing -> timeout check -> multi-compress on the tool-interaction span (no count cap) -> stall early-exit if yield < 10% -> budget-exhausted error when nothing left to compress. All surface as soft prompts (delegated: `AGENT_CALL_FAILED` observation with timeout/stalled details). See the "Turn Token Budget And In-Turn Compression" scenario.
 
@@ -563,7 +563,7 @@ await reloadAuthoritativeState()
 
 ### Scope / Trigger
 
-- When successful Agent Runtime turns persist Agent-facing transcripts, or an activated Skill action applies notes/timeline/summary maintenance.
+- When successful Agent Runtime turns persist Agent-facing transcripts, or a Skill action applies notes/timeline/summary maintenance.
 
 ### Contracts
 
@@ -693,7 +693,7 @@ await reloadAuthoritativeState()
 - The desktop assistant persists a per-session agent context snapshot as a **virtual file** at `.tsian/local/assistant/sessions/<sessionId>/context.json`. This lives in the `local-assistant-files` Dexie map (same map as agent identity files); the `sessions/` subdirectory separates session state from cross-session identity. The snapshot is agent-visible: the assistant can `workspace_read`/`workspace_list`/`workspace_write` it.
 - Multi-session isolation: each session has its own `sessions/<sessionId>/context.json`; switching sessions does not cross-contaminate context. This is why the path is per-session, not a single shared file.
 - The snapshot is separate from visible messages (the UI display layer, max 200). Visible messages are the UI display layer; the snapshot is the agent context steady-state layer. This mirrors the formal player-turn Agent's visible history vs `save/agents/<entry>/context.json` separation.
-- Turn-start: when a context file is absent (legacy session), reconstruct recentTurns from visible-message history (no summary). Derive the next turn from the snapshot so `lastCompressedTurn` dedup works (fixing the prior turn=1-always bug). Inject the snapshot + token budget into the turn.
+- Turn-start: when a context file is absent (legacy session), reconstruct recentTurns from visible-message history (no summary). Derive the next context `sequence` from the snapshot so `lastCompressedSequence` and Tool-memory aging work independently of game turn. Inject the snapshot + token budget into the turn.
 - Entry turn-start compression runs in **both** modes (narrative and task). Task mode (assistant) compresses the snapshot with a task-summary prompt + 用户/助手 labels; narrative mode (formal player-turn Agent, including the default `storyteller`) uses defaults. This snapshot compression is independent of in-turn tool-interaction compression.
 - Turn-end (success path only): append the turn to the snapshot and persist directly via `saveLocalAssistantFiles` (merge). It does **not** go through the save transaction — `.tsian/local/` paths have no entry in the save transaction layer (both path validators reject `.tsian/local/`). The direct-merge is the correct local-basket channel, consistent with the resource manager and identity-file writes.
 - Turn failure: discard; do not append the failed turn. The snapshot on disk stays at its turn-start state (symmetric to formal player turns).
@@ -724,6 +724,92 @@ await reloadAuthoritativeState()
 - Do not leak Dexie table records directly into contracts unless they are intentionally shared.
 - Do not silently swallow invalid platform action input.
 
+## Scenario: Agent Context V1→V2 And Player Invocation Transcripts
+
+### 1. Scope / Trigger
+
+- Trigger: changing Agent context schemas/parsers/writers, context-slot path normalization or queueing, formal/player-side `interaction.invokeAgent`, projected assistant replies, transcript persistence, or opening-session recovery.
+
+### 2. Signatures
+
+```ts
+interface AgentContextSnapshot {
+  schema: "tsian.agent.context.v2" | "tsian.assistant.context.v2"
+  sequence: number
+  recentTurns: Array<{
+    sequence: number
+    gameTurn?: number
+    role: "user" | "assistant"
+    content: string
+  }>
+  lastCompressedSequence: number | null
+}
+
+interface AgentInvocationTranscript {
+  schema: "tsian.agent.invocation-transcript.v1"
+  agentId: string
+  slot: string
+  lastSequence: number
+  entries: AgentInvocationTranscriptEntry[]
+}
+```
+
+### 3. Contracts
+
+- Context v2 separates monotonic Agent interaction `sequence` from optional domain `gameTurn`. Every successful persistent invocation or formal turn allocates `snapshot.sequence + 1`; game turn is correlation only and may stay unchanged across multiple opening interviews.
+- Parsers accept legacy agent/assistant v1 snapshots by mapping each entry/memory `turn` to both `sequence` and `gameTurn`, mapping top-level `turn` to `sequence`, and mapping `lastCompressedTurn` to `lastCompressedSequence`. Invalid entries are rejected defensively. Writers always emit v2 names/schema; no v1 field is written back.
+- Context-slot paths use the canonical normalized slot for the file path, transcript identity, and same-slot invocation queue key. Two raw slots that normalize to the same path must serialize through one queue; paths cannot escape `save/agents/<agentId>/`.
+- A full player transcript is explicit opt-in: `transcript:{mode:"full",audience:"player"}` is valid only with `persist:true` and a non-empty `contextSlot`. Background/delegated/default invocations do not create transcripts.
+- The transcript at `save/agents/<agentId>/transcripts/<normalized-slot>.json` is an append-only player-visible archive, independent of context compression and model token input. Each entry stores exact request text, the accepted projected assistant `{content, displayContent?, projections?}`, and a bounded presentation-only timeline; raw Tool output and provider messages are excluded.
+- Context and transcript writes are staged in the same Runtime Workspace transaction as other successful invocation writes. Projection failure, runtime failure, invalid existing transcript, non-monotonic sequence, or commit failure produces zero accepted context/transcript writes.
+- Transcript readers validate the exact top-level/entry shapes, identity, safe strictly increasing sequences, `lastSequence`, assistant projection JSON, and closed timeline-node shapes. Recovery correlates transcript entries by successful invocation sequence/attempt; it must never equate Agent sequence with opening progress revision or game turn.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Valid v1 context | Upgrade in memory; next successful write emits v2 |
+| Invalid/corrupt context | Fall back according to host policy; never partially trust mixed fields |
+| Several opening interviews at game turn 0 | Sequences increase independently; each persisted entry remains distinct |
+| Two raw slots normalize to one canonical slot | One serialized queue/path; no lost update race |
+| Transcript requested without persistence or slot | Reject before Agent execution/writes |
+| Transcript disabled | Persist requested context only; create no transcript file |
+| Existing transcript malformed or append sequence stale | Fail invocation commit with zero accepted writes |
+| Failed/aborted invocation | Append neither context nor transcript |
+
+### 5. Good/Base/Bad Cases
+
+- Good: three opening calls all have `gameTurn:0` and context/transcript sequences 1, 2, 3; refresh reconstructs the player conversation from transcript entries while progress revision is read separately.
+- Base: a persistent background invocation uses a context slot without transcript opt-in; only its bounded Agent context is retained.
+- Bad: derive the next context sequence from `maxGameTurn + 1`, causing opening calls to collide.
+- Bad: treat progress `revision:3` as transcript sequence 3, or feed the transcript archive back into every model request.
+
+### 6. Verification Required
+
+- Cover v1 agent and assistant parsing, v2 rewrite, independent sequence/game-turn allocation, canonical-slot collision serialization, transcript opt-in validation, strict transcript parsing, projection preservation, and failure atomicity.
+- Run contracts, Web, Play Bridge, and Play frontend type/build gates when shared schemas change; exercise the opening refresh/recovery path in the packaged card.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const sequence = currentGameTurn + 1
+await writeContext()
+await writeTranscript() // second non-atomic write
+```
+
+#### Correct
+
+```ts
+const sequence = snapshot.sequence + 1
+stageAgentContextFile(transaction, { sequence, gameTurn, ...turn })
+if (playerTranscriptOptIn) {
+  stageAgentInvocationTranscriptFile(transaction, { sequence, ...projectedTurn })
+}
+await transaction.commit()
+```
+
 ## Scenario: Persistent Task-mode Side-invocation Tool Memory
 
 ### 1. Scope / Trigger
@@ -734,7 +820,8 @@ await reloadAuthoritativeState()
 
 ```ts
 interface AgentRuntimeTurnContextUpdate {
-  turn: number
+  sequence: number
+  gameTurn?: number
   user: string
   assistant: string
   compressedContext?: AgentContextSnapshot
@@ -743,7 +830,8 @@ interface AgentRuntimeTurnContextUpdate {
 
 stageAgentContextFile(transaction, {
   saveId,
-  turn,
+  sequence,
+  gameTurn?,
   user,
   assistant,
   compressedContext?,
@@ -755,11 +843,14 @@ stageAgentContextFile(transaction, {
 
 ### 3. Contracts
 
-- A successful `invokeAgent` with `persist:true` passes the runtime's `contextUpdate.toolMemories` into the same `context-<slot>.json` snapshot that receives the projected user/assistant turn. `persist:false` and failed invocations do not write context or Tool memory.
-- Writeback starts from the compressed snapshot when present, otherwise the current slot snapshot, otherwise an empty snapshot. It appends the text-only turn, merges existing and current Tool memories, then applies `sortToolMemoriesStable` and `applyTaskToolMemoryRetention` before serialization.
-- Cross-turn Tool memory is the existing bounded semantic projection of an accepted Tool observation: tool/status/title, bounded argument/result summary, and anchors. Raw observation, provider Tool protocol messages, and UI timeline/presentation are not persisted as model history.
+- A successful `invokeAgent` with `persist:true` passes the runtime's `contextUpdate.toolMemories` into the same `context-<slot>.json` snapshot that receives the projected user/assistant sequence. `persist:false` and failed invocations do not write context or Tool memory.
+- Writeback starts from the compressed snapshot when present, otherwise the current slot snapshot, otherwise an empty snapshot. It appends the text-only sequence, merges existing and current Tool memories, applies semantic supersession/resolution, then applies stable sorting, recency retention, and the total budget before serialization.
+- Cross-turn Tool memory is a bounded semantic projection: `key/status/title/summary`, optional anchors, small exact JSON values, and optional `resolves`. Raw observations, call arguments, Skill/source bodies, provider Tool protocol messages, and UI timeline/presentation are not persisted as model history.
+- Producers may provide an explicit projection. Built-in projectors retain only downstream decision state; read/source-like and `use_skill` observations are omitted, not truncated into memory. Browser-script/custom-Tool fallback is conservative and never copies arbitrary output bodies.
+- A newer memory with the same `key` supersedes the older one. A successful memory whose `resolves` names failed keys removes those failures. Unresolved failed memories are retained preferentially within the bounded recent-sequence window so the Agent can avoid repeating them blindly.
+- `sequence` is the only aging, grouping, compression, and append-order key. `gameTurn` is optional domain correlation and must never drive Tool-memory retention; opening interviews can therefore produce multiple Agent sequences while game turn remains zero.
 - Entry message composition renders the Tool memory layer when `compressionMode === "task"`, independent of whether the Agent path is under `.tsian/local/` or `agents/<id>/`. Agent-path classification continues to choose user/player labels only; it is not a capability gate.
-- Narrative mode does not render the Tool memory layer. Formal player-turn behavior and narrative cache layout stay unchanged.
+- Narrative mode does not render a standalone Tool-memory log, but successful formal narrative turns still retain semantic memories. When old narrative sequences are compressed, their associated memories are included in the bounded compression input and then removed once covered by `lastCompressedSequence`; this preserves relevant state without polluting the direct story prompt.
 - A persistent side invocation may reread an authoritative workspace/source when the bounded memory lacks required detail; Tool memory records prior work but is not a replacement authority for file content.
 
 ### 4. Validation & Error Matrix
@@ -772,21 +863,25 @@ stageAgentContextFile(transaction, {
 | Successful invocation contains a failed Tool observation | Persist its bounded memory with `status:"failed"`; the Agent can avoid blindly repeating it |
 | `persist:false` | Do not read or write cross-turn context/memory |
 | Task mode with retained memories | Inject one ordinary Tool-work-log message; do not replay provider Tool messages |
-| Narrative mode with retained memories | Omit the Tool-memory message |
+| Narrative mode with retained memories | Omit the standalone Tool-memory message; include matching old memories only when compressing those narrative sequences |
 | Compression occurred this turn | Merge new memories into the compressed base; do not resurrect memories removed by compression |
+| Repeated semantic key | Keep the newest projection only |
+| Successful projection resolves a failed key | Remove the resolved failed memory |
+| `use_skill` or source-body read | Omit from persistent Tool Memory |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: a persistent `world-architect` side invocation reads a source chapter, stores a bounded read summary/anchor, and its next call sees that prior work before deciding whether exact source detail must be reread.
+- Good: a persistent `world-architect` side invocation advances opening progress and stores its phase/revision/remaining-fields projection; its next call sees that state without receiving the raw script result.
 - Base: a one-shot side invocation omits `persist`; it returns normally and leaves no context file.
 - Bad: gate Tool-memory rendering on `.tsian/local/`, which preserves Desktop Assistant memory but silently drops persistent game-Agent side-invocation memory.
 - Bad: store the complete read observation or source text in `recentTurns` to make it visible next turn.
+- Bad: keep both stale and current revisions of the same progress key, or age memories by game turn.
 
 ### 6. Tests Required
 
-- Extend the retained Assistant runtime success smoke rather than adding a test file: run a persistent game-Agent side invocation that calls a Tool, assert its slot context contains the expected Tool-memory identity/status, then run the same slot again and assert the provider-bound messages contain the Tool-work log and anchor.
+- Extend the retained Assistant runtime success smoke rather than adding a test file: run a persistent game-Agent side invocation that calls a Tool, assert its slot context contains the expected semantic key/status, then run the same slot again and assert the provider-bound messages contain the Tool-work log and anchor.
 - Keep the retained failure smoke proving failed turns do not alter context/workspace.
-- Run `npm run test:smoke:web`, `npm run build:web`, and manually review the narrative branch to confirm the render condition is exactly task mode.
+- Cover v1 parsing, sequence/game-turn separation, omission, supersession/resolution, failed-memory retention, and narrative compression consumption. Run `npm run test:smoke:web`, `npm run build:web`, and inspect the narrative branch to confirm only direct rendering is task-only.
 
 ### 7. Wrong vs Correct
 
@@ -1008,7 +1103,7 @@ buildToolPresentation(
 - **Tool producer owns size and continuation.** Agent-facing workspace adapters bound read/search/list/glob/diff/mutation results without changing shared workspace-operation semantics. Diagnostics and inspector own their bounds. Script/custom Tools use a conservative inline contract and must return a summary/page/workspace path when their business output is large.
 - **Runtime acceptance is a strict fail-loud gate, not a projector.** `acceptToolObservationForAgent` accepts strict JSON-compatible values unchanged when the serialized observation is at most 32 KiB. It never compacts, slices, stringifies exotic values, or emits preview success. Invalid values return `TOOL_OBSERVATION_INVALID`; oversized values return `TOOL_OBSERVATION_TOO_LARGE` without the raw body. The Environment has no per-product observation budget knob.
 - **Protocol and memory consume the same accepted observation.** Native and Text Tool Protocol serialize that value directly; text mode must not run a second `compactLargeValueForModel` pass. Cross-turn `toolMemories` may still summarize accepted observations under its independent retention budget.
-- **Skill activation has one full-content channel.** `use_skill` returns activation metadata, one complete `SKILL.md` `content` field, counts, and declaration diagnostics in its Tool observation. It does not return a duplicate action-schema list and the framework emits no synthetic post-round Skill message.
+- **Skill detail has one full-content channel.** `use_skill` returns load metadata, one complete `SKILL.md` `content` field, counts, and declaration diagnostics in its Tool observation. It does not return a duplicate action-schema list and the framework emits no synthetic post-round Skill message. `run_script` authorizes against the current visible Skill source, not this observation.
 - **agent_call presentation**: the UI projector extracts `{type:"agent_call", targetAgent, response, responseTruncated?, status, error?}`. Response is capped at the UI presentation limit; the bounded Agent observation remains a separate consumer.
 - **Ordinary tools**: no presentation payload. UI receives only call identity, name/displayName, status, round and agent id; arguments and results never enter bridge/timeline/session storage.
 - **Process retention**: formal turn history and assistant sessions persist presentation-only `thought`/`tool`/`interim` timeline nodes in occurrence order. Reload reconstructs the same display nodes without rebuilding model messages.
