@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/08-12-simplify-opening-interview-state/prd.md","reason":"Check the implementation against user-visible acceptance and explicit non-goals."}
+{"file":".trellis/tasks/08-12-simplify-opening-interview-state/design.md","reason":"Check that only opening-domain state is simplified and generic transcript/context remains intact."}
+{"file":".trellis/tasks/08-12-simplify-opening-interview-state/research/current-opening-evidence.md","reason":"Audit every retained hard validation against a demonstrated consumer or corruption boundary."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Reject fields, state copies and validations that lack a named consumer."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify the simplified flow end to end across Skill, scripts, frontend and package."}
