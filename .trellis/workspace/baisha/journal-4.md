@@ -987,3 +987,24 @@ Reduced the product test inventory to three integration smoke files, aligned rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 194: 简化开局访谈状态与校验
+
+**Date**: 2026-08-12
+**Task**: 简化开局访谈状态与校验
+**Branch**: `master`
+
+### Summary
+
+移除逐轮 attempt/revision 事务与专用进度脚本，改用 transcript 恢复和可选 opening-notes；精简 commit_opening 为证据驱动校验，并同步前端、模板、测试与契约规范。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ab7bd08` | (see git log) |
+
+### Status
+
+[OK] **Completed**

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 193
-- **Last Active**: 2026-08-11
+- **Total Sessions**: 194
+- **Last Active**: 2026-08-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~989 | Active |
+| `journal-4.md` | ~1010 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 194 | 2026-08-12 | 简化开局访谈状态与校验 | `ab7bd08` | `master` |
 | 193 | 2026-08-11 | 重构 Agent 上下文状态与压缩 | `5290631`, `65efc15`, `3da85d1` | `master` |
 | 192 | 2026-08-10 | 开局访谈 Tool memory 与状态协议 | `b59943c` | `master` |
 | 191 | 2026-08-10 | 开局向导对话与模型一致性优化 | `c2e27cd`, `1bdb21e` | `master` |
