@@ -762,7 +762,7 @@ interface AgentInvocationTranscript {
 - A full player transcript is explicit opt-in: `transcript:{mode:"full",audience:"player"}` is valid only with `persist:true` and a non-empty `contextSlot`. Background/delegated/default invocations do not create transcripts.
 - The transcript at `save/agents/<agentId>/transcripts/<normalized-slot>.json` is an append-only player-visible archive, independent of context compression and model token input. Each entry stores exact request text, the accepted projected assistant `{content, displayContent?, projections?}`, and a bounded presentation-only timeline; raw Tool output and provider messages are excluded.
 - Context and transcript writes are staged in the same Runtime Workspace transaction as other successful invocation writes. Projection failure, runtime failure, invalid existing transcript, non-monotonic sequence, or commit failure produces zero accepted context/transcript writes.
-- Transcript readers validate the exact top-level/entry shapes, identity, safe strictly increasing sequences, `lastSequence`, assistant projection JSON, and closed timeline-node shapes. Recovery correlates transcript entries by successful invocation sequence/attempt; it must never equate Agent sequence with opening progress revision or game turn.
+- Transcript readers validate the exact top-level/entry shapes, identity, safe strictly increasing sequences, `lastSequence`, assistant projection JSON, and closed timeline-node shapes. Recovery rebuilds transcript entries in successful invocation sequence; it must never equate Agent sequence with a semantic work note or game turn.
 
 ### 4. Validation & Error Matrix
 
@@ -779,10 +779,10 @@ interface AgentInvocationTranscript {
 
 ### 5. Good/Base/Bad Cases
 
-- Good: three opening calls all have `gameTurn:0` and context/transcript sequences 1, 2, 3; refresh reconstructs the player conversation from transcript entries while progress revision is read separately.
+- Good: three opening calls all have `gameTurn:0` and context/transcript sequences 1, 2, 3; refresh reconstructs the player conversation from successful transcript entries without consulting optional semantic notes.
 - Base: a persistent background invocation uses a context slot without transcript opt-in; only its bounded Agent context is retained.
 - Bad: derive the next context sequence from `maxGameTurn + 1`, causing opening calls to collide.
-- Bad: treat progress `revision:3` as transcript sequence 3, or feed the transcript archive back into every model request.
+- Bad: infer transcript sequence from another domain file, or feed the transcript archive back into every model request.
 
 ### 6. Verification Required
 
@@ -871,11 +871,11 @@ stageAgentContextFile(transaction, {
 
 ### 5. Good/Base/Bad Cases
 
-- Good: a persistent `world-architect` side invocation advances opening progress and stores its phase/revision/remaining-fields projection; its next call sees that state without receiving the raw script result.
+- Good: a persistent game-Agent side invocation commits a bounded semantic result and stores its key/status/anchor projection; its next call sees that state without receiving the raw script result.
 - Base: a one-shot side invocation omits `persist`; it returns normally and leaves no context file.
 - Bad: gate Tool-memory rendering on `.tsian/local/`, which preserves Desktop Assistant memory but silently drops persistent game-Agent side-invocation memory.
 - Bad: store the complete read observation or source text in `recentTurns` to make it visible next turn.
-- Bad: keep both stale and current revisions of the same progress key, or age memories by game turn.
+- Bad: keep both stale and current values of the same semantic key, or age memories by game turn.
 
 ### 6. Tests Required
 

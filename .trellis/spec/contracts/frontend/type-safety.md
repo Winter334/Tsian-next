@@ -438,11 +438,11 @@ await tsian.invokeAgent(agentId, input, {
 })
 ```
 
-## Scenario: Recoverable invokeAgent Sidecar Session
+## Scenario: Transcript-Backed invokeAgent Interview
 
 ### 1. Scope / Trigger
 
-- Trigger: a packaged or remote play frontend uses persistent `invokeAgent` calls for a multi-round setup/interview that must survive refresh, remains outside formal story turns, and carries machine state hidden from the player.
+- Trigger: a packaged or remote play frontend uses persistent `invokeAgent` calls for a multi-round setup interview outside formal story turns.
 
 ### 2. Signatures
 
@@ -451,116 +451,87 @@ tsian.invokeAgent(agentId, userMarker, {
   invocationId,
   contextSlot: sourceDerivedSlot,
   persist: true,
+  transcript: { mode: "full", audience: "player" },
   injection: [{ role: "user", position: "before-input", content: invariants }],
 })
 
-type SidecarControl = {
+type InterviewControl = {
   source: { hash: string }
-  session: { id: string; slot: string; revision: number }
+  session: { id: string; slot: string }
   branch: "canon" | "original"
-  attempt?: {
-    id: string
-    input: string
-    inputHash: string
-    basedOnRevision: number
-    status: "submitted" | "failed"
-  }
-  receipt?: { revision: number; payloadHash: string; committedAt: string }
-}
-
-type SidecarTurnState = {
-  sessionId: string
-  sourceHash: string
-  branch: "canon" | "original"
-  revision: number
-  processedAttemptId: string
 }
 ```
 
-The user marker must carry either the session bootstrap id or the durable `attempt.id`; the assistant machine block must carry the complete latest `SidecarTurnState`, not a patch.
+A successful invocation transcript is the visible conversation archive. Optional Agent semantic notes are ordinary workspace files and are not frontend control state.
 
 ### 3. Contracts
 
-- Derive `session.id` and `contextSlot` from stable source identity. Sidecar progress uses local `revision + attemptId`; formal story `turn` is not a sidecar sequence number.
-- Keep a pre-interview choice such as `branch` as one structured control/state invariant. Generate its player-language label from the enum in the per-turn injection (for example `canon = 原著角色`, `original = 原创角色`) and state that the player has already confirmed it; do not add a second persisted label field or ask the Agent to reconfirm the choice.
-- The latest valid machine block in the persistent context is progress authority. A separate control file stores source/session identity, the current submitted/failed attempt, and the final receipt only; it must not duplicate the evolving model draft. Context compression may remove the bootstrap and older pairs, so the first retained answer/assistant pair may establish a revision greater than `1`; its marker/state must still agree, and every later retained revision must be contiguous.
-- Persist an attempt before invoking. On success, accept only an assistant block matching source/session, `processedAttemptId`, and expected `revision`; then clear the attempt. On transport rejection, mark that same attempt failed. If invocation resolved but projection/control write/navigation failed, enter recovery and never allocate a new attempt.
-- A retry first rereads persistent context. If the attempt is already processed, repair control state without resending; otherwise resend the identical marker/input with the same attempt id. Replayed assistant turns must be byte-equivalent for the same `(revision, processedAttemptId)`.
-- Initialization order is completion signal -> valid persistent context -> revision-zero bootstrap retry -> fail-closed protocol error -> fresh setup. Ordinary workspace read/parse errors must not silently route to a fresh import/setup surface.
-- Hidden protocol markers must be removed from final display and from streaming display. Streaming sanitization must trim every trailing prefix of a hidden marker (for example `[[开局会`) so no partial marker or JSON flashes before the full delimiter arrives.
-- A setup streaming view should keep the same message skeleton, typography, and layout from waiting through final text. Show already-sanitized provider deltas directly with a low-motion inline status mark; do not add a second typewriter interpolation. `prefers-reduced-motion` must disable its looping animation.
-- Formal model writes happen once, through one transactional final action after full input/ref/identity/clean-save validation. Test-stage legacy incomplete state fails closed and requests a new save; do not delete, merge, or migrate it. A completed old save may continue through its existing completion signal.
-- The final action builds the minimum sufficient formal model from actual opening content. `character`, `location`, `relationship`, `container`, `item`, character container roots, and equipment are ordinary schema content: create what the opening needs, do not manufacture empty inventory structure, and do not hide core refs in extensions. Normalize all entities before validating refs; container graphs must be acyclic and character-exclusive. Equipped items must be reachable with sufficient count and matching slot type. The action, not the Agent, derives `applied` and final attributes with the same safe-integer/round-away formula as equipment management. Any validation failure is zero-write.
+- Derive `session.id` and `contextSlot` from stable source identity. Keep `branch` as one structured invariant and generate its player-language label in the injection.
+- The compact control file contains only source identity, session id/slot, and branch. Completion is owned only by the formal setup summary.
+- Accept any non-empty displayable successful assistant response. It does not depend on an Agent note write or another per-turn acknowledgement.
+- Persistent transcript entries restore every successful player/assistant exchange. Preserve the generic transcript contract: entries have strictly increasing `sequence`, and the final entry sequence equals `lastSequence`.
+- Transport failures keep the submitted input only in current-page memory for retry. A reload restores through the last successful transcript entry and may discard the failed draft.
+- If invocation resolves but local projection or navigation fails, reread the transcript before resending so an archived successful response is not duplicated.
+- Initialization order is completion signal -> valid control/transcript -> bootstrap retry -> fail-closed legacy-state error -> fresh setup. Test-stage legacy state is not migrated or deleted.
+- Hidden opening-choice markers are removed from final and streaming display. A single trailing unclosed `[[开局选项]]` block extends to end of response.
+- Formal model writes happen once through one transactional final action. It reads source/control itself and blocks malformed payloads, unsafe or duplicate write identities, started play, missing runtime targets, unusable frontier anchors, and an unprojectable first reply.
+- The final action derives target names, source chapter metadata, and stable anchor kind/order. Optional semantic content is normalized or retained instead of becoming a speculative hard failure.
+- When the setup summary already reports complete, the final action must still inspect `enteredPlay`, `runtime.turn`, and later turn files. It returns complete without rewriting only when all three show that formal play has not started.
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required behavior |
 |---|---|
-| Context state matches source/session/revision/attempt | Restore messages and repair the compact control file |
-| Submitted attempt already appears as `processedAttemptId` | Clear attempt; do not invoke again |
-| Submitted attempt absent from latest valid context | Retry the same id/input; do not append a duplicate player message |
-| Same attempt/revision has a different assistant state or display | Fail closed as protocol conflict |
-| Bootstrap assistant revision is not `1`; a compressed-tail answer starts at revision `1`; or later revisions skip/regress | Fail closed; do not send another answer |
-| Invocation rejects before a valid assistant state | Mark the existing attempt `failed`; expose retry |
-| Invocation resolves but local reconciliation fails | Mark UI `recovering`; reread completion/context before any resend |
-| Full or partial hidden marker reaches streaming display | Remove from the marker-prefix boundary onward |
-| Injection/control/assistant `branch` values disagree | Reject the assistant/recovery result; do not continue or silently remap the branch |
-| Container/item ref is missing or wrong-type; container graph cycles or is shared by characters | Reject the final action before any write |
-| Equipped item is unreachable, quantity-exhausted, wrong-slot, or references an unknown attribute | Reject the final action before any write |
-| Equipment contribution or final attribute exceeds the safe-integer range | Reject the final action before any write |
-| Legacy incomplete formal files/context exist | Stable new-save error and zero mutation |
-| Same final payload receipt is retried before play starts | Return the existing receipt without rewriting |
-| Different payload, `enteredPlay`, or formal turn > 0 | Reject the final action |
+| Successful displayable response with no note update | Display immediately and continue |
+| Invocation rejects | Keep current-page input and expose retry |
+| Reload after a rejected input | Restore successful transcript only |
+| Resolved invocation is already present in transcript | Restore it; do not resend |
+| Transcript sequence regresses, duplicates, or disagrees with `lastSequence` | Fail closed as invalid archive state |
+| Trailing opening-choice block lacks its closing marker | Extract choices through end and hide the block |
+| Runtime protagonist or active scene does not exist in the commit | Reject before any write |
+| First formal reply cannot project visible content and choices | Reject before any write |
+| Legacy incomplete or non-clean formal state exists | Stable new-save error and zero mutation |
+| Setup summary is complete; `enteredPlay !== true`, `runtime.turn <= 0`, and no turn after `turn-000000.json` exists | Return complete with zero writes |
+| `enteredPlay === true`, `runtime.turn > 0`, or a later turn file exists | Reject final action with `OPENING_PLAY_ALREADY_STARTED` |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: answer is durably recorded as `attempt-abc`; refresh finds context state with `processedAttemptId: "attempt-abc"`, repairs control, and shows one player answer plus one assistant question.
-- Good: an opening that establishes a carried or equipped item commits the character, exclusive container graph, item, derived equipment projection, and all refs atomically; an opening without inventory facts creates none of those entities.
-- Base: bootstrap invocation rejects before any assistant state; control remains revision zero and the UI retries the same bootstrap marker.
-- Bad: use formal `runtime.turn` as interview revision, copy the whole draft into both context and control JSON, or create a new attempt after an ambiguous resolve.
-- Bad: sanitize only complete `[[hidden]]` delimiters; chunked streaming can briefly expose `[[hid` to the player.
-- Bad: persist a Chinese branch label as a second authority, ask the player to choose the branch again, forbid all opening items, require an inventory every time, or accept Agent-authored `applied` values.
+- Good: an explanatory response changes no semantic note; it is still archived and displayed.
+- Good: refresh rebuilds all successful exchanges and latest choices in transcript sequence order.
+- Base: bootstrap invocation rejects; the control remains usable for retry.
+- Bad: reject a successful response because an optional note is absent or unchanged.
+- Bad: persist failed-input retry bookkeeping across refresh.
+- Bad: sanitize only complete opening-choice blocks and expose a trailing unclosed block.
 
 ### 6. Tests Required
 
 - Type-check and production-build the consuming card frontend.
-- Protocol harness assertions: complete marker removal, every partial marker prefix, strict machine-state parsing, bootstrap revision `1`, valid compressed-tail baseline above `1`, later monotonic revisions, duplicate replay equality, and attempt-id reuse rejection.
-- Recovery assertions: durable write before invoke, reject -> failed, resolve/reconcile failure -> recovering, context-first retry, no duplicate player message, and completion-first initialization.
-- Final-action harness assertions: no-inventory baseline; valid container/item/equipment closure and deterministic projection parity; unknown/wrong-type ref; duplicate id/path; container cycle/shared ownership; unreachable/wrong-slot/quantity-exhausted equipment; unknown attribute and safe-integer overflow; source/session mismatch; legacy/formal state with zero writes; same-receipt idempotency; different payload rejection; `enteredPlay`; and turn > 0.
-- Package verification: generated frontend entry exists, manifest file sizes match sources, and every ZIP entry matches the source byte-for-byte.
+- Parser assertions: marker removal, partial marker prefixes, trailing unclosed choices, strict transcript sequencing, and source/session control validation.
+- Flow assertions: success needs no note update, rejection keeps same-page retry input, refresh restores only successful transcript entries, and completion-first initialization remains authoritative.
+- Final-action assertions: minimal success, unsafe/duplicate id, missing runtime target with zero writes, invalid reply projection with zero writes, started play, and already-complete zero-write behavior.
+- Package verification: generated frontend entry exists, manifest sizes match sources, and ZIP entries match source bytes.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```ts
-const attemptId = crypto.randomUUID()
-await tsian.invokeAgent(agentId, answer, { persist: true })
-control.revision = runtime.turn
-
-function streamingDisplay(text: string) {
-  return text.replace(FULL_HIDDEN_BLOCK_RE, "")
-}
+const result = await tsian.invokeAgent(agentId, answer, { persist: true })
+if (!semanticNoteChangedThisTurn()) throw new Error("response not confirmed")
 ```
 
 #### Correct
 
 ```ts
-await writeControl({ ...control, attempt }) // durable before invoke
-const result = await tsian.invokeAgent(agentId, encodeAttempt(attempt), {
+const result = await tsian.invokeAgent(agentId, encodeAnswer(answer), {
   invocationId,
   contextSlot: control.session.slot,
   persist: true,
+  transcript: { mode: "full", audience: "player" },
 })
-const state = parseAndValidateState(result.response, {
-  revision: attempt.basedOnRevision + 1,
-  processedAttemptId: attempt.id,
-})
-
-function streamingDisplay(text: string) {
-  return trimFullBlocksAndTrailingMarkerPrefixes(text)
-}
+show(parseDisplayableAssistant(result.response))
 ```
+
 
 
 ## Scenario: play-frontend Workspace Data Consumption

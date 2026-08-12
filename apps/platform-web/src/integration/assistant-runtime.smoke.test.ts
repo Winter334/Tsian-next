@@ -64,6 +64,7 @@ import {
   writeWorkspaceFileForSave,
 } from "../storage"
 import { localDb } from "../storage/db"
+import { parseOpeningAssistant } from "../../../play-frontend-dev/src/lib/opening-interview"
 
 const CARD_ID = "assistant-runtime-smoke"
 const MODEL_ID = "assistant-smoke-model"
@@ -497,14 +498,162 @@ describe("Agent context contracts smoke", () => {
       "save/playthrough/frontier.json",
     ])
     expect(WORLD_ARCHITECT_SKILL_FILES.map((file) => file.path)).toEqual(expect.arrayContaining([
-      "agents/world-architect/skills/开局建模/scripts/_progress.js",
-      "agents/world-architect/skills/开局建模/scripts/read-opening-progress.js",
-      "agents/world-architect/skills/开局建模/scripts/advance-opening-progress.js",
+      "agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js",
+      "agents/world-architect/skills/开局建模/scripts/read-opening-slice.js",
       "agents/world-architect/skills/开局建模/scripts/commit-opening.js",
     ]))
+    const openingTemplatePaths = WORLD_ARCHITECT_SKILL_FILES.map((file) => file.path)
+    expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/_progress.js")
+    expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/read-opening-progress.js")
+    expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/advance-opening-progress.js")
     const currentSchema = DEFAULT_SAVE_RUNTIME_FILES.find((file) => file.path === "save/schema/current.md")?.content ?? ""
     expect(currentSchema.length).toBeLessThan(1_000)
     expect(currentSchema).toContain("save-specific")
+  })
+
+  it("keeps simplified opening recovery and commit boundaries executable", async () => {
+    expect(parseOpeningAssistant("你想从哪里开始？\n[[开局选项]]\n- 城门\n- 客栈")).toEqual({
+      displayContent: "你想从哪里开始？",
+      choices: ["城门", "客栈"],
+    })
+    expect(parseOpeningAssistant("问题\n[[开局选项]]\n- A\n[[/开局选项]]\n[[开局选项]]\n- B")).toBeNull()
+
+    const scriptContent = (suffix: string): string => {
+      const file = WORLD_ARCHITECT_SKILL_FILES.find((entry) => entry.path.endsWith(suffix))
+      if (!file) throw new Error(`Missing opening script: ${suffix}`)
+      return file.content
+    }
+    type OpeningRunner = (
+      input: Record<string, unknown>,
+      tsian: Record<string, unknown>,
+      signal: { throwIfAborted(): void },
+    ) => Promise<Record<string, unknown>>
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (...args: string[]) => OpeningRunner
+    const runOpening = new AsyncFunction(
+      "input",
+      "tsian",
+      "signal",
+      `${scriptContent("开局建模/scripts/_common.js")}\n${scriptContent("开局建模/scripts/_validation.js")}\n${scriptContent("开局建模/scripts/commit-opening.js")}`,
+    )
+    const hashText = (input: string): string => {
+      let hash = 0x811c9dc5
+      for (let index = 0; index < input.length; index += 1) {
+        hash ^= input.charCodeAt(index)
+        hash = Math.imul(hash, 0x01000193)
+      }
+      return (hash >>> 0).toString(16).padStart(8, "0")
+    }
+    const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
+    const makeFiles = (): Map<string, string> => {
+      const source = {
+        importedAt: "2026-08-12T00:00:00.000Z",
+        normalizationVersion: "test-v1",
+        title: "测试小说",
+        chapterCount: 2,
+      }
+      const sourceHash = hashText(JSON.stringify(source))
+      return new Map<string, string>([
+        ["save/source/manifest.json", json({ ...source, status: "ready" })],
+        ["save/source/chapters.index.json", json({
+          version: 2,
+          chapters: [1, 2].map((index) => ({
+            index,
+            title: `第${index}章`,
+            ref: `source:chapter-${String(index).padStart(4, "0")}`,
+            source: { kind: "shard", shardId: "s1", path: "save/source/shards/s1.txt", start: 0, end: 10 },
+          })),
+        })],
+        ["save/playthrough/opening-interview.json", json({
+          schema: "novel-airp.opening-interview.v2",
+          source: { ...source, hash: sourceHash },
+          session: { id: `opening-${sourceHash}`, slot: `opening-interview-${sourceHash}` },
+          branch: "canon",
+        })],
+        ["save/playthrough/runtime.json", json({ turn: 0, worldTime: "", plotOrder: 1, location: null, weather: "", activeSceneRefs: [], protagonistRef: null, extensions: {}, updatedAtTurn: 0, updatedBy: null })],
+        ["save/playthrough/frontier.json", json({ sourceWindow: { start: null, end: null }, extractedThrough: null, timeline: [{ kind: "source", order: 1, chapter: 1, time: "元年", label: "开局" }], notes: "" })],
+        ["save/playthrough/understanding-summary.json", json({ status: "pending", title: null, candidateCharacters: [] })],
+        ["save/playthrough/setup-summary.json", json({ status: "pending", summary: null })],
+        ["game-card.json", json({ runtime: { entrypoints: { playerTurn: "storyteller" } } })],
+        ["agents/storyteller/agent.json", json({ id: "storyteller" })],
+        ["agents/storyteller/AGENT.md", "# Storyteller\n"],
+      ])
+    }
+    const makeRuntime = (files = makeFiles()) => {
+      const writes: string[] = []
+      const project = vi.fn(async (content: string) => ({
+        content,
+        displayContent: "晨光照进客栈。",
+        projections: { choices: ["起身"] },
+      }))
+      const tsian = {
+        workspace: {
+          read: vi.fn(async ({ path }: { path: string }) => files.has(path) ? { path, content: files.get(path) } : null),
+          write: vi.fn(async ({ path, content }: { path: string; content: string }) => {
+            files.set(path, content)
+            writes.push(path)
+            return { path, content }
+          }),
+          glob: vi.fn(async () => ({ matches: [], truncated: false })),
+          list: vi.fn(async () => ({ entries: [] })),
+        },
+        reply: { project },
+        trace: vi.fn(),
+        memory: { set: vi.fn() },
+      }
+      return { files, writes, project, tsian }
+    }
+    const payload = (): Record<string, unknown> => ({
+      entities: [
+        { id: "character:hero", name: "主角", brief: "测试主角" },
+        { id: "location:inn", name: "客栈", brief: "开局地点" },
+      ],
+      scenes: [{ id: "scene:opening", name: "客栈清晨", location: { ref: "location:inn", name: "错误名称" }, present: [{ ref: "character:hero" }] }],
+      relationships: [],
+      runtime: { protagonistRef: { ref: "character:hero", name: "错误名称" }, location: { ref: "location:inn" }, activeSceneRefs: [{ ref: "scene:opening" }] },
+      frontier: { sourceWindow: { startIndex: 1, endIndex: 2 }, timeline: [{ chapter: 1, time: "清晨", label: "醒来" }] },
+      summary: "主角在客栈醒来。",
+      openingReply: "晨光照进客栈。\n[[选项]]\n- 起身\n[[/选项]]",
+    })
+    const signal = { throwIfAborted() {} }
+
+    const success = makeRuntime()
+    await expect(runOpening(payload(), success.tsian, signal)).resolves.toMatchObject({ status: "complete" })
+    expect(JSON.parse(success.files.get("save/playthrough/runtime.json") ?? "null").protagonistRef).toEqual({ ref: "character:hero", name: "主角" })
+    expect(JSON.parse(success.files.get("save/playthrough/frontier.json") ?? "null").timeline[0]).toEqual({ kind: "source", order: 1, chapter: 1, time: "清晨", label: "醒来" })
+
+    const missingTarget = makeRuntime()
+    const missingPayload = payload()
+    ;(missingPayload.runtime as { protagonistRef: { ref: string } }).protagonistRef.ref = "character:missing"
+    await expect(runOpening(missingPayload, missingTarget.tsian, signal)).rejects.toMatchObject({ code: "OPENING_REF_UNKNOWN" })
+    expect(missingTarget.writes).toEqual([])
+
+    const unsafeId = makeRuntime()
+    const unsafePayload = payload()
+    ;(unsafePayload.entities as Array<{ id: string }>)[0]!.id = "character:../hero"
+    await expect(runOpening(unsafePayload, unsafeId.tsian, signal)).rejects.toMatchObject({ code: "OPENING_ENTITY_ID_INVALID" })
+    expect(unsafeId.writes).toEqual([])
+
+    const unprojectable = makeRuntime()
+    unprojectable.project.mockResolvedValueOnce({
+      content: "晨光照进客栈。",
+      displayContent: "晨光照进客栈。",
+      projections: { choices: [] },
+    })
+    await expect(runOpening(payload(), unprojectable.tsian, signal)).rejects.toMatchObject({ code: "OPENING_REPLY_PROJECTION_FAILED" })
+    expect(unprojectable.writes).toEqual([])
+
+    const completeFiles = makeFiles()
+    completeFiles.set("save/playthrough/setup-summary.json", json({ status: "complete", summary: "完成", enteredPlay: false }))
+    const complete = makeRuntime(completeFiles)
+    await expect(runOpening(payload(), complete.tsian, signal)).resolves.toMatchObject({ status: "complete", alreadyComplete: true })
+    expect(complete.writes).toEqual([])
+
+    const startedFiles = makeFiles()
+    startedFiles.set("save/playthrough/setup-summary.json", json({ status: "complete", summary: "完成", enteredPlay: false }))
+    startedFiles.set("save/playthrough/runtime.json", json({ turn: 1, worldTime: "次日", weather: "晴", activeSceneRefs: [], extensions: {} }))
+    const started = makeRuntime(startedFiles)
+    await expect(runOpening(payload(), started.tsian, signal)).rejects.toMatchObject({ code: "OPENING_PLAY_ALREADY_STARTED" })
+    expect(started.writes).toEqual([])
   })
 })
 

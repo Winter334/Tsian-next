@@ -1,14 +1,14 @@
 import type { SourceManifest } from "./source"
 
 export const OPENING_CONTROL_PATH = "save/playthrough/opening-interview.json"
-export const OPENING_PROGRESS_PATH = "save/playthrough/opening-progress.json"
-export const OPENING_PROGRESS_SCHEMA = "novel-airp.opening-progress.v1"
-export const OPENING_CONTROL_SCHEMA = "novel-airp.opening-interview.v1"
+export const OPENING_CONTROL_SCHEMA = "novel-airp.opening-interview.v2"
 
-const CHOICES_BLOCK_RE = /\[\[开局选项\]\]\s*([\s\S]*?)\s*\[\[\/开局选项\]\]/g
-const OPENING_HIDDEN_MARKERS = ["[[开局选项]]", "[[/开局选项]]"] as const
+const CLOSED_CHOICES_BLOCK_RE = /\[\[开局选项\]\]\s*([\s\S]*?)\s*\[\[\/开局选项\]\]/g
+const OPENING_CHOICE_START = "[[开局选项]]"
+const OPENING_CHOICE_END = "[[/开局选项]]"
+const OPENING_HIDDEN_MARKERS = [OPENING_CHOICE_START, OPENING_CHOICE_END] as const
 const START_MARKER_RE = /^opening-interview:start:([a-z0-9-]+)$/
-const ANSWER_MARKER_RE = /^opening-interview:answer:([a-z0-9-]+)\n([\s\S]*)$/
+const ANSWER_MARKER_RE = /^opening-interview:answer\n([\s\S]*)$/
 const SOURCE_HASH_RE = /^[a-f0-9]{8}$/
 const SESSION_ID_RE = /^opening-[a-f0-9]{8}$/
 const SESSION_SLOT_RE = /^opening-interview-[a-f0-9]{8}$/
@@ -29,55 +29,14 @@ export interface OpeningSourceIdentity {
   hash: string
 }
 
-export interface OpeningProgress {
-  schema: typeof OPENING_PROGRESS_SCHEMA
-  sessionId: string
-  sourceHash: string
-  branch: CharacterBranch
-  revision: number
-  processedAttemptId: string
-  readSlices: Array<{
-    ref: string
-    start?: number
-    end?: number
-    purpose: string
-  }>
-  protagonist?: {
-    mode: CharacterBranch
-    ref?: string
-    name?: string
-  }
-  decisions: Record<string, { value: string; evidenceRefs?: string[] }>
-  unresolved: Record<string, { reason: string }>
-  phase: "interviewing" | "ready-to-commit" | "complete"
-  updatedAt: string
-}
-
-export interface OpeningAttempt {
-  id: string
-  input: string
-  inputHash: string
-  basedOnRevision: number
-  status: "submitted" | "failed"
-  createdAt: string
-}
-
 export interface OpeningInterviewControl {
   schema: typeof OPENING_CONTROL_SCHEMA
   source: OpeningSourceIdentity
   session: {
     id: string
     slot: string
-    revision: number
   }
   branch: CharacterBranch
-  status: "interviewing" | "complete"
-  attempt?: OpeningAttempt
-  receipt?: {
-    revision: number
-    payloadHash: string
-    committedAt: string
-  }
 }
 
 export interface ParsedOpeningAssistant {
@@ -99,7 +58,7 @@ export interface OpeningTranscriptEntry {
 
 export type ParsedOpeningUser =
   | { kind: "start"; sessionId: string }
-  | { kind: "answer"; attemptId: string; content: string }
+  | { kind: "answer"; content: string }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -125,10 +84,6 @@ function hashText(input: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0")
 }
 
-export function openingInputHash(input: string): string {
-  return hashText(input)
-}
-
 export function openingSourceIdentity(manifest: SourceManifest): OpeningSourceIdentity {
   const base = {
     importedAt: manifest.importedAt,
@@ -136,10 +91,7 @@ export function openingSourceIdentity(manifest: SourceManifest): OpeningSourceId
     title: manifest.title,
     chapterCount: manifest.chapterCount,
   }
-  return {
-    ...base,
-    hash: hashText(JSON.stringify(base)),
-  }
+  return { ...base, hash: hashText(JSON.stringify(base)) }
 }
 
 export function openingSession(identity: OpeningSourceIdentity): { id: string; slot: string; transcriptPath: string } {
@@ -158,9 +110,8 @@ export function createOpeningControl(manifest: SourceManifest, branch: Character
   return {
     schema: OPENING_CONTROL_SCHEMA,
     source,
-    session: { id: session.id, slot: session.slot, revision: 0 },
+    session: { id: session.id, slot: session.slot },
     branch,
-    status: "interviewing",
   }
 }
 
@@ -168,126 +119,45 @@ export function openingBootstrapMarker(sessionId: string): string {
   return `opening-interview:start:${sessionId}`
 }
 
-export function openingAnswerMarker(attemptId: string, input: string): string {
-  return `opening-interview:answer:${attemptId}\n${input}`
+export function openingAnswerMarker(input: string): string {
+  return `opening-interview:answer\n${input}`
 }
 
 export function parseOpeningUser(content: string): ParsedOpeningUser | null {
   const start = START_MARKER_RE.exec(content)
   if (start?.[1]) return { kind: "start", sessionId: start[1] }
   const answer = ANSWER_MARKER_RE.exec(content)
-  if (answer?.[1] !== undefined && answer[2] !== undefined) {
-    const answerContent = cleanString(answer[2], 4_000)
-    if (!answerContent) return null
-    return { kind: "answer", attemptId: answer[1], content: answerContent }
+  if (answer?.[1] !== undefined) {
+    const answerContent = cleanString(answer[1], 4_000)
+    if (answerContent) return { kind: "answer", content: answerContent }
   }
   return null
 }
 
-function parseStringRecord(value: unknown, kind: "decisions" | "unresolved"): Record<string, { value: string; evidenceRefs?: string[] } | { reason: string }> | null {
-  if (!isRecord(value) || Object.keys(value).length > 48) return null
-  const result: Record<string, { value: string; evidenceRefs?: string[] } | { reason: string }> = {}
-  for (const [rawKey, rawItem] of Object.entries(value)) {
-    const key = cleanString(rawKey, 80)
-    if (!key || key !== rawKey || !isRecord(rawItem)) return null
-    if (kind === "decisions") {
-      if (!hasOnlyKeys(rawItem, ["value", "evidenceRefs"])) return null
-      const decisionValue = cleanString(rawItem.value, 800)
-      if (!decisionValue) return null
-      let refs: string[] = []
-      if (rawItem.evidenceRefs !== undefined) {
-        if (!Array.isArray(rawItem.evidenceRefs) || rawItem.evidenceRefs.length > 16) return null
-        const seenRefs = new Set<string>()
-        for (const rawRef of rawItem.evidenceRefs) {
-          const ref = cleanString(rawRef, 240)
-          if (!ref || seenRefs.has(ref)) return null
-          seenRefs.add(ref)
-          refs.push(ref)
-        }
-      }
-      result[key] = { value: decisionValue, ...(refs.length > 0 ? { evidenceRefs: refs } : {}) }
-    } else {
-      if (!hasOnlyKeys(rawItem, ["reason"])) return null
-      const reason = cleanString(rawItem.reason, 800)
-      if (!reason) return null
-      result[key] = { reason }
-    }
-  }
-  return result
-}
+function extractChoicesText(content: string): string | null {
+  const startCount = content.split(OPENING_CHOICE_START).length - 1
+  if (startCount > 1) return null
+  const closedMatches = [...content.matchAll(CLOSED_CHOICES_BLOCK_RE)]
+  if (closedMatches.length > 1) return null
+  if (closedMatches[0]) return closedMatches[0][1] ?? ""
 
-export function parseOpeningProgress(value: unknown): OpeningProgress | null {
-  if (!isRecord(value) || value.schema !== OPENING_PROGRESS_SCHEMA
-    || !hasOnlyKeys(value, ["schema", "sessionId", "sourceHash", "branch", "revision", "processedAttemptId", "readSlices", "protagonist", "decisions", "unresolved", "phase", "updatedAt"])) return null
-  const sessionId = cleanString(value.sessionId, 80)
-  const sourceHash = cleanString(value.sourceHash, 32)
-  const branch = value.branch === "canon" || value.branch === "original" ? value.branch : null
-  const revision = typeof value.revision === "number" && Number.isSafeInteger(value.revision) && value.revision > 0 && value.revision <= 999_999 ? value.revision : null
-  const processedAttemptId = cleanString(value.processedAttemptId, 100)
-  const phase = value.phase === "interviewing" || value.phase === "ready-to-commit" || value.phase === "complete" ? value.phase : null
-  const updatedAt = cleanString(value.updatedAt, 80)
-  if (!sessionId || !SESSION_ID_RE.test(sessionId) || !sourceHash || !SOURCE_HASH_RE.test(sourceHash)
-    || !branch || revision === null || !processedAttemptId
-    || (processedAttemptId !== "start" && !/^attempt-[a-z0-9-]+$/.test(processedAttemptId)) || !phase || !updatedAt) return null
-
-  if (!Array.isArray(value.readSlices) || value.readSlices.length > 48) return null
-  const readSlices: OpeningProgress["readSlices"] = []
-  const readSliceKeys = new Set<string>()
-  for (const rawSlice of value.readSlices) {
-    if (!isRecord(rawSlice) || !hasOnlyKeys(rawSlice, ["ref", "start", "end", "purpose"])) return null
-    const ref = cleanString(rawSlice.ref, 240)
-    const purpose = cleanString(rawSlice.purpose, 500)
-    if (!ref || !purpose) return null
-    const start = typeof rawSlice.start === "number" && Number.isSafeInteger(rawSlice.start) && rawSlice.start >= 0 ? rawSlice.start : undefined
-    const end = typeof rawSlice.end === "number" && Number.isSafeInteger(rawSlice.end) && rawSlice.end >= 0 ? rawSlice.end : undefined
-    if ((start === undefined) !== (end === undefined) || (start !== undefined && end !== undefined && end < start)) return null
-    const sliceKey = `${ref}:${start ?? ""}:${end ?? ""}`
-    if (readSliceKeys.has(sliceKey)) return null
-    readSliceKeys.add(sliceKey)
-    readSlices.push({ ref, ...(start !== undefined ? { start } : {}), ...(end !== undefined ? { end } : {}), purpose })
-  }
-
-  const decisions = parseStringRecord(value.decisions, "decisions")
-  const unresolved = parseStringRecord(value.unresolved, "unresolved")
-  if (!decisions || !unresolved) return null
-
-  let protagonist: OpeningProgress["protagonist"]
-  if (value.protagonist !== undefined) {
-    if (!isRecord(value.protagonist) || !hasOnlyKeys(value.protagonist, ["mode", "ref", "name"])
-      || value.protagonist.mode !== branch) return null
-    const ref = value.protagonist.ref === undefined ? undefined : cleanString(value.protagonist.ref, 120)
-    const name = value.protagonist.name === undefined ? undefined : cleanString(value.protagonist.name, 120)
-    if (value.protagonist.ref !== undefined && !ref) return null
-    if (value.protagonist.name !== undefined && !name) return null
-    protagonist = { mode: branch, ...(ref ? { ref } : {}), ...(name ? { name } : {}) }
-  }
-
-  return {
-    schema: OPENING_PROGRESS_SCHEMA,
-    sessionId,
-    sourceHash,
-    branch,
-    revision,
-    processedAttemptId,
-    readSlices,
-    ...(protagonist ? { protagonist } : {}),
-    decisions: decisions as OpeningProgress["decisions"],
-    unresolved: unresolved as OpeningProgress["unresolved"],
-    phase,
-    updatedAt,
-  }
+  const start = content.indexOf(OPENING_CHOICE_START)
+  if (start < 0) return ""
+  if (content.indexOf(OPENING_CHOICE_START, start + OPENING_CHOICE_START.length) >= 0) return null
+  if (content.indexOf(OPENING_CHOICE_END, start + OPENING_CHOICE_START.length) >= 0) return null
+  return content.slice(start + OPENING_CHOICE_START.length)
 }
 
 export function parseOpeningAssistant(content: string, projections?: Record<string, unknown>): ParsedOpeningAssistant | null {
   if (content.length > 80_000) return null
-  const choicesMatches = [...content.matchAll(CHOICES_BLOCK_RE)]
-  if (choicesMatches.length > 1) return null
+  const choicesText = extractChoicesText(content)
+  if (choicesText === null) return null
   const projectedChoices = Array.isArray(projections?.openingChoices)
     ? projections.openingChoices.filter((item): item is string => typeof item === "string")
     : []
   const choices = projectedChoices.length > 0
     ? projectedChoices
-    : (choicesMatches[0]?.[1] ?? "")
+    : choicesText
         .split(/\r?\n/)
         .map((line) => line.replace(/^\s*[-*+]\s*/, "").trim())
         .filter(Boolean)
@@ -310,7 +180,7 @@ export function sanitizeOpeningDisplay(content: string): string {
       break
     }
   }
-  return visible.replace(CHOICES_BLOCK_RE, "").trim()
+  return visible.replace(CLOSED_CHOICES_BLOCK_RE, "").trim()
 }
 
 export function parseOpeningTranscript(value: unknown, expectedSlot: string): OpeningTranscriptEntry[] | null {
@@ -351,15 +221,14 @@ export function parseOpeningTranscript(value: unknown, expectedSlot: string): Op
       },
     })
   }
-  if (previous !== value.lastSequence) return null
-  return entries
+  return previous === value.lastSequence ? entries : null
 }
 
 export function parseOpeningControl(value: unknown): OpeningInterviewControl | null {
   if (!isRecord(value) || value.schema !== OPENING_CONTROL_SCHEMA
-    || !hasOnlyKeys(value, ["schema", "source", "session", "branch", "status", "attempt", "receipt"])
+    || !hasOnlyKeys(value, ["schema", "source", "session", "branch"])
     || !isRecord(value.source) || !hasOnlyKeys(value.source, ["importedAt", "normalizationVersion", "title", "chapterCount", "hash"])
-    || !isRecord(value.session) || !hasOnlyKeys(value.session, ["id", "slot", "revision"])) return null
+    || !isRecord(value.session) || !hasOnlyKeys(value.session, ["id", "slot"])) return null
   const importedAt = cleanString(value.source.importedAt, 80)
   const normalizationVersion = cleanString(value.source.normalizationVersion, 80)
   const title = cleanString(value.source.title, 300)
@@ -367,46 +236,17 @@ export function parseOpeningControl(value: unknown): OpeningInterviewControl | n
   const chapterCount = typeof value.source.chapterCount === "number" && Number.isSafeInteger(value.source.chapterCount) && value.source.chapterCount > 0 ? value.source.chapterCount : null
   const id = cleanString(value.session.id, 80)
   const slot = cleanString(value.session.slot, 100)
-  const revision = typeof value.session.revision === "number" && Number.isSafeInteger(value.session.revision) && value.session.revision >= 0 ? value.session.revision : null
   const branch = value.branch === "canon" || value.branch === "original" ? value.branch : null
-  const status = value.status === "interviewing" || value.status === "complete" ? value.status : null
   if (!importedAt || !normalizationVersion || !title || !hash || !SOURCE_HASH_RE.test(hash)
-    || chapterCount === null || !id || !SESSION_ID_RE.test(id) || !slot || !SESSION_SLOT_RE.test(slot)
-    || revision === null || !branch || !status) return null
+    || chapterCount === null || !id || !SESSION_ID_RE.test(id) || !slot || !SESSION_SLOT_RE.test(slot) || !branch) return null
   const expectedHash = hashText(JSON.stringify({ importedAt, normalizationVersion, title, chapterCount }))
   if (hash !== expectedHash || id !== `opening-${hash}` || slot !== `opening-interview-${hash}`) return null
-
-  const control: OpeningInterviewControl = {
+  return {
     schema: OPENING_CONTROL_SCHEMA,
     source: { importedAt, normalizationVersion, title, chapterCount, hash },
-    session: { id, slot, revision },
+    session: { id, slot },
     branch,
-    status,
   }
-  if (value.attempt !== undefined) {
-    if (!isRecord(value.attempt) || !hasOnlyKeys(value.attempt, ["id", "input", "inputHash", "basedOnRevision", "status", "createdAt"])) return null
-    const attemptId = cleanString(value.attempt.id, 100)
-    const input = cleanString(value.attempt.input, 4_000)
-    const inputHash = cleanString(value.attempt.inputHash, 32)
-    const basedOnRevision = typeof value.attempt.basedOnRevision === "number" && Number.isSafeInteger(value.attempt.basedOnRevision) && value.attempt.basedOnRevision >= 0 ? value.attempt.basedOnRevision : null
-    const attemptStatus = value.attempt.status === "submitted" || value.attempt.status === "failed" ? value.attempt.status : null
-    const createdAt = cleanString(value.attempt.createdAt, 80)
-    if (!attemptId || !/^attempt-[a-z0-9-]+$/.test(attemptId) || !input || !inputHash
-      || inputHash !== openingInputHash(input) || basedOnRevision === null || basedOnRevision !== revision
-      || !attemptStatus || !createdAt || status !== "interviewing") return null
-    control.attempt = { id: attemptId, input, inputHash, basedOnRevision, status: attemptStatus, createdAt }
-  }
-  if (value.receipt !== undefined) {
-    if (!isRecord(value.receipt) || !hasOnlyKeys(value.receipt, ["revision", "payloadHash", "committedAt"])) return null
-    const receiptRevision = typeof value.receipt.revision === "number" && Number.isSafeInteger(value.receipt.revision) && value.receipt.revision > 0 ? value.receipt.revision : null
-    const payloadHash = cleanString(value.receipt.payloadHash, 128)
-    const committedAt = cleanString(value.receipt.committedAt, 80)
-    if (!receiptRevision || !payloadHash || !/^[a-f0-9]{64}$/.test(payloadHash) || !committedAt) return null
-    control.receipt = { revision: receiptRevision, payloadHash, committedAt }
-  }
-  if (status === "complete" && (!control.receipt || control.attempt || revision !== control.receipt.revision)) return null
-  if (status === "interviewing" && control.receipt) return null
-  return control
 }
 
 export function serializeOpeningControl(control: OpeningInterviewControl): string {
@@ -428,17 +268,12 @@ export function openingControlMatchesSession(control: OpeningInterviewControl, m
   return control.session.id === expected.id && control.session.slot === expected.slot
 }
 
-export function createAttemptId(): string {
-  const uuid = globalThis.crypto?.randomUUID?.()
-  return (uuid ? `attempt-${uuid}` : `attempt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`).toLowerCase()
-}
-
 export function buildOpeningInjection(control: OpeningInterviewControl): string {
   const branchLabel = OPENING_BRANCH_LABELS[control.branch]
   return [
     "执行《开局建模》Skill，主持本次开局访谈。",
     `玩家已确认角色类型：${branchLabel}（branch=${control.branch}）。将此选择视为当前会话不变量，第一次提问直接进入该分支。`,
-    "会话不变量如下；不得改写 branch/source/session：",
+    "当前小说与会话如下：",
     JSON.stringify({
       sessionId: control.session.id,
       sourceHash: control.source.hash,
@@ -449,8 +284,6 @@ export function buildOpeningInjection(control: OpeningInterviewControl): string 
         chapterCount: control.source.chapterCount,
       },
       branch: control.branch,
-      basedOnRevision: control.attempt?.basedOnRevision ?? control.session.revision,
-      attemptId: control.attempt?.id ?? "start",
     }),
   ].join("\n")
 }

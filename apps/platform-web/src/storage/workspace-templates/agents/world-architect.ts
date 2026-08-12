@@ -4,9 +4,6 @@ import cardWorldArchitectAgentInstructions from "../../../../../../cards/沉浸�
 import cardOpeningSkill from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/SKILL.md?raw"
 import cardOpeningCommon from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/_common.js?raw"
 import cardOpeningValidation from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/_validation.js?raw"
-import cardOpeningProgress from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/_progress.js?raw"
-import cardOpeningReadProgress from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/read-opening-progress.js?raw"
-import cardOpeningAdvanceProgress from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/advance-opening-progress.js?raw"
 import cardOpeningInspectSource from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js?raw"
 import cardOpeningReadSlice from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/read-opening-slice.js?raw"
 import cardOpeningCommit from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/commit-opening.js?raw"
@@ -243,9 +240,6 @@ export const WORLD_ARCHITECT_SKILL_FILES: TemplateFile[] = [
   { path: "agents/world-architect/skills/开局建模/SKILL.md", content: cardOpeningSkill },
   { path: "agents/world-architect/skills/开局建模/scripts/_common.js", content: cardOpeningCommon },
   { path: "agents/world-architect/skills/开局建模/scripts/_validation.js", content: cardOpeningValidation },
-  { path: "agents/world-architect/skills/开局建模/scripts/_progress.js", content: cardOpeningProgress },
-  { path: "agents/world-architect/skills/开局建模/scripts/read-opening-progress.js", content: cardOpeningReadProgress },
-  { path: "agents/world-architect/skills/开局建模/scripts/advance-opening-progress.js", content: cardOpeningAdvanceProgress },
   { path: "agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js", content: cardOpeningInspectSource },
   { path: "agents/world-architect/skills/开局建模/scripts/read-opening-slice.js", content: cardOpeningReadSlice },
   { path: "agents/world-architect/skills/开局建模/scripts/commit-opening.js", content: cardOpeningCommit },
