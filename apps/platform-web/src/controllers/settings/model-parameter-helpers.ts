@@ -36,6 +36,7 @@ export const MODEL_PARAMETER_TIPS = {
   thinkingBudget: "思考模式的最大思考 token 预算。留空 = 不限制/不发送。对应 thinkingBudget / budget_tokens。",
   includeThoughts: "是否在响应中返回模型的思考过程内容。对应 includeThoughts。",
   serviceTier: "服务等级，影响延迟与可用性。auto = 自动选择，standard_only = 仅标准。对应 service_tier。",
+  promptCaching: "复用重复的提示词内容，降低延迟和输入费用；兼容接口不支持时可关闭。",
   thinkingMode: "Claude 扩展思考开关。disabled = 关闭，adaptive = 自适应，enabled = 启用。对应 thinking.type。",
   thinkingDisplay: "思考内容的展示方式。summarized = 摘要展示，omitted = 不返回思考内容。对应 thinking.display。",
   customRequestParams: "以 JSON 形式追加任意请求参数，会合并到发送给接口的请求体中。适合配置未被面板覆盖的字段，如 { \"seed\": 42 }。",

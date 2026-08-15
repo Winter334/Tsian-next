@@ -276,6 +276,7 @@ function normalizeClaudeModelParameters(input: unknown): BrowserClaudeModelParam
     topK: normalizePositiveInteger(record.topK),
     stopSequences: normalizeStringList(record.stopSequences),
     serviceTier: normalizeClaudeServiceTier(record.serviceTier),
+    promptCachingEnabled: record.promptCachingEnabled !== false,
     thinkingMode: normalizeClaudeThinkingMode(record.thinkingMode),
     thinkingBudgetTokens: normalizePositiveInteger(record.thinkingBudgetTokens),
     thinkingDisplay: normalizeClaudeThinkingDisplay(record.thinkingDisplay),

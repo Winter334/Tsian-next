@@ -118,6 +118,9 @@ function buildClaudeRequestBody(input: {
     messages: input.messages,
   }
   applyClaudeModelParameters(body, input.config)
+  if (provider.promptCachingEnabled) {
+    body.cache_control = { type: "ephemeral" }
+  }
   if (input.system) {
     body.system = input.system
   }

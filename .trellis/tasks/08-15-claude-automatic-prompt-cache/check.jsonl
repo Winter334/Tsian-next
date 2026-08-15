@@ -1,0 +1,5 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Provides the package-layer scope and required platform-web verification entry points."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Review cache request behavior, diagnostic preservation, no-new-unit-test policy, and mandatory verification commands."}
+{"file":".trellis/spec/platform-web/frontend/ai-provider-caching.md","reason":"Review the complete Claude cache field, request-shape, fallback, diagnostics, and validation matrix."}
+{"file":".trellis/spec/guides/player-facing-product-copy.md","reason":"Review desktop and Spatial toggle copy for player-facing clarity without implementation leakage."}
+{"file":".trellis/tasks/08-15-claude-automatic-prompt-cache/research/anthropic-prompt-caching.md","reason":"Check implementation against the researched top-level automatic caching contract and deferred explicit-breakpoint scope."}

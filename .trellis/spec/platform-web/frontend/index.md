@@ -12,6 +12,7 @@ Use these specs when changing `apps/platform-web/src/**`.
 | [State Management](./state-management.md) | Updating Vue refs, Dexie state, and bridge state | Filled |
 | [Quality Guidelines](./quality-guidelines.md) | Pre-commit checks and forbidden patterns | Filled |
 | [Type Safety](./type-safety.md) | Runtime boundary normalization and contract use | Filled |
+| [AI Provider Caching](./ai-provider-caching.md) | Claude automatic prompt caching, compatibility, and diagnostics | Filled |
 | [Spatial HTML-in-Canvas UI](./spatial-ui.md) | Curved HTML rendering, projected input, environment passes, and experimental API boundaries | Filled |
 
 ## Required Checks

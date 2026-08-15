@@ -1,0 +1,5 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Routes platform-web source changes to the required frontend specifications and build gate."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Defines the Agent Runtime message-cache contract, Claude provider usage diagnostics, smoke-only test policy, and required build/smoke gates."}
+{"file":".trellis/spec/platform-web/frontend/ai-provider-caching.md","reason":"Defines the executable Claude automatic-cache request, normalization, compatibility, diagnostics, and verification contract."}
+{"file":".trellis/spec/guides/player-facing-product-copy.md","reason":"Constrains the new Claude cache toggle label and help text to user-visible outcomes and recovery actions."}
+{"file":".trellis/tasks/08-15-claude-automatic-prompt-cache/research/anthropic-prompt-caching.md","reason":"Captures current official Anthropic automatic-cache semantics and the repository evidence behind the chosen scope."}

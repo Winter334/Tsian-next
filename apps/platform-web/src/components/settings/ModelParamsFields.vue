@@ -357,6 +357,18 @@
             </Select>
           </label>
         </div>
+        <div class="grid content-center gap-1">
+          <div class="flex items-center justify-between gap-3">
+            <span class="field-label flex items-center gap-1.5">
+              提示词缓存
+              <ParamTip :tip="tips.promptCaching" label="提示词缓存" />
+            </span>
+            <Switch
+              :model-value="claude.promptCachingEnabled"
+              @update:model-value="(value) => updateClaude({ promptCachingEnabled: Boolean(value) })"
+            />
+          </div>
+        </div>
         <label class="grid gap-1">
           <span class="field-label flex items-center gap-1.5">
             停止序列（一行一个）

@@ -65,6 +65,7 @@ export function createDefaultBrowserClaudeModelParameters(): BrowserClaudeModelP
     topK: null,
     stopSequences: [],
     serviceTier: "",
+    promptCachingEnabled: true,
     thinkingMode: "disabled",
     thinkingBudgetTokens: null,
     thinkingDisplay: "summarized",

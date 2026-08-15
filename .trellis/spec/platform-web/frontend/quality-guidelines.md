@@ -400,6 +400,7 @@ When changing Agent Runtime turn composition or AI debug records, preserve cache
 - Keep narrative/formal-player-turn and task/assistant compression thresholds separate. Narrative can trigger near the context budget, but task/assistant should trigger earlier because tool exploration is dynamic and cache-hostile.
 - Unified diagnostic request messages preserve the provider-boundary request shape but are never fed back into a later provider call as extra metadata.
 - `DiagnosticAiRequestRecord.response.usage` carries provider-reported cache usage (`cached` / `cacheCreation`) extracted per-provider by `extractUsageFromPayload` (OpenAI Chat Completions `prompt_tokens_details.cached_tokens`, OpenAI Responses `input_tokens_details.cached_tokens`, DeepSeek `prompt_cache_hit_tokens`, Claude `cache_read_input_tokens`/`cache_creation_input_tokens`, Gemini `usageMetadata.cachedContentTokenCount`). DebugView derives the real `cached/input` hit rate from unified summaries; do not reintroduce local char-based cache estimation.
+- Claude top-level automatic-cache behavior is specified in [AI Provider Caching](./ai-provider-caching.md); keep its default-on normalization, shared request-builder boundary, compatibility switch, and provider-reported diagnostics aligned.
 
 ## AI Runtime Request Retry Contract
 

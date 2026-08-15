@@ -70,6 +70,7 @@ export interface BrowserClaudeModelParameters {
   topK: number | null
   stopSequences: string[]
   serviceTier: BrowserClaudeServiceTier
+  promptCachingEnabled: boolean
   thinkingMode: BrowserClaudeThinkingMode
   thinkingBudgetTokens: number | null
   thinkingDisplay: BrowserClaudeThinkingDisplay

@@ -108,6 +108,10 @@
             <span class="spatial-model-parameters__label">服务等级 <SpatialParamTip label="服务等级" :tip="MODEL_PARAMETER_TIPS.serviceTier" /></span>
             <SpatialSelect :model-value="claude.serviceTier || NO_SERVICE_TIER_OPTION" :options="serviceTierOptions" aria-label="服务等级" @update:model-value="updateClaude({ serviceTier: normalizeServiceTierValue($event) })" />
           </label>
+          <label class="spatial-model-parameters__switch">
+            <span class="spatial-model-parameters__label">提示词缓存 <SpatialParamTip label="提示词缓存" :tip="MODEL_PARAMETER_TIPS.promptCaching" /></span>
+            <input :checked="claude.promptCachingEnabled" type="checkbox" @change="updateClaude({ promptCachingEnabled: ($event.target as HTMLInputElement).checked })">
+          </label>
           <label class="spatial-app__field">
             <span class="spatial-model-parameters__label">思考模式 <SpatialParamTip label="思考模式" :tip="MODEL_PARAMETER_TIPS.thinkingMode" /></span>
             <SpatialSelect :model-value="claude.thinkingMode" :options="thinkingModeOptions" aria-label="思考模式" @update:model-value="updateClaude({ thinkingMode: $event as BrowserClaudeThinkingMode })" />
