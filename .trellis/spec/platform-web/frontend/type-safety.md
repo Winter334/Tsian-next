@@ -636,6 +636,8 @@ await reloadAuthoritativeState()
   - Every crossing is a compression attempt (no cap; multi-compress unlimited). Before compressing, check inactivity: if no activity (tool/round-end) has occurred for `inactivityTimeoutMs`, throw `TaskTimeoutError`.
   - Locate the tool-interaction span. If no span exists, fall back (return last stripped text / throw `ContextBudgetExhaustedError`).
   - Compress: slice the tool-interaction span, keep the recent 5 tool rounds, summarize earlier rounds into one `已完成工作摘要` user message. If the early span is empty or tool interactions ≤ 5, fall back.
+  - Treat each native assistant `toolCalls` message plus all adjacent correlated `role:"tool"` observations as one atomic round. Treat each Text Tool Protocol call-record message plus its adjacent observation message as one atomic round. Compression must never split either protocol sequence.
+  - Keep unresolved failed semantic-operation rounds exact and exclude them from the lossy compressor input. Rebuild messages as framework → checkpoint summary → pinned unresolved rounds → recent rounds, with no duplicated round; a later success for the same semantic operation key unpins the older failure.
   - After compression, if yield < 10% (compression barely reduced tokens), throw `TaskCompressionStalledError` (stall early-exit, do not burn budget waiting for timeout).
   - Task compression never touches the agent-context snapshot (in-turn tool-interaction compression is separate from cross-turn snapshot). The in-turn summary text lives only within the turn. The **assistant** has cross-turn snapshot persistence (see "Assistant Cross-Turn Context Persistence"); **delegated `agent_call` targets** have no cross-turn persistence.
 
@@ -647,6 +649,8 @@ await reloadAuthoritativeState()
 - Narrative first crossing with a snapshot available -> compress narrative span, continue loop (trace `mode: narrative`).
 - Narrative second crossing (or no snapshot) -> return last stripped text if present, otherwise `ContextBudgetExhaustedError`.
 - Task crossing -> check inactivity timeout; if no activity for `inactivityTimeoutMs` → `TaskTimeoutError`; else locate span, compress, check stall; if compressed continue (trace `mode: task`); if not compressible or no span -> fallback.
+- Task compression with an unresolved early failure -> omit that exact round from the compressor input and place its complete native/text protocol group after the checkpoint summary but before recent rounds; do not duplicate it.
+- Later same-key success -> the older failure is no longer pinned and may enter lossy compression as resolved history.
 - Task inactivity timeout (delegated) -> `AGENT_CALL_FAILED` with `{ timeout: true }`; the calling Agent continues its own loop. (assistant) -> soft prompt "任务无响应超时，已中止".
 - Task compression stall (yield < 10%) -> `TaskCompressionStalledError` -> delegated: `AGENT_CALL_FAILED` with `{ stalled: true }`; assistant: soft prompt "上下文持续膨胀且压缩无效，已中止".
 - Compression failure (model call fails/empty summary) -> `ContextCompressionFailedError` (routes to the error-message branch, not the soft-halt branch).

@@ -477,7 +477,7 @@ pending.resolve({
 - `MessageInteractionResult`: `{ turn: number; assistant: AssistantTurnTimelineItem }`.
 - `turn-completed` bridge payload: `{ turn: number; assistant?: AssistantTurnTimelineItem }`.
 - SDK `TurnEndResult`: `{ turn?: number; assistant?: AssistantTurnTimelineItem }`.
-- Browser-script setup helper: `tsian.reply.project(text)` returns projected `{ content, displayContent?, projections? }` through a narrow `reply.project` SDK operation. Do not expose generic `platform.runAction` to runtime scripts for this.
+- Browser-script setup helper: `tsian.reply.project(text)` returns `{ kind: "assistant", content, displayContent?, projections?, diagnostics, configPresent, ruleCount, appliedRuleCount }` through a narrow `reply.project` SDK operation. Each diagnostic is metadata-only `{ scope: "config" | "rule", code, message, path?, ruleId?, ruleIndex? }`; expose at most 20 diagnostics, cap `code`/`ruleId` at 120 characters and `message`/`path` at 500, and never add reply or choice previews. Do not expose generic `platform.runAction` to runtime scripts for this.
 
 ### 3. Contracts
 
@@ -497,6 +497,7 @@ pending.resolve({
 - Plain project keys on multiple matches use last match wins. Use `key[]` to collect values.
 - `displayContent` is persisted only when final display lane differs from final `content`.
 - Frontend display fallback is `assistant.displayContent ?? assistant.content`; platform stores display text as an uninterpreted string and does not sanitize or label it as Markdown/HTML/DSL.
+- Every projector consumer, including browser-script opening/setup actions, must validate visible text with `projected.displayContent ?? projected.content`. Omission of `displayContent` is a normal success result, not a projection failure; persist the field only when the projector returned it.
 - Formal turn persistence must use projected clean `content` for:
   - turn assistant `content`
   - future LLM history reconstruction
@@ -518,6 +519,7 @@ pending.resolve({
 - Invalid pipe start/capture/transform -> skip that project entry or rule per projector implementation, diagnostic emitted, no turn failure.
 - Rule execution throws unexpectedly -> skip rule, diagnostic emitted, continue later rules.
 - Projected `displayContent === content` -> omit `displayContent` field.
+- Consumer receives valid non-empty `content` with omitted `displayContent` -> use `content` as visible fallback and continue; do not require a redundant display field.
 - Projection emits no keys -> omit `projections` field.
 - Browser setup script calls `tsian.reply.project` with non-string/blank text -> return a clear script-side error or normalize consistently with setup validation; do not write turn 0 with unvalidated content.
 
@@ -541,6 +543,7 @@ pending.resolve({
 - Manually verify semantic chunking extracts v2 timeline user/assistant `content`.
 - Manually verify `invokeAgent` persistent context uses projected clean assistant content.
 - Manually verify opening turn 0 writes the projected item and seeds clean context.
+- Opening final-action smoke must pass a formal choices fixture through the real `projectAssistantReply` seam, assert that equal display/content omits `displayContent`, and then prove the consumer commits turn 0 successfully. A mock that always supplies `displayContent` is insufficient coverage.
 - Manually verify broken projection config remains fail-soft and emits diagnostics without content fragments.
 - Do not add projection or mapper test files by default.
 
@@ -595,6 +598,23 @@ await tsian.platform.runAction({ action: "restore-checkpoint", params: { checkpo
 ```js
 const projected = await tsian.reply.project(openingReply)
 // Write turn 0 assistant item from projected content/displayContent/projections.
+```
+
+#### Wrong
+
+```js
+// Rejects a valid projection whenever display and clean content are equal.
+if (typeof projected.displayContent !== 'string') throw new Error('projection failed')
+```
+
+#### Correct
+
+```js
+const visibleContent = projected.displayContent ?? projected.content
+if (typeof visibleContent !== 'string' || !visibleContent.trim()) throw new Error('projection failed')
+
+const assistantItem = { content: projected.content, projections: projected.projections }
+if (projected.displayContent !== undefined) assistantItem.displayContent = projected.displayContent
 ```
 
 

@@ -33,7 +33,10 @@ import {
 } from "../storage"
 import { inferMediaTypeFromPath } from "../lib/media-type"
 import { normalizeWorkspacePath } from "../lib/workspace-path"
-import { projectAssistantReply } from "./reply-projection"
+import {
+  projectAssistantReply,
+  type ReplyProjectionResult,
+} from "./reply-projection"
 
 interface BrowserSkillScriptRunnerOptions {
   workspaceTransaction: Pick<RuntimeWorkspaceTransaction,
@@ -54,6 +57,40 @@ interface BrowserScriptWorkerMessage {
   message?: unknown
   data?: unknown
   memoryProjection?: unknown
+}
+
+const BROWSER_REPLY_DIAGNOSTIC_LIMIT = 20
+const BROWSER_REPLY_DIAGNOSTIC_MESSAGE_LIMIT = 500
+const BROWSER_REPLY_DIAGNOSTIC_TEXT_LIMIT = 120
+
+/** Plain, bounded reply.project result exposed to browser-script Skills. */
+export function toBrowserScriptReplyProjection(projected: ReplyProjectionResult) {
+  const diagnostics = projected.diagnostics
+    .slice(0, BROWSER_REPLY_DIAGNOSTIC_LIMIT)
+    .map((diagnostic) => ({
+      scope: diagnostic.scope,
+      code: diagnostic.code.slice(0, BROWSER_REPLY_DIAGNOSTIC_TEXT_LIMIT),
+      message: diagnostic.message.slice(0, BROWSER_REPLY_DIAGNOSTIC_MESSAGE_LIMIT),
+      ...(typeof diagnostic.path === "string"
+        ? { path: diagnostic.path.slice(0, BROWSER_REPLY_DIAGNOSTIC_MESSAGE_LIMIT) }
+        : {}),
+      ...(typeof diagnostic.ruleId === "string"
+        ? { ruleId: diagnostic.ruleId.slice(0, BROWSER_REPLY_DIAGNOSTIC_TEXT_LIMIT) }
+        : {}),
+      ...(Number.isSafeInteger(diagnostic.ruleIndex) && (diagnostic.ruleIndex ?? -1) >= 0
+        ? { ruleIndex: diagnostic.ruleIndex }
+        : {}),
+    }))
+  return {
+    kind: "assistant" as const,
+    content: projected.content,
+    ...(projected.displayContent !== undefined ? { displayContent: projected.displayContent } : {}),
+    ...(projected.projections ? { projections: projected.projections } : {}),
+    diagnostics,
+    configPresent: projected.configPresent,
+    ruleCount: projected.ruleCount,
+    appliedRuleCount: projected.appliedRuleCount,
+  }
 }
 
 const BROWSER_SCRIPT_WORKER_SOURCE = String.raw`
@@ -934,12 +971,7 @@ async function handleSdkRequest(
         projectionKeys: Object.keys(projected.projections ?? {}).sort(),
       },
     })
-    return {
-      kind: "assistant",
-      content: projected.content,
-      ...(projected.displayContent !== undefined ? { displayContent: projected.displayContent } : {}),
-      ...(projected.projections ? { projections: projected.projections } : {}),
-    }
+    return toBrowserScriptReplyProjection(projected)
   }
 
   if (op.startsWith("workspace.")) {

@@ -21,7 +21,12 @@ async function commitOpening(input, tsian, signal) {
       return (hash >>> 0).toString(16).padStart(8, '0');
     }
     async function optionalFile(path) {
-      return tsian.workspace.read({ scope: 'effective', path });
+      try {
+        return await tsian.workspace.read({ scope: 'effective', path });
+      } catch (error) {
+        if (error && error.code === 'WORKSPACE_FILE_NOT_FOUND') return null;
+        throw error;
+      }
     }
     async function optionalJson(path) {
       const file = await optionalFile(path);
@@ -248,12 +253,75 @@ async function commitOpening(input, tsian, signal) {
     const summary = text(input.summary, 'OPENING_SETUP_SUMMARY_REQUIRED', 'summary', 2000);
     const openingReply = text(input.openingReply, 'OPENING_REPLY_REQUIRED', 'openingReply', 24000);
     const projected = await tsian.reply.project(openingReply);
-    if (!projected || typeof projected.content !== 'string' || !projected.content.trim()
-      || typeof projected.displayContent !== 'string' || !projected.displayContent.trim()
-      || !isRecord(projected.projections) || !Array.isArray(projected.projections.choices)
-      || projected.projections.choices.length === 0 || projected.projections.choices.length > 12
-      || projected.projections.choices.some(function (choice) { return typeof choice !== 'string' || !choice.trim() || choice.length > 300; })) {
-      fail('OPENING_REPLY_PROJECTION_FAILED', 'openingReply must project visible story content and 1-12 choices.');
+    const projectionIssues = [];
+    const projectionDetails = {
+      displayContent: 'omitted',
+      choiceCount: null,
+    };
+    const projectionDiagnostics = [];
+    if (!isRecord(projected)) {
+      projectionIssues.push({ code: 'projection.missing', path: 'projection' });
+    } else {
+      if (typeof projected.content !== 'string' || !projected.content.trim()) {
+        projectionIssues.push({ code: 'content.empty', path: 'content' });
+      }
+
+      let visibleContent;
+      if (projected.displayContent === undefined) {
+        visibleContent = projected.content;
+      } else if (typeof projected.displayContent !== 'string') {
+        projectionDetails.displayContent = 'invalid';
+        projectionIssues.push({ code: 'display.invalid', path: 'displayContent' });
+      } else {
+        projectionDetails.displayContent = 'present';
+        visibleContent = projected.displayContent;
+      }
+      if (typeof visibleContent === 'string' && !visibleContent.trim()) {
+        projectionIssues.push({ code: 'display.empty', path: 'displayContent' });
+      }
+
+      const choices = isRecord(projected.projections) ? projected.projections.choices : undefined;
+      if (!Array.isArray(choices)) {
+        projectionIssues.push({ code: 'choices.missing', path: 'projections.choices' });
+      } else {
+        projectionDetails.choiceCount = choices.length;
+        if (choices.length < 1 || choices.length > 12) {
+          projectionIssues.push({ code: 'choices.count', path: 'projections.choices' });
+        }
+        const invalidChoiceIndices = [];
+        for (let index = 0; index < choices.length && index < 20; index += 1) {
+          const choice = choices[index];
+          if (typeof choice !== 'string' || !choice.trim() || choice.length > 300) invalidChoiceIndices.push(index);
+        }
+        if (invalidChoiceIndices.length > 0) {
+          projectionIssues.push({ code: 'choices.item', path: 'projections.choices', indices: invalidChoiceIndices });
+        }
+      }
+
+      if (typeof projected.configPresent === 'boolean') projectionDetails.configPresent = projected.configPresent;
+      if (Number.isSafeInteger(projected.ruleCount) && projected.ruleCount >= 0) projectionDetails.ruleCount = projected.ruleCount;
+      if (Number.isSafeInteger(projected.appliedRuleCount) && projected.appliedRuleCount >= 0) projectionDetails.appliedRuleCount = projected.appliedRuleCount;
+      if (Array.isArray(projected.diagnostics)) {
+        for (const diagnostic of projected.diagnostics.slice(0, 20)) {
+          if (!isRecord(diagnostic) || typeof diagnostic.scope !== 'string' || typeof diagnostic.code !== 'string' || typeof diagnostic.message !== 'string') continue;
+          const safeDiagnostic = {
+            scope: diagnostic.scope.slice(0, 40),
+            code: diagnostic.code.slice(0, 120),
+            message: diagnostic.message.slice(0, 500),
+          };
+          if (typeof diagnostic.path === 'string') safeDiagnostic.path = diagnostic.path.slice(0, 500);
+          if (typeof diagnostic.ruleId === 'string') safeDiagnostic.ruleId = diagnostic.ruleId.slice(0, 120);
+          if (Number.isSafeInteger(diagnostic.ruleIndex) && diagnostic.ruleIndex >= 0) safeDiagnostic.ruleIndex = diagnostic.ruleIndex;
+          projectionDiagnostics.push(safeDiagnostic);
+        }
+      }
+    }
+    if (projectionIssues.length > 0) {
+      fail('OPENING_REPLY_PROJECTION_FAILED', 'openingReply projection is invalid; inspect details.issues.', {
+        issues: projectionIssues,
+        projection: projectionDetails,
+        diagnostics: projectionDiagnostics,
+      });
     }
 
     const cardManifest = await readJson(tsian, 'game-card.json');
@@ -295,7 +363,8 @@ async function commitOpening(input, tsian, signal) {
 
     const now = new Date().toISOString();
     frontierFile.updatedAt = now;
-    const assistantItem = { kind: 'assistant', content: projected.content, displayContent: projected.displayContent, projections: projected.projections };
+    const assistantItem = { kind: 'assistant', content: projected.content, projections: projected.projections };
+    if (projected.displayContent !== undefined) assistantItem.displayContent = projected.displayContent;
     const turn0Record = { schema: 'tsian.airp.history.turn.v2', turn: 0, createdAt: now, source: { kind: 'agent-runtime', entryAgentId: playerTurnAgentId }, timeline: [assistantItem] };
     const playerContext = { schema: 'tsian.agent.context.v2', saveId: '', agentId: playerTurnAgentId, sequence: 1, summary: null, recentTurns: [{ sequence: 1, gameTurn: 0, role: 'assistant', content: projected.content }], lastCompressedSequence: null, updatedAt: now };
     const completedSummary = { status: 'complete', summary, committedAt: now, enteredPlay: false };

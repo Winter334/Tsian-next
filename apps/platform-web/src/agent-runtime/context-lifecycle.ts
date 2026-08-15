@@ -925,7 +925,8 @@ function pinnedTaskGroupIndexes(groups: readonly TaskInteractionGroup<TaskCompre
  * 入参 messages 的工具交互段由调用方用 locateTaskInteractionSpan 定位为 [start, end).
  * 本函数:① 切出工具交互段 ② 保留最近 taskKeepRecentRounds 轮(成对计算:
  *    N 轮 = 2N 条 message,即 N 个 assistant+tool/user-observation 对) ③ 早期段送
- *    model 生成任务摘要 ④ 拼新 messages = [...框架段, {user:已完成工作摘要}, ...最近N轮].
+ *    model 生成任务摘要 ④ 拼新 messages = [...框架段, {user:已完成工作摘要},
+ *    ...未解决原始轮, ...最近N轮].
  *
  * 无可压缩早期内容(早期段为空,即工具交互 ≤ N 轮)→ 返回 { compressed: false },
  *   调用方据此走兜底(有 lastRoundText 返回 / 无抛 ContextBudgetExhaustedError).
@@ -977,15 +978,16 @@ export async function compressTaskContext<T extends TaskCompressionMessage>(
     { ...options, systemPrompt: TASK_COMPRESSION_SYSTEM_PROMPT },
   )
 
-  // 3. 拼新 messages:框架段[0,start) + 摘要 user + 最近 N 轮
+  // 3. 拼新 messages:框架段[0,start) + 摘要 user + 未解决原始轮 + 最近 N 轮.
+  // 摘要可能保留陈旧错误；后置的原始失败轮必须在消息顺序上覆盖它.
   // 摘要 message 是 {role:"user",content} 形态——满足 RuntimeChatMessage(user 变体)
   // 与 AiChatMessage 的公共结构.用 as unknown as T 打断泛型推断循环(T 是联合类型时
   // as T 会触发 result 类型隐式 any).
   const summaryMessage = { role: "user", content: `任务恢复 checkpoint：\n${trimmedSummary}` } as unknown as T
   const newMessages: T[] = [
     ...messages.slice(0, start),
-    ...pinnedEntries,
     summaryMessage,
+    ...pinnedEntries,
     ...recentEntries,
   ]
 

@@ -6,6 +6,7 @@ import type {
   ConversationMessageRecord,
   DiagnosticAiRequestRecord,
   GameCardManifest,
+  WorkspaceOperationRequest,
   WorkspaceFile,
 } from "@tsian/contracts"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -25,6 +26,7 @@ import { assembleAgentContext } from "../agent-runtime/context"
 import {
   parseAgentInvocationTranscript,
 } from "../platform-host/history-turns"
+import { projectAssistantReply } from "../platform-host/reply-projection"
 import {
   applyTaskToolMemoryRetention,
   projectToolMemoryForContext,
@@ -32,6 +34,7 @@ import {
 import {
   createRuntimeWorkspaceToolSessionState,
 } from "../agent-runtime/workspace-tools"
+import { executeWorkspaceOperation } from "../agent-runtime/workspace-operations"
 import { executeRunScript } from "../agent-runtime/workspace-tools/skill-actions"
 import type { RuntimeChatMessage } from "../runtime-host/ai"
 import {
@@ -41,6 +44,7 @@ import {
   saveBrowserPlatformConfigDraft,
 } from "../config/ai"
 import { markPlatformHostReady } from "../platform-host/host-state"
+import { toBrowserScriptReplyProjection } from "../platform-host/browser-skill-script-executor"
 import { invokeAgent } from "../platform-host/ai-invocation"
 import { runAssistantChat } from "../platform-host/assistant-chat"
 import {
@@ -295,6 +299,29 @@ function nativeToolRound(
   ]
 }
 
+function textToolRound(
+  index: number,
+  input?: { name?: string; path?: string; failed?: boolean; content?: string },
+): RuntimeChatMessage[] {
+  const name = input?.name ?? "read"
+  const path = input?.path ?? `save/text-round-${index}.txt`
+  const id = `text-${index}-a`
+  const call = { id, name, arguments: { path, ...(input?.content ? { content: input.content } : {}) } }
+  const observation = input?.failed
+    ? { id, name, ok: false, error: { code: "WRITE_FAILED", message: "retry the exact payload" } }
+    : { id, name, ok: true, result: { path, status: "ok" } }
+  return [
+    {
+      role: "assistant",
+      content: `<tsian-tool-call-records>\n${JSON.stringify([call])}\n</tsian-tool-call-records>`,
+    },
+    {
+      role: "user",
+      content: `<tsian-tool-observations>\n${JSON.stringify([observation])}\n</tsian-tool-observations>`,
+    },
+  ]
+}
+
 describe("Agent context contracts smoke", () => {
   it("upgrades v1 context fields and retains only the newest unresolved semantic memory", () => {
     const parsed = parseAgentContext(JSON.stringify({
@@ -330,7 +357,7 @@ describe("Agent context contracts smoke", () => {
     expect(applyTaskToolMemoryRetention(retained, 6)).toEqual([])
   })
 
-  it("keeps atomic native rounds and pins an unresolved exact operation outside lossy compression", async () => {
+  it("keeps atomic native and text rounds and pins unresolved exact operations outside lossy compression", async () => {
     const messages: RuntimeChatMessage[] = [
       { role: "user", content: "framework" },
       ...nativeToolRound(0, { name: "write", path: "save/exact.json", failed: true, content: "EXACT-PAYLOAD" }),
@@ -356,6 +383,77 @@ describe("Agent context contracts smoke", () => {
     expect(JSON.stringify(compressor.mock.calls)).toContain("call-1-a")
     expect(JSON.stringify(compressor.mock.calls)).toContain("call-1-b")
     expect(JSON.stringify(compressor.mock.calls)).toContain("消息 role 不是权威等级")
+
+    const summaryIndex = result.messages.findIndex((message) =>
+      typeof message.content === "string" && message.content.startsWith("任务恢复 checkpoint："))
+    const pinnedAssistantIndex = result.messages.findIndex((message) =>
+      message.role === "assistant" && message.toolCalls?.some((call) => call.id === "call-0-a"))
+    const pinnedToolIndex = result.messages.findIndex((message) =>
+      message.role === "tool" && message.toolCallId === "call-0-a")
+    const recentAssistantIndex = result.messages.findIndex((message) =>
+      message.role === "assistant" && message.toolCalls?.some((call) => call.id === "call-2-a"))
+    expect(summaryIndex).toBeGreaterThan(0)
+    expect(pinnedAssistantIndex).toBeGreaterThan(summaryIndex)
+    expect(pinnedToolIndex).toBe(pinnedAssistantIndex + 1)
+    expect(recentAssistantIndex).toBeGreaterThan(pinnedToolIndex)
+
+    const resolvedMessages: RuntimeChatMessage[] = [
+      { role: "user", content: "framework" },
+      ...nativeToolRound(0, { name: "write", path: "save/exact.json", failed: true, content: "EXACT-PAYLOAD" }),
+      ...nativeToolRound(1, { name: "write", path: "save/exact.json" }),
+      ...nativeToolRound(2),
+      ...nativeToolRound(3),
+      ...nativeToolRound(4),
+      ...nativeToolRound(5),
+      ...nativeToolRound(6),
+      ...nativeToolRound(7),
+    ]
+    const resolvedCompressor = vi.fn(async () => CHECKPOINT_SUMMARY)
+    const resolved = await compressTaskContext(
+      resolvedMessages,
+      { start: 1, end: resolvedMessages.length },
+      null,
+      resolvedCompressor,
+      { debugLabel: "agent:compression-unpin-smoke" },
+    )
+    expect(resolved.compressed).toBe(true)
+    expect(JSON.stringify(resolved.messages)).not.toContain("EXACT-PAYLOAD")
+    expect(JSON.stringify(resolvedCompressor.mock.calls)).toContain("call-0-a")
+
+    const textMessages: RuntimeChatMessage[] = [
+      { role: "user", content: "framework" },
+      ...textToolRound(0, { name: "write", path: "save/text-exact.json", failed: true, content: "TEXT-EXACT-PAYLOAD" }),
+      ...textToolRound(1),
+      ...textToolRound(2),
+      ...textToolRound(3),
+      ...textToolRound(4),
+      ...textToolRound(5),
+      ...textToolRound(6),
+    ]
+    const textCompressor = vi.fn(async () => CHECKPOINT_SUMMARY)
+    const textResult = await compressTaskContext(
+      textMessages,
+      { start: 1, end: textMessages.length },
+      null,
+      textCompressor,
+      { debugLabel: "agent:text-compression-smoke" },
+    )
+    expect(textResult.compressed).toBe(true)
+    expect(JSON.stringify(textCompressor.mock.calls)).not.toContain("TEXT-EXACT-PAYLOAD")
+    const textSummaryIndex = textResult.messages.findIndex((message) =>
+      typeof message.content === "string" && message.content.startsWith("任务恢复 checkpoint："))
+    const textPinnedAssistantIndex = textResult.messages.findIndex((message) =>
+      message.role === "assistant" && typeof message.content === "string" && message.content.includes("text-0-a"))
+    const textPinnedObservationIndex = textResult.messages.findIndex((message) =>
+      message.role === "user" && typeof message.content === "string" && message.content.includes("text-0-a"))
+    const textRecentAssistantIndex = textResult.messages.findIndex((message) =>
+      message.role === "assistant" && typeof message.content === "string" && message.content.includes("text-2-a"))
+    expect(textSummaryIndex).toBeGreaterThan(0)
+    expect(textPinnedAssistantIndex).toBeGreaterThan(textSummaryIndex)
+    expect(textPinnedObservationIndex).toBe(textPinnedAssistantIndex + 1)
+    expect(textRecentAssistantIndex).toBeGreaterThan(textPinnedObservationIndex)
+    expect(textResult.messages.filter((message) =>
+      typeof message.content === "string" && message.content.includes("text-0-a"))).toHaveLength(2)
   })
 
   it("validates all fixed compression contracts and repairs one malformed checkpoint", async () => {
@@ -573,21 +671,44 @@ describe("Agent context contracts smoke", () => {
         ["save/playthrough/frontier.json", json({ sourceWindow: { start: null, end: null }, extractedThrough: null, timeline: [{ kind: "source", order: 1, chapter: 1, time: "元年", label: "开局" }], notes: "" })],
         ["save/playthrough/understanding-summary.json", json({ status: "pending", title: null, candidateCharacters: [] })],
         ["save/playthrough/setup-summary.json", json({ status: "pending", summary: null })],
+        ["config/reply-projection.json", json({
+          schema: "tsian.reply-projection.v1",
+          rules: [{
+            id: "choices",
+            match: "/\\[\\[选项\\]\\]([\\s\\S]*?)\\[\\[\\/选项\\]\\]/g",
+            text: "",
+            project: { choices: "$1|lines|stripList" },
+          }],
+        })],
         ["game-card.json", json({ runtime: { entrypoints: { playerTurn: "storyteller" } } })],
         ["agents/storyteller/agent.json", json({ id: "storyteller" })],
         ["agents/storyteller/AGENT.md", "# Storyteller\n"],
       ])
     }
-    const makeRuntime = (files = makeFiles()) => {
+    const makeRuntime = (files = makeFiles(), options?: { exposeRead?: boolean }) => {
       const writes: string[] = []
-      const project = vi.fn(async (content: string) => ({
-        content,
-        displayContent: "晨光照进客栈。",
-        projections: { choices: ["起身"] },
-      }))
+      const workspaceFiles = (): WorkspaceFile[] =>
+        Array.from(files, ([path, fileContent]): WorkspaceFile => ({
+          path,
+          content: fileContent,
+          createdAt: 0,
+          updatedAt: 0,
+        }))
+      const project = vi.fn(async (content: string) => toBrowserScriptReplyProjection(
+        projectAssistantReply(content, workspaceFiles()),
+      ))
+      const read = vi.fn(async (request: Omit<WorkspaceOperationRequest, "operation">) =>
+        executeWorkspaceOperation(
+          { ...request, operation: "read" },
+          {
+            workspaceFiles: workspaceFiles(),
+            actorLevel: 1,
+            exposedOperations: options?.exposeRead === false ? [] : ["read"],
+          },
+        ))
       const tsian = {
         workspace: {
-          read: vi.fn(async ({ path }: { path: string }) => files.has(path) ? { path, content: files.get(path) } : null),
+          read,
           write: vi.fn(async ({ path, content }: { path: string; content: string }) => {
             files.set(path, content)
             writes.push(path)
@@ -600,7 +721,7 @@ describe("Agent context contracts smoke", () => {
         trace: vi.fn(),
         memory: { set: vi.fn() },
       }
-      return { files, writes, project, tsian }
+      return { files, writes, project, read, tsian }
     }
     const payload = (): Record<string, unknown> => ({
       entities: [
@@ -618,8 +739,59 @@ describe("Agent context contracts smoke", () => {
 
     const success = makeRuntime()
     await expect(runOpening(payload(), success.tsian, signal)).resolves.toMatchObject({ status: "complete" })
+    const successProjection = await success.project.mock.results[0]!.value
+    expect(successProjection).toMatchObject({
+      kind: "assistant",
+      content: "晨光照进客栈。\n",
+      projections: { choices: ["起身"] },
+      diagnostics: [],
+      configPresent: true,
+      ruleCount: 1,
+      appliedRuleCount: 1,
+    })
+    expect(successProjection).not.toHaveProperty("displayContent")
     expect(JSON.parse(success.files.get("save/playthrough/runtime.json") ?? "null").protagonistRef).toEqual({ ref: "character:hero", name: "主角" })
     expect(JSON.parse(success.files.get("save/playthrough/frontier.json") ?? "null").timeline[0]).toEqual({ kind: "source", order: 1, chapter: 1, time: "清晨", label: "醒来" })
+    const turn0Assistant = JSON.parse(success.files.get("save/history/turns/turn-000000.json") ?? "null").timeline[0]
+    expect(turn0Assistant).toEqual({
+      kind: "assistant",
+      content: "晨光照进客栈。\n",
+      projections: { choices: ["起身"] },
+    })
+    expect(turn0Assistant).not.toHaveProperty("displayContent")
+    expect(JSON.parse(success.files.get("save/agents/storyteller/context.json") ?? "null").recentTurns[0].content).toBe("晨光照进客栈。\n")
+    expect(success.read).toHaveBeenCalledWith({
+      scope: "effective",
+      path: "save/agents/world-architect/context-understanding.json",
+    })
+
+    const diagnosticSuccess = makeRuntime()
+    diagnosticSuccess.files.set("config/reply-projection.json", json({
+      schema: "tsian.reply-projection.v1",
+      rules: [
+        {
+          id: "choices",
+          match: "/\\[\\[选项\\]\\]([\\s\\S]*?)\\[\\[\\/选项\\]\\]/g",
+          text: "",
+          project: { choices: "$1|lines|stripList" },
+        },
+        { id: "broken", match: "/[/", text: "" },
+      ],
+    }))
+    await expect(runOpening(payload(), diagnosticSuccess.tsian, signal)).resolves.toMatchObject({ status: "complete" })
+    const diagnosticProjection = await diagnosticSuccess.project.mock.results[0]!.value
+    expect(diagnosticProjection).toMatchObject({
+      diagnostics: [expect.objectContaining({
+        scope: "rule",
+        code: "REPLY_PROJECTION_REGEX_INVALID",
+        path: "config/reply-projection.json",
+        ruleId: "broken",
+        ruleIndex: 1,
+      })],
+      configPresent: true,
+      ruleCount: 2,
+      appliedRuleCount: 1,
+    })
 
     const missingTarget = makeRuntime()
     const missingPayload = payload()
@@ -634,13 +806,60 @@ describe("Agent context contracts smoke", () => {
     expect(unsafeId.writes).toEqual([])
 
     const unprojectable = makeRuntime()
-    unprojectable.project.mockResolvedValueOnce({
-      content: "晨光照进客栈。",
-      displayContent: "晨光照进客栈。",
-      projections: { choices: [] },
+    const invalidProjectionRules = Array.from({ length: 21 }, (_, index) => ({
+      id: `broken-${index}`,
+      match: `/${"a".repeat(600)}[/`,
+    }))
+    unprojectable.files.set("config/reply-projection.json", json({
+      schema: "tsian.reply-projection.v1",
+      rules: [
+        {
+          id: "choices",
+          match: "/\\[\\[选项\\]\\]([\\s\\S]*?)\\[\\[\\/选项\\]\\]/g",
+          text: "",
+          project: { choices: "$1|lines|stripList" },
+        },
+        ...invalidProjectionRules,
+      ],
+    }))
+    const unprojectablePayload = payload()
+    unprojectablePayload.openingReply = "晨光照进客栈。"
+    await expect(runOpening(unprojectablePayload, unprojectable.tsian, signal)).rejects.toMatchObject({
+      code: "OPENING_REPLY_PROJECTION_FAILED",
+      details: {
+        issues: expect.arrayContaining([
+          expect.objectContaining({ code: "choices.missing", path: "projections.choices" }),
+        ]),
+        projection: expect.objectContaining({
+          displayContent: "omitted",
+          choiceCount: null,
+          configPresent: true,
+          ruleCount: 22,
+          appliedRuleCount: 0,
+        }),
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            scope: "rule",
+            code: "REPLY_PROJECTION_REGEX_INVALID",
+            path: "config/reply-projection.json",
+            ruleId: "broken-0",
+            ruleIndex: 1,
+          }),
+        ]),
+      },
     })
-    await expect(runOpening(payload(), unprojectable.tsian, signal)).rejects.toMatchObject({ code: "OPENING_REPLY_PROJECTION_FAILED" })
+    expect(unprojectable.project).toHaveBeenCalledOnce()
+    const unprojectableProjection = await unprojectable.project.mock.results[0]!.value
+    expect(unprojectableProjection.diagnostics).toHaveLength(20)
+    expect(unprojectableProjection.diagnostics[0]?.message).toHaveLength(500)
+    expect(JSON.stringify(unprojectableProjection.diagnostics)).not.toContain("晨光照进客栈")
     expect(unprojectable.writes).toEqual([])
+
+    const readUnavailable = makeRuntime(makeFiles(), { exposeRead: false })
+    await expect(runOpening(payload(), readUnavailable.tsian, signal)).rejects.toMatchObject({
+      code: "WORKSPACE_OPERATION_NOT_EXPOSED",
+    })
+    expect(readUnavailable.writes).toEqual([])
 
     const completeFiles = makeFiles()
     completeFiles.set("save/playthrough/setup-summary.json", json({ status: "complete", summary: "完成", enteredPlay: false }))

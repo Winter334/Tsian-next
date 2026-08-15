@@ -65,6 +65,20 @@ Real example (2026-06-24, post-processing turn persistence): the platform runtim
 
 **The heuristic**: restrictions are justified by the probability of the undesired action *in the absence of the instruction*, not by the severity of the action if it occurred. A severe-but-improbable outcome still does not justify a restriction the agent would never trigger. Remove the *cause* (the inducing instruction or the missing guard in code) when you can; only add an AI-facing restriction when the cause is the model's own default behavior.
 
+## Repair Missing Workflows Before Adding Detached Rules
+
+When an Agent reaches the right goal through a wasteful or unstable route, first check whether the prompt describes only the start and final action while leaving the middle undefined. A detached line such as “must call X” or “never inspect Y” may suppress one observed trace without telling the Agent how to progress or recover.
+
+Prefer an ordered workflow when the task has multiple dependent products or handoffs. For each stage, state:
+
+- the current action and inputs;
+- the observable completion condition;
+- where to go when information is missing, a delegated result is invalid, or the action fails.
+
+Put the intended capability in the normal path. For example, a modeling Agent can prepare a focused brief, delegate prose to the writer Agent using the writer's own context, reconcile the returned endpoint with the model, then commit. This removes the gap that invited the modeling Agent to reconstruct the writer's prompt or modules. Do not copy those module concepts into a new prohibition unless the undesired behavior remains likely after the workflow is complete.
+
+Use a detached rule only when it represents a real invariant that is not naturally owned by one stage, or when the “would it happen anyway?” test still says the behavior is likely after the process repair.
+
 ---
 
 ## Why This Matters
@@ -91,3 +105,4 @@ When **adding** a restriction / prohibition / guardrail to an AI-facing surface:
 - [ ] Asked "would the agent do the undesired thing if I gave no instruction on it at all?"
 - [ ] If **unlikely** → did NOT add the restriction; removed the inducing instruction / added the code guard instead?
 - [ ] If **likely** → wrote it, preferring a positive redirect ("do X instead") over a bare "don't do Y"?
+- [ ] Is the observed behavior actually caused by an undefined multi-step handoff? If yes, defined stages, completion conditions, and failure routes before adding a detached rule?
