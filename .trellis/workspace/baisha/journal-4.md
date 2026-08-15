@@ -1029,3 +1029,24 @@ Reduced the product test inventory to three integration smoke files, aligned rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 196: Claude 自动提示词缓存
+
+**Date**: 2026-08-15
+**Task**: Claude 自动提示词缓存
+**Branch**: `master`
+
+### Summary
+
+为 Claude 模型新增默认开启、可关闭的顶层自动提示词缓存；贯通旧配置归一化、桌面与 Spatial 设置、所有 Claude 请求路径和 provider 真实缓存诊断契约。通过 Web 构建、10 项 Smoke 与一次性请求边界验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9178d06` | (see git log) |
+
+### Status
+
+[OK] **Completed**

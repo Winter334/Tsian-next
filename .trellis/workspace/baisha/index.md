@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 195
+- **Total Sessions**: 196
 - **Last Active**: 2026-08-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~1031 | Active |
+| `journal-4.md` | ~1052 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 196 | 2026-08-15 | Claude 自动提示词缓存 | `9178d06` | `master` |
 | 195 | 2026-08-15 | 修复开局投影与建模流程 | `d514341` | `master` |
 | 194 | 2026-08-12 | 简化开局访谈状态与校验 | `ab7bd08` | `master` |
 | 193 | 2026-08-11 | 重构 Agent 上下文状态与压缩 | `5290631`, `65efc15`, `3da85d1` | `master` |
