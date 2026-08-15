@@ -1008,3 +1008,24 @@ Reduced the product test inventory to three integration smoke files, aligned rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 195: 修复开局投影与建模流程
+
+**Date**: 2026-08-15
+**Task**: 修复开局投影与建模流程
+**Branch**: `master`
+
+### Summary
+
+修复 opening reply 可选 displayContent、真实 workspace read 与诊断契约；调整 checkpoint 原始失败轮顺序；将开局建模改为含完成条件和失败去向的七阶段流程，并由 storyteller 生成首回合正文。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d514341` | (see git log) |
+
+### Status
+
+[OK] **Completed**
