@@ -149,6 +149,45 @@ Keep the JSON tree display-only. Do not change diagnostics storage/contracts mer
 - The text editor must reject any loaded or just-written `WorkspaceFile` carrying `binary` before applying `content`; a binary placeholder is diagnostic text, never an editable/savable baseline. Keep the guard even when routing already sends known media to the media viewer, because unknown binaries and inconsistent metadata can still reach the editor route.
 - `WorkspaceMediaView.vue` reads `WorkspaceFile.binary` (Blob) and renders `<img>`/`<audio>`/`<video>` via `URL.createObjectURL`; revoke on unmount.
 
+### Convention: Structured Card-Content Editors Stay Lossless
+
+**Scope**: A dedicated desktop application may provide structured controls for one card-content configuration file, such as `ReplyProjectionView.vue` for `config/reply-projection.json`. Retro and Spatial views share one controller/codec; the generic Workspace editor remains the raw-file escape hatch.
+
+**Why**: Card files can contain explicit empty values, optional-field presence, and future fields that the current UI does not understand. Treating a form model as a replacement schema can silently rewrite distributed card content.
+
+**Contract**:
+
+```ts
+type StructuredParseResult<T> = { ok: true; draft: T } | { ok: false; reason: string }
+
+writePlatformWorkspaceFile({
+  cardId,
+  path,
+  content: serialize(draft),
+  expectedContent: baselineContent,
+})
+```
+
+- The draft codec owns known-field conversion, unknown-field preservation, and explicit presence flags for values where missing and `""`/`{}` differ. UI-only keys never serialize.
+- A shape that cannot be represented without loss enters an unsupported state: disable structured saving, preserve the file, and route to `workspace-editor`.
+- Save through the existing Workspace API with `expectedContent`; reuse generic read-only metadata, content-change events, Ctrl/Cmd+S, and the shared window close guard.
+- Route views render shell-specific controls only. File reads/writes, dirty/conflict state, mutations, and serialization stay in the shared controller/codec.
+
+**Validation matrix**:
+
+| Condition | Required result |
+|---|---|
+| Missing editable file | Create an unsaved empty draft; write only after Save |
+| Explicit empty known field | Preserve the field and its empty value |
+| Unknown top-level/rule field | Preserve its JSON value through structured save |
+| Mutually exclusive or unsupported shape | Block structured save and offer Workspace editing |
+| External write after load | Keep the local draft; let `expectedContent` reject stale overwrite |
+| Read-only file/card | Allow viewing and raw-file navigation; disable mutation |
+
+**Cases**: Good — one shared controller serves equivalent Retro/Spatial forms and a semantic round-trip keeps unknown/presence data. Base — a missing file means the runtime default remains active until the author saves. Bad — each view parses JSON independently, drops extras, collapses empty strings by truthiness, or embeds a second raw JSON editor.
+
+**Verification**: Run `npm run build:web`, the relevant smoke suite, and `git diff --check`; exercise one real card file plus empty/presence/unknown/unsupported cases. Follow the repository's smoke-only policy rather than adding a component/controller test suite unless the package strategy changes.
+
 ### Convention: Player-Facing Copy Hides Internal Implementation Details
 
 **What**: UI text shown to players should describe user-visible outcomes and safety guarantees, not internal paths, filenames, schemas, API names, or developer jargon. Internal anchors may appear in developer docs, logs, diagnostics, or advanced tooltips only when the player needs them to act.

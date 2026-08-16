@@ -1,8 +1,11 @@
 import type { JsonValue, WorkspaceFile } from "@tsian/contracts"
 import { readWorkspaceFileFromFiles } from "../storage"
+import {
+  REPLY_PROJECTION_CONFIG_PATH,
+  REPLY_PROJECTION_SCHEMA,
+} from "./reply-projection-constants"
 
-export const REPLY_PROJECTION_CONFIG_PATH = "config/reply-projection.json"
-export const REPLY_PROJECTION_SCHEMA = "tsian.reply-projection.v1"
+export { REPLY_PROJECTION_CONFIG_PATH, REPLY_PROJECTION_SCHEMA }
 
 export type ReplyProjectionDiagnosticScope = "config" | "rule"
 

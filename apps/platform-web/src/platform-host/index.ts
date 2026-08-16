@@ -101,6 +101,10 @@ export {
   type PlatformWorkspaceRootEntry,
 } from "./workspace-ops"
 export {
+  REPLY_PROJECTION_CONFIG_PATH,
+  REPLY_PROJECTION_SCHEMA,
+} from "./reply-projection-constants"
+export {
   getPlatformStudioSnapshot,
   getPlatformStudioAgentContext,
   getPlatformStudioSkillDetail,

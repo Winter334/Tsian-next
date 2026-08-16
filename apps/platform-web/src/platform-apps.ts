@@ -6,6 +6,7 @@ import {
   Bot,
   CircleUser,
   FilePenLine,
+  FileJson2,
   FolderOpen,
   Gamepad2,
   HardDrive,
@@ -23,6 +24,7 @@ export type PlatformAppId =
   | "workspace-explorer"
   | "workspace-editor"
   | "workspace-media"
+  | "reply-projection"
   | "studio"
   | "assistant"
   | "game-launcher"
@@ -113,6 +115,7 @@ const GameCardLibraryView = defineAsyncComponent(() => import("./views/GameCardL
 const WorkspaceExplorerView = defineAsyncComponent(() => import("./views/WorkspaceExplorerView.vue"))
 const WorkspaceEditorView = defineAsyncComponent(() => import("./views/WorkspaceEditorView.vue"))
 const WorkspaceMediaView = defineAsyncComponent(() => import("./views/WorkspaceMediaView.vue"))
+const ReplyProjectionView = defineAsyncComponent(() => import("./views/ReplyProjectionView.vue"))
 const StudioView = defineAsyncComponent(() => import("./views/StudioView.vue"))
 const AssistantView = defineAsyncComponent(() => import("./views/AssistantView.vue"))
 const GameCardDetailView = defineAsyncComponent(() => import("./views/GameCardDetailView.vue"))
@@ -127,6 +130,7 @@ const SpatialGameCardDetailView = defineAsyncComponent(() => import("./spatial/a
 const SpatialWorkspaceExplorerView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceExplorerView.vue"))
 const SpatialWorkspaceEditorView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceEditorView.vue"))
 const SpatialWorkspaceMediaView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceMediaView.vue"))
+const SpatialReplyProjectionView = defineAsyncComponent(() => import("./spatial/apps/reply-projection/SpatialReplyProjectionView.vue"))
 const SpatialStudioView = defineAsyncComponent(() => import("./spatial/apps/studio/SpatialStudioView.vue"))
 const SpatialAssistantView = defineAsyncComponent(() => import("./spatial/apps/assistant/SpatialAssistantView.vue"))
 const SpatialPlayView = defineAsyncComponent(() => import("./spatial/apps/play/SpatialPlayView.vue"))
@@ -191,6 +195,12 @@ export const platformAppRegistry: readonly PlatformAppDefinition[] = Object.free
     route: { name: "workspace-media", path: "/workspace/media" }, identity: { kind: "workspace-media" },
     label: "媒体查看器", shortLabel: "媒体", title: "媒体查看器", caption: "图片 / 音频 / 视频", icon: Image,
     ...presentation(WorkspaceMediaView, { width: 980, height: 640 }, { width: 520, height: 420 }, true, SpatialWorkspaceMediaView),
+  },
+  {
+    appId: "reply-projection", launcher: true,
+    route: { name: "reply-projection", path: "/reply-projection" }, identity: { kind: "singleton" },
+    label: "正文处理", shortLabel: "正文处理", title: "正文处理", caption: "当前游戏卡的正文规则", icon: FileJson2,
+    ...presentation(ReplyProjectionView, { width: 1060, height: 700 }, { width: 680, height: 500 }, true, SpatialReplyProjectionView),
   },
   {
     appId: "studio", launcher: true,
