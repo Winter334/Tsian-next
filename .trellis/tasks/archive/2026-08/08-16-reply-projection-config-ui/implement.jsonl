@@ -1,0 +1,4 @@
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Desktop route-view chrome, dual-shell presentation, existing primitives, close guards, read-only and responsive UI conventions."}
+{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Placement boundaries for route views, controllers, platform-host barrel exports and storage reuse."}
+{"file":".trellis/spec/guides/player-facing-product-copy.md","reason":"Author-visible labels, empty states, errors and confirmations must describe actions/results rather than projector internals."}
+{"file":".trellis/tasks/archive/2026-07/07-15-agent-reply-regex-projection/design.md","reason":"Authoritative v1 rule fields, lane semantics, ordering, failure behavior and ownership boundaries that the UI must preserve."}
