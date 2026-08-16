@@ -1050,3 +1050,24 @@ Reduced the product test inventory to three integration smoke files, aligned rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 197: 实现正文处理配置应用
+
+**Date**: 2026-08-16
+**Task**: 实现正文处理配置应用
+**Branch**: `master`
+
+### Summary
+
+新增独立的正文处理桌面应用，提供共享无损配置草稿与 Workspace 并发保存控制器、Retro/Spatial 双壳层结构化编辑界面，并完成构建、smoke、round-trip 与规范同步。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c9597be` | (see git log) |
+
+### Status
+
+[OK] **Completed**
