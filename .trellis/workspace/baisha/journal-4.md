@@ -1071,3 +1071,24 @@ Reduced the product test inventory to three integration smoke files, aligned rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 198: Text Tool Protocol retry hardening
+
+**Date**: 2026-08-17
+**Task**: Text Tool Protocol retry hardening
+**Branch**: `master`
+
+### Summary
+
+Moved text tool execution history into runtime user reports, added three-attempt code-specific correction loops, preserved strict non-executable tag safety, adapted task compression and multimodal message merging, consolidated durable regression coverage, and documented a retention-value gate for touched tests.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `76b40a9` | (see git log) |
+
+### Status
+
+[OK] **Completed**
