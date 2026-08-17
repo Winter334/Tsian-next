@@ -10,7 +10,11 @@ import type { AiTraceOperationContext, RuntimeChatMessage } from "../runtime-hos
 import type { RuntimeTraceDebugLabel } from "./trace"
 import { getPlatformConfig } from "../config/platform-config"
 import { sortToolMemoriesStable } from "./tool-memory"
-import { extractTextToolNameFromMessage } from "./text-tool-protocol"
+import {
+  extractTextToolNameFromMessage,
+  TEXT_TOOL_EXECUTED_TOOLS_TAG,
+  TEXT_TOOL_OBSERVATIONS_TAG,
+} from "./text-tool-protocol"
 
 /**
  * master agent 会话上下文生命周期与压缩持久化.
@@ -699,8 +703,8 @@ function uniqueSortedSequences(entries: AgentContextTurnEntry[]): number[] {
 
 // ─────────────────────────────────────────────────────────────────────────
 // 任务压缩(子代理/助手 task 模式,design 06-20-agent-task-compression)
-// 与 master 剧情压缩(compressContext)并列:压缩对象是工具交互段(assistant toolCalls +
-// tool observation 成对),把早期轮次摘要成"已完成工作"user message,保留最近 N 轮.
+// 与 master 剧情压缩(compressContext)并列:压缩对象是按协议边界识别的完整工具轮,
+// 把早期轮次摘要成"已完成工作"user message,保留最近 N 轮.
 // 不依赖 AgentContextSnapshot(任务型 agent 无跨 turn 快照),摘要文本随 messages 在
 // turn 内存在,turn 结束即弃(不落盘——助手跨 turn 持久化是后续独立任务).
 // ─────────────────────────────────────────────────────────────────────────
@@ -709,9 +713,7 @@ function uniqueSortedSequences(entries: AgentContextTurnEntry[]): number[] {
 const TASK_COMPRESSION_SYSTEM_PROMPT = compressionSystemPrompt("task-checkpoint")
 
 /** 任务压缩可处理的 message 形态(native RuntimeChatMessage 与 text AiChatMessage 的公共结构).
- *  content 放宽为 string | ContentPart[] 以兼容多模态消息;压缩场景只处理
- *  工具交互(assistant + tool),其 content 始终是 string,ContentPart[] 不会
- *  出现在被压缩段,但类型层面需要兼容以通过泛型约束. */
+ *  content 放宽为 string | ContentPart[] 以兼容 text execution report 携带的图片. */
 interface TaskCompressionMessage {
   role: string
   content: string | ContentPart[]
@@ -738,7 +740,7 @@ export interface TaskCompressionResult<T extends TaskCompressionMessage> {
 
 /**
  * 构建任务压缩 user prompt:旧摘要(若有,前次压缩产出) + 被压缩早期工具交互.
- * interactionEntries 已是早期段(保留段之外),按原顺序呈现 assistant 调用 + tool 返回.
+ * interactionEntries 已是早期段(保留段之外),按原顺序呈现完整 runtime 工具轮.
  */
 function buildTaskCompressionPrompt(
   oldSummary: string | null,
@@ -746,7 +748,7 @@ function buildTaskCompressionPrompt(
 ): string {
   return [
     oldSummary ? `此前的工作摘要：\n${oldSummary}\n` : "",
-    "需要压缩的早期工具交互（assistant 调用 + tool 返回）：",
+    "需要压缩的早期 runtime 工具交互：",
     ...interactionEntries.map((entry, index) => {
       const toolName = extractToolNameFromMessage(entry)
       const tag = toolName ? `[${entry.role}:${toolName}]` : `[${entry.role}]`
@@ -760,7 +762,7 @@ function buildTaskCompressionPrompt(
     .join("\n")
 }
 
-/** 从 message 提取工具名(若有):native assistant.toolCalls[0].name 或 Text Tool Protocol v2 记录/观察.无则 undefined. */
+/** 从 message 提取工具名(若有):native assistant.toolCalls[0].name 或 Text Tool Protocol v2 执行报告.无则 undefined. */
 function extractToolNameFromMessage(message: TaskCompressionMessage): string | undefined {
   // native: assistant 带 toolCalls,取首个调用名(一轮通常一个工具调用)
   if (message.role === "assistant" && Array.isArray(message.toolCalls) && message.toolCalls.length > 0) {
@@ -769,7 +771,7 @@ function extractToolNameFromMessage(message: TaskCompressionMessage): string | u
       return first.name
     }
   }
-  // text: Text Tool Protocol v2 call records/observations.
+  // text: Text Tool Protocol v2 executed-tools/observations report.
   const textToolName = extractTextToolNameFromMessage(message)
   if (textToolName) return textToolName
   return undefined
@@ -862,16 +864,14 @@ function textTaskGroup<T extends TaskCompressionMessage>(
   messages: T[],
   start: number,
 ): { group: TaskInteractionGroup<T>; next: number } | null {
-  const assistant = messages[start]
-  if (assistant?.role !== "assistant") return null
-  const records = parseTaggedArray(messageContentToText(assistant.content), "tsian-tool-call-records")
-  if (!records?.length) return null
-  const observationMessage = messages[start + 1]
-  const observations = observationMessage?.role === "user"
-    ? parseTaggedArray(messageContentToText(observationMessage.content), "tsian-tool-observations")
-    : undefined
+  const report = messages[start]
+  if (!report) return null
+  const reportText = messageContentToText(report.content)
+  const records = parseTaggedArray(reportText, TEXT_TOOL_EXECUTED_TOOLS_TAG)
+  const observations = parseTaggedArray(reportText, TEXT_TOOL_OBSERVATIONS_TAG)
+  if (!records?.length || !observations) return null
   const observationsById = new Map<string, Record<string, unknown>>()
-  for (const raw of observations ?? []) {
+  for (const raw of observations) {
     if (taskRecord(raw) && typeof raw.id === "string") observationsById.set(raw.id, raw)
   }
   const calls = records.filter(taskRecord).map((raw): TaskCompressionCall => {
@@ -884,10 +884,10 @@ function textTaskGroup<T extends TaskCompressionMessage>(
   })
   return {
     group: {
-      messages: observationMessage && observations ? [assistant, observationMessage] : [assistant],
+      messages: [report],
       calls,
     },
-    next: start + (observationMessage && observations ? 2 : 1),
+    next: start + 1,
   }
 }
 
@@ -923,8 +923,8 @@ function pinnedTaskGroupIndexes(groups: readonly TaskInteractionGroup<TaskCompre
  * 任务压缩:把工具交互段的早期轮次摘要成 1 条 user message,保留最近 N 轮原文.
  *
  * 入参 messages 的工具交互段由调用方用 locateTaskInteractionSpan 定位为 [start, end).
- * 本函数:① 切出工具交互段 ② 保留最近 taskKeepRecentRounds 轮(成对计算:
- *    N 轮 = 2N 条 message,即 N 个 assistant+tool/user-observation 对) ③ 早期段送
+ * 本函数:① 切出工具交互段 ② 按协议分组并保留最近 taskKeepRecentRounds 轮
+ *    (native 并行轮和 text 单条执行报告都保持原子性) ③ 早期段送
  *    model 生成任务摘要 ④ 拼新 messages = [...框架段, {user:已完成工作摘要},
  *    ...未解决原始轮, ...最近N轮].
  *

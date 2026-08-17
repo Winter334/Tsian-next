@@ -64,7 +64,6 @@ import {
   createRuntimeWorkspaceToolSessionState,
   executeRuntimeWorkspaceToolCalls,
   formatNativeToolObservationContent,
-  RUNTIME_WORKSPACE_TOOL_NAMES,
   stripThinkBlocks,
   extractThinkBlocks,
   type RuntimeActionExecutorPolicy,
@@ -80,17 +79,15 @@ import {
 } from "./workspace-tools"
 import {
   assignTextToolCallIds,
-  formatTextToolCallRecords,
+  formatTextToolExecutionReport,
   formatTextToolManifest,
-  formatTextToolObservations,
   formatTextToolProtocolError,
   parseTextToolProtocolResponse,
   stripTextProtocolArtifacts,
-  TEXT_TOOL_CALL_RECORDS_TAG,
-  TEXT_TOOL_CALLS_CLOSE_TAG,
+  TEXT_TOOL_CALL_TEMPLATE,
   TEXT_TOOL_CALLS_OPEN_TAG,
+  TEXT_TOOL_EXECUTED_TOOLS_TAG,
   TEXT_TOOL_OBSERVATIONS_TAG,
-  TEXT_TOOL_PROTOCOL_ERROR_TAG,
   TEXT_TOOL_PROTOCOL_MAX_RETRIES,
 } from "./text-tool-protocol"
 import type {
@@ -187,7 +184,7 @@ interface AgentCallTurnState {
  * 压缩模式(design 06-20-agent-task-compression):
  * - `narrative`: master 叙事型,压剧情正文(summary+recentTurns),一次压缩 + 第二次达预算
  *   抛 ContextBudgetExhaustedError(tool-token-budget R2 逻辑,保持不动).
- * - `task`: 子代理/助手任务型,压工具交互段(assistant toolCalls + tool observation),多次压缩
+ * - `task`: 子代理/助手任务型,按协议边界压完整工具交互轮,多次压缩
  *   不限次 + 时长兜底(TaskTimeoutError) + 压缩无效早退(TaskCompressionStalledError).
  */
 
@@ -419,26 +416,16 @@ function buildWorkspaceToolInstructions(
     "- JSON 必须是数组；单个工具也写成一元素数组；数组不能为空。",
     "- 一轮最多一个工具调用块；不要使用 Markdown 代码块；不要在 JSON 中写注释。",
     "- 工具名必须来自当前可用工具清单，arguments 必须符合对应说明。",
-    "你可能会在历史消息中看到这些系统标签：",
-    `- <${TEXT_TOOL_CALL_RECORDS_TAG}>：过去已经发起过的工具调用记录。`,
-    `- <${TEXT_TOOL_OBSERVATIONS_TAG}>：工具调用返回的结果。`,
-    `- <${TEXT_TOOL_PROTOCOL_ERROR_TAG}>：上一轮工具调用格式错误的提示。`,
-    `这些标签只供阅读；不要模仿、复制或输出。新的工具调用只能使用 ${TEXT_TOOL_CALLS_OPEN_TAG}。`,
+    `runtime user 消息中的 <${TEXT_TOOL_EXECUTED_TOOLS_TAG}> 和 <${TEXT_TOOL_OBSERVATIONS_TAG}> 是已经完成的调用及结果。需要新调用时只使用 ${TEXT_TOOL_CALLS_OPEN_TAG}。`,
     "当前可用工具清单：",
     formatTextToolManifest(options.tools),
     "收到工具结果后：",
-    `- 阅读 <${TEXT_TOOL_OBSERVATIONS_TAG}> 中的结果。`,
+    `- 阅读 runtime user 执行报告中的 <${TEXT_TOOL_OBSERVATIONS_TAG}> 结果。`,
     `- 还需要工具时，再输出 ${TEXT_TOOL_CALLS_OPEN_TAG}。`,
     "- 信息足够时，直接输出最终结果。",
     "- 最终结果不要包含任何 <tsian-...> 标签、工具 JSON、工具结果原文或实现说明。",
     "正确示例（把工具名和参数替换为当前可用工具清单中的实际值）：",
-    TEXT_TOOL_CALLS_OPEN_TAG,
-    `[{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill}","arguments":{"name":"可见Skill名称"}}]`,
-    TEXT_TOOL_CALLS_CLOSE_TAG,
-    "错误示例（不要这样输出）：",
-    `<${TEXT_TOOL_CALL_RECORDS_TAG}>`,
-    `[{"id":"text-r1-c0","name":"${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill}","arguments":{"name":"可见Skill名称"}}]`,
-    `</${TEXT_TOOL_CALL_RECORDS_TAG}>`,
+    TEXT_TOOL_CALL_TEMPLATE,
   ].join("\n")
 }
 
@@ -1090,7 +1077,7 @@ async function callAgentModelWithWorkspaceToolsNative(
   // - narrative(master):压剧情(summary+recentTurns),一次压缩 + 第二次达预算抛
   //   ContextBudgetExhaustedError.仅 entry 稳态路径(注入了 context 快照)做压剧情;
   //   兜底路径无快照,只走预算兜底.
-  // - task(子代理/助手):压工具交互段(assistant toolCalls + tool observation),多次压缩
+  // - task(子代理/助手):按协议边界压完整工具交互轮,多次压缩
   //   不限次 + 时长兜底(TaskTimeoutError) + 压缩无效早退(TaskCompressionStalledError).
   const historySpan = locateHistorySpan(runtimeMessages)
   const canCompressNarrative =
@@ -1720,9 +1707,15 @@ async function callAgentModelWithWorkspaceTools(
     }
     const response = await capabilities.callModel(mergedMessages as AiChatMessage[], callOptions)
     assertNotAborted(options.signal)
-    lastRoundText = response
 
     const parseResult = parseTextToolProtocolResponse(response)
+    // Budget fallbacks may run before the next correction model call. Retain
+    // only parser-approved interim prose from a rejected response so malformed
+    // runtime-history tags cannot shed their tag and leak the raw payload as a
+    // final answer.
+    lastRoundText = parseResult.kind === "protocol_error"
+      ? parseResult.interimText
+      : response
     const isProtocolError = parseResult.kind === "protocol_error"
     const toolCalls = parseResult.kind === "tool_calls"
       ? assignTextToolCallIds(parseResult.calls, round)
@@ -1790,12 +1783,8 @@ async function callAgentModelWithWorkspaceTools(
       }
       const retryRemaining = protocolErrorRetriesRemaining
       protocolErrorRetriesRemaining -= 1
-      const protocolAssistantContent = stripThinkBlocks(stripTextProtocolArtifacts(parseResult.interimText)).trim()
       nextMessages = [
         ...nextMessages,
-        ...(protocolAssistantContent
-          ? [{ role: "assistant" as const, content: protocolAssistantContent }]
-          : []),
         {
           role: "user",
           content: formatTextToolProtocolError(parseResult.error, retryRemaining),
@@ -1885,27 +1874,15 @@ async function callAgentModelWithWorkspaceTools(
     const executedCalls = toolCalls
       .map((p) => p.call)
       .filter((call): call is NonNullable<typeof call> => call !== undefined)
-    const observationMessage = formatTextToolObservations(executedCalls, observations)
     nextMessages = [
       ...nextMessages,
+      // The runtime injects one non-executable user report containing both the
+      // executed calls and their id-aligned accepted observations. Image parts
+      // stay in this same message so multimodal providers cannot split the round.
       {
-        role: "assistant",
-        // Text Tool Protocol v2 replays non-executable call records only.
-        // The executable block and think blocks stay out of model history;
-        // surrounding prose was already collected as interim process text.
-        content: formatTextToolCallRecords(executedCalls),
+        role: "user",
+        content: formatTextToolExecutionReport(executedCalls, observations),
       },
-      // workspace_read 图片结果:image ContentPart 追加到 user 消息(text observation + image parts).
-      // 无 image 时保持纯 string content(text protocol mode).
-      (() => {
-        if (observationMessage.imageParts.length === 0) {
-          return { role: "user" as const, content: observationMessage.text }
-        }
-        return {
-          role: "user" as const,
-          content: [{ type: "text" as const, text: observationMessage.text }, ...observationMessage.imageParts] as ContentPart[],
-        }
-      })(),
     ]
     // 采集本轮工具调用(供 contextUpdate 跨 turn 保留).observation 已通过统一 acceptance gate.
     // toolCalls 是 ParsedRuntimeToolCall[],observations 按 index 与完整 calls 数组对齐

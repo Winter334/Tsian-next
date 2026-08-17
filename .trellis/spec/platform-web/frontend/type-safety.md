@@ -487,7 +487,7 @@ await reloadAuthoritativeState()
 
 - `agent-runtime` must not import Dexie, storage helpers, bridge objects, or `platform-host` (purity boundary).
 - The Agent Runtime supports two peer tool-call modes, selected per model via `toolCallMode`:
-  - `text`: Text Tool Protocol v2. `callModel` returns ordinary chat text; the text loop parses exactly one executable `<tsian-tool-calls>` JSON-array block per tool-call round, assigns stable text call ids (`text-r<round>-c<index>`), executes through the shared tool executor, and threads non-executable `<tsian-tool-call-records>` plus `<tsian-tool-observations>` back as model context. Legacy `<tsian-tool-call>` is not an executable format. If a model echoes any non-executable runtime-history tag (`<tsian-tool-call-records>`, `<tsian-tool-observations>`, or `<tsian-tool-protocol-error>`) in a fresh response, the parser must return a protocol error and retry through the bounded protocol-error path; it must not treat the response as a normal `stop` whose stripped final text is empty.
+  - `text`: Text Tool Protocol v2. `callModel` returns ordinary chat text; the text loop parses exactly one executable `<tsian-tool-calls>` JSON-array block per tool-call round, assigns stable text call ids (`text-r<round>-c<index>`), executes through the shared tool executor, then injects one non-executable `user` execution report containing `<tsian-executed-tools>` plus id-aligned `<tsian-tool-observations>`. Legacy `<tsian-tool-call>` is not executable, and legacy `<tsian-tool-call-records>` remains reject/strip compatibility input only. If a model echoes any execution-report, observation, protocol-error, or legacy history tag in a fresh response, the parser returns a protocol error through the bounded correction path; it never treats the response as a normal empty `stop`.
   - `native`: API-native function calling. The runtime sends the provider's native `tools` field and structured messages (assistant `toolCalls` + tool observation role with `toolCallId`), and returns a structured result. Tool execution logic is shared with the text path.
 - Enabled tool schemas are built from the same `ToolSchema[]` source for both modes. Native mode sends them to the provider; text mode renders them into the Text Tool Protocol manifest. Controlled tools such as `inspect_frontend`, `test_skill_script`, and `query_diagnostics` require both Agent config enablement and a physically supplied Environment port.
 - The `toolCallMode` capability is resolved once per turn from the entry/local-assistant agent's model config and drives the whole turn's dispatch, including delegated `agent_call` loops. Host model-call closures may still resolve provider/model parameters by `options.agentId`, but the protocol mode is not automatically switched. If `native` is selected and no native caller is available, fail loudly.
@@ -514,14 +514,14 @@ await reloadAuthoritativeState()
 - Use `workspace.read/list/search` for third-layer files only: files explicitly referenced by the injected `SKILL.md`, world data, memory, README files, or other current-task context.
 - Workspace path rules: normalize backslashes to slashes; trim leading slashes; reject empty file paths, trailing slash file paths, `.`, `..`, and empty path segments; allow empty directory path for root listing. The Agent-facing `read` producer returns at most 24 KiB and an exact `nextCharOffset`; the shared workspace operation still retains its full-result semantics for Resource Manager/SDK callers. Agent `list` uses `offset/limit/nextOffset`; Agent `search` caps files, matches, snippets, and `contextLines` before shared execution and reports unknown remainder as `*AtLeast`; Agent `glob` reports truncation and narrowing rather than inventing a cursor. `workspace.search` `query` and `pattern` remain mutually exclusive.
 - Workspace tool payload names must match their executor fields. `diff` receives proposed next text as `expectedContent` (the operation executor may retain `content` only as an internal/browser-script compatibility fallback). `edit` keeps literal unique-match semantics, but when an exact multiline match fails it may treat LF/CRLF/CR as equivalent; the replacement adopts the matched file line ending. Indentation and all non-newline whitespace remain exact.
-- Tool observations return only to the calling Agent through the selected Tool protocol: native mode uses provider-correlated `role:"tool"` messages and text mode uses `<tsian-tool-observations>`. The runtime must not convert a Tool result into an extra synthetic `user` message. Final entry agent output must strip tool-call blocks and must not expose tool observations to players.
+- Tool observations return only to the calling Agent through the selected Tool protocol: native mode uses provider-correlated `role:"tool"` messages; text mode injects exactly one runtime-owned `user` execution report carrying executed calls and accepted observations in the same message (plus any image `ContentPart`s). It must not emit an assistant call-record replay or split one text tool round across two messages. Final entry agent output must strip protocol blocks and must not expose tool observations to players.
 
 ### Validation & Error Matrix
 
 - Malformed/non-object tool payload, missing name, non-object arguments, or unknown tool name -> error observation.
 - Strict JSON-invalid Tool delivery -> `TOOL_OBSERVATION_INVALID`; oversized delivery -> `TOOL_OBSERVATION_TOO_LARGE` with `actualChars`/`maxChars` and remediation, without the rejected raw body. Both are failed observations and failed terminal Tool status.
-- Text Protocol v2 malformed executable block (missing close tag, multiple `<tsian-tool-calls>` blocks, invalid JSON, non-array content, or empty array) -> `protocol_error` observation and at most `TEXT_TOOL_PROTOCOL_MAX_RETRIES` retry.
-- Text Protocol v2 non-executable runtime-history tag echoed by the model (`<tsian-tool-call-records>`, `<tsian-tool-observations>`, `<tsian-tool-protocol-error>`) -> `TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG` protocol error + retry; do not strip it to an empty final reply.
+- Text Protocol v2 malformed executable block (missing close tag, multiple `<tsian-tool-calls>` blocks, invalid JSON, non-array content, or empty array) -> `protocol_error`; after the initial invalid response, allow at most three correction model calls (`TEXT_TOOL_PROTOCOL_MAX_RETRIES = 3`). A valid tool-call round resets this consecutive-error budget.
+- Text Protocol v2 non-executable tag echoed by the model (`<tsian-executed-tools>`, `<tsian-tool-observations>`, `<tsian-tool-protocol-error>`, or legacy `<tsian-tool-call-records>`) -> `TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG` + correction; never execute, replay as assistant history, or strip it to an empty final reply.
 - `use_skill`: missing/blank name -> `SKILL_NAME_REQUIRED`; unknown/invisible Skill -> `SKILL_NOT_FOUND`; ambiguous after local/shared priority -> `SKILL_NAME_AMBIGUOUS`; missing `SKILL.md` -> `SKILL_DETAIL_NOT_FOUND`; oversized direct result -> `SKILL_DETAIL_TOO_LARGE` and no cache update.
 - `run_script`: missing skill/action -> required errors; invisible/disabled Skill -> `SKILL_NOT_FOUND`; undeclared action -> `ACTION_NOT_FOUND`; non-`browser_script` executor -> `ACTION_NOT_BROWSER_SCRIPT`; schema-invalid input -> `ACTION_INPUT_INVALID`; executor denied by policy -> `ACTION_EXECUTOR_DISABLED`; timeout/abort/script/output failure -> roll back the action savepoint; malformed memory side channel -> `TSIAN_MEMORY_PROJECTION_INVALID`; output fails `outputSchema` -> `ACTION_OUTPUT_INVALID`; malformed `outputSchema` -> `ACTION_OUTPUT_SCHEMA_INVALID`; path outside owner directory -> `BROWSER_SCRIPT_PATH_INVALID`.
 - `agent_call`: missing agentId/request -> required errors; no active Agent context -> `AGENT_CALL_CONTEXT_REQUIRED`; target not found -> `AGENT_CALL_TARGET_NOT_FOUND`; target not in contacts -> `AGENT_CALL_TARGET_NOT_CONTACT`; beyond `maxDepth` or unavailable -> `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata (no per-turn call-count limit; `callCount` is diagnostic only); invalid `historyMode` -> `AGENT_CALL_HISTORY_MODE_INVALID`; delegated execution failure -> `AGENT_CALL_FAILED` (timeout -> `{ timeout: true }`).
@@ -533,6 +533,78 @@ await reloadAuthoritativeState()
 - Malformed `tsian-actions` blocks -> report declaration errors in `use_skill`; `run_script` can execute only declarations that parsed successfully from the current source.
 - **Narrative mode**: turn token budget reached a second time after one in-turn narrative compression (or budget reached when no agent-context snapshot is available) -> return the last round's stripped text if present; otherwise throw a budget-exhausted error surfaced as a soft "上下文已满" prompt (keeps already-streamed thought, not a hard error). The first budget crossing triggers in-turn compression on the narrative span (tool interactions preserved). No per-Agent round limit.
 - **Task mode** (delegated + assistant): budget crossing -> timeout check -> multi-compress on the tool-interaction span (no count cap) -> stall early-exit if yield < 10% -> budget-exhausted error when nothing left to compress. All surface as soft prompts (delegated: `AGENT_CALL_FAILED` observation with timeout/stalled details). See the "Turn Token Budget And In-Turn Compression" scenario.
+
+## Scenario: Text Tool Protocol Execution Reports And Correction Budget
+
+### 1. Scope / Trigger
+
+- Trigger: changing text-mode parser/formatter behavior, runtime tool-loop messages, protocol correction prompts, or task compression grouping.
+
+### 2. Signatures
+
+```ts
+parseTextToolProtocolResponse(text: string): TextToolProtocolParseResult
+formatTextToolExecutionReport(
+  calls: RuntimeWorkspaceToolCall[],
+  observations: RuntimeWorkspaceToolObservation[],
+): string | ContentPart[]
+formatTextToolProtocolError(error: RuntimeWorkspaceToolError, retryRemaining: number): string
+
+TEXT_TOOL_PROTOCOL_MAX_RETRIES = 3
+```
+
+### 3. Contracts
+
+- The only executable text is one strict-JSON array block: `<tsian-tool-calls>[{"name":"TOOL_NAME","arguments":{}}]</tsian-tool-calls>`. Do not add JSON repair, alternate executable tags, or runtime ids to model-authored calls.
+- After execution, emit one `user` message containing `<tsian-executed-tools>` records `{id,name,arguments}` and `<tsian-tool-observations>` records with the same ids. Append image parts to this message's `ContentPart[]`; do not create an adjacent assistant record.
+- Provider-bound same-role normalization must also merge a multimodal execution report with a following runtime correction while preserving every image part; rejected non-executable-tag payloads never become persisted interim timeline text.
+- Protocol correction messages include the current error code, state that the prior response was not executed, report remaining correction calls including the imminent call, select the code-specific positive action, show the single correct template, and offer normal prose as the no-tool exit.
+- Do not append the rejected assistant protocol response to provider history. A valid tool-call round resets the correction budget; four consecutive invalid responses (initial + three corrections) terminate with the last error code and no fifth correction call.
+- Text task compression recognizes execution-report/protocol-error tags independent of role. One report is one atomic round; align calls and observations by id, preserve parallel calls together, retain the latest configured rounds, and pin unresolved failed operation keys exactly as native mode does.
+
+### 4. Validation & Error Matrix
+
+| Input/result | Required behavior |
+|---|---|
+| Invalid strict JSON | `TEXT_TOOL_PROTOCOL_INVALID_JSON`; regenerate the whole strict array, with quoted/escaped JSON and no comments/trailing commas |
+| Executed/observation/error/legacy-history opening or closing tag in model response | `TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG`; re-express only a new intent with the executable tag and no runtime id |
+| Unclosed or multiple executable blocks | `TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED` / `TEXT_TOOL_PROTOCOL_MULTIPLE_BLOCKS`; emit one matched block |
+| Non-array or empty array | `TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY` / `TEXT_TOOL_PROTOCOL_CALLS_EMPTY`; use a non-empty array or answer normally |
+| Invalid call item/name/arguments | `TEXT_TOOL_PROTOCOL_CALL_INVALID` / `TEXT_TOOL_PROTOCOL_TOOL_NAME_REQUIRED` / `TEXT_TOOL_PROTOCOL_ARGUMENTS_INVALID`; each item is a non-empty `name` plus object `arguments` |
+| Valid call after one to three consecutive errors | Execute exactly once and reset correction budget |
+| Fourth consecutive protocol error | Throw with the fourth error code; do not call the model again; enclosing workspace transaction rolls back |
+
+### 5. Good / Base / Bad Cases
+
+- Good: runtime user report contains executed ids, exact parsed arguments, accepted observations, and image parts in one message; compression aligns parallel observations by id.
+- Base: no tool is needed, so the model returns ordinary prose with no protocol tags.
+- Bad: convert `<tsian-tool-call-records>` into a new executable call, replay rejected protocol text as assistant history, or split calls and observations into role-dependent messages.
+
+### 6. Tests Required
+
+- Assistant Runtime smoke: invalid JSON -> legacy tag -> unclosed block -> valid write -> final prose; assert one write, three correction calls, no assistant call-record history, and one user report per tool round.
+- Assistant Runtime smoke: valid staged write followed by four invalid protocol responses; assert no fifth correction call and transaction/session/context rollback.
+- Compression fixture: one text user report per round, parallel observations are deliberately reversed to prove id rather than index alignment, recent-round retention remains five by default, and unresolved exact failures remain pinned outside lossy compression.
+- Provider-message assertions inspect structured protocol-error codes/retry counts, one complete executable template in the first system prompt, and absence of a complete legacy negative block without binding correction prose word-for-word. Keep one multimodal formatter/merge check that preserves the image and strips rejected detail; treat the remaining error-matrix rows as review cases rather than permanent assertion variants.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+messages.push({ role: "assistant", content: formatCallRecords(calls) })
+messages.push({ role: "user", content: formatObservations(observations) })
+```
+
+#### Correct
+
+```ts
+const report = formatTextToolExecutionReport(calls, observations)
+messages.push({
+  role: "user",
+  content: report,
+})
+```
 
 ## Scenario: Native AIRP History Writeback
 
@@ -636,7 +708,7 @@ await reloadAuthoritativeState()
   - Every crossing is a compression attempt (no cap; multi-compress unlimited). Before compressing, check inactivity: if no activity (tool/round-end) has occurred for `inactivityTimeoutMs`, throw `TaskTimeoutError`.
   - Locate the tool-interaction span. If no span exists, fall back (return last stripped text / throw `ContextBudgetExhaustedError`).
   - Compress: slice the tool-interaction span, keep the recent 5 tool rounds, summarize earlier rounds into one `已完成工作摘要` user message. If the early span is empty or tool interactions ≤ 5, fall back.
-  - Treat each native assistant `toolCalls` message plus all adjacent correlated `role:"tool"` observations as one atomic round. Treat each Text Tool Protocol call-record message plus its adjacent observation message as one atomic round. Compression must never split either protocol sequence.
+  - Treat each native assistant `toolCalls` message plus all adjacent correlated `role:"tool"` observations as one atomic round. Treat each Text Tool Protocol single-user execution report (executed calls plus id-aligned observations) as one atomic round, independent of role checks. Compression must never split either protocol sequence.
   - Keep unresolved failed semantic-operation rounds exact and exclude them from the lossy compressor input. Rebuild messages as framework → checkpoint summary → pinned unresolved rounds → recent rounds, with no duplicated round; a later success for the same semantic operation key unpins the older failure.
   - After compression, if yield < 10% (compression barely reduced tokens), throw `TaskCompressionStalledError` (stall early-exit, do not burn budget waiting for timeout).
   - Task compression never touches the agent-context snapshot (in-turn tool-interaction compression is separate from cross-turn snapshot). The in-turn summary text lives only within the turn. The **assistant** has cross-turn snapshot persistence (see "Assistant Cross-Turn Context Persistence"); **delegated `agent_call` targets** have no cross-turn persistence.

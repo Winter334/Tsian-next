@@ -9,20 +9,22 @@ import type {
 
 export const TEXT_TOOL_CALLS_TAG = "tsian-tool-calls"
 export const TEXT_TOOL_CALL_RECORDS_TAG = "tsian-tool-call-records"
+export const TEXT_TOOL_EXECUTED_TOOLS_TAG = "tsian-executed-tools"
 export const TEXT_TOOL_OBSERVATIONS_TAG = "tsian-tool-observations"
 export const TEXT_TOOL_PROTOCOL_ERROR_TAG = "tsian-tool-protocol-error"
 
 export const TEXT_TOOL_CALLS_OPEN_TAG = `<${TEXT_TOOL_CALLS_TAG}>`
 export const TEXT_TOOL_CALLS_CLOSE_TAG = `</${TEXT_TOOL_CALLS_TAG}>`
+export const TEXT_TOOL_CALL_TEMPLATE = `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"TOOL_NAME","arguments":{}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`
 
-export const TEXT_TOOL_PROTOCOL_MAX_RETRIES = 1
+export const TEXT_TOOL_PROTOCOL_MAX_RETRIES = 3
 
 export type TextToolProtocolParseResult =
   | { kind: "stop" }
   | { kind: "tool_calls"; calls: ParsedRuntimeWorkspaceToolCall[]; interimText: string }
   | { kind: "protocol_error"; error: RuntimeWorkspaceToolError; interimText: string }
 
-export interface TextToolCallRecord {
+export interface TextToolExecutionRecord {
   id: string
   name: string
   arguments: Record<string, unknown>
@@ -43,11 +45,13 @@ interface MessageLike {
 
 const EXECUTABLE_CALLS_PATTERN = /<tsian-tool-calls>\s*([\s\S]*?)\s*<\/tsian-tool-calls>/g
 const CALL_RECORDS_PATTERN = /<tsian-tool-call-records>\s*([\s\S]*?)\s*<\/tsian-tool-call-records>/g
+const EXECUTED_TOOLS_PATTERN = /<tsian-executed-tools>\s*([\s\S]*?)\s*<\/tsian-executed-tools>/g
 const OBSERVATIONS_PATTERN = /<tsian-tool-observations>\s*([\s\S]*?)\s*<\/tsian-tool-observations>/g
 const PROTOCOL_ERROR_PATTERN = /<tsian-tool-protocol-error>\s*([\s\S]*?)\s*<\/tsian-tool-protocol-error>/g
 
 const NON_EXECUTABLE_TEXT_PROTOCOL_TAGS = [
   TEXT_TOOL_CALL_RECORDS_TAG,
+  TEXT_TOOL_EXECUTED_TOOLS_TAG,
   TEXT_TOOL_OBSERVATIONS_TAG,
   TEXT_TOOL_PROTOCOL_ERROR_TAG,
 ] as const
@@ -95,7 +99,13 @@ function countOccurrences(text: string, needle: string): number {
 function firstTextProtocolTag(text: string, tags: readonly string[]): string | undefined {
   let first: { tag: string; index: number } | undefined
   for (const tag of tags) {
-    const index = text.indexOf(`<${tag}>`)
+    const openIndex = text.indexOf(`<${tag}>`)
+    const closeIndex = text.indexOf(`</${tag}>`)
+    const index = openIndex < 0
+      ? closeIndex
+      : closeIndex < 0
+        ? openIndex
+        : Math.min(openIndex, closeIndex)
     if (index < 0) continue
     if (!first || index < first.index) {
       first = { tag, index }
@@ -130,10 +140,20 @@ export function stripTextProtocolArtifacts(text: string): string {
   for (const pattern of [
     EXECUTABLE_CALLS_PATTERN,
     CALL_RECORDS_PATTERN,
+    EXECUTED_TOOLS_PATTERN,
     OBSERVATIONS_PATTERN,
     PROTOCOL_ERROR_PATTERN,
   ]) {
     result = replacePattern(result, pattern)
+  }
+  for (const tag of [
+    TEXT_TOOL_CALL_RECORDS_TAG,
+    TEXT_TOOL_EXECUTED_TOOLS_TAG,
+    TEXT_TOOL_OBSERVATIONS_TAG,
+    TEXT_TOOL_PROTOCOL_ERROR_TAG,
+  ]) {
+    result = result.split(`<${tag}>`).join("")
+    result = result.split(`</${tag}>`).join("")
   }
   return result.trim()
 }
@@ -185,7 +205,10 @@ export function parseTextToolProtocolResponse(text: string): TextToolProtocolPar
     return {
       kind: "protocol_error",
       error: nonExecutableProtocolError(nonExecutableTag),
-      interimText: stripTextProtocolArtifacts(text),
+      // A malformed or dangling runtime-history tag has no reliable payload
+      // boundary. Drop the rejected response from interim persistence so raw
+      // call arguments or observations cannot leak into the turn timeline.
+      interimText: "",
     }
   }
 
@@ -278,15 +301,14 @@ export function assignTextToolCallIds(
   }))
 }
 
-export function formatTextToolCallRecords(
+function textToolExecutionRecords(
   calls: RuntimeWorkspaceToolCall[],
-): string {
-  const records: TextToolCallRecord[] = calls.map((call, index) => ({
+): TextToolExecutionRecord[] {
+  return calls.map((call, index) => ({
     id: call.id ?? `text-c${index}`,
     name: call.name,
     arguments: call.arguments,
   }))
-  return `<${TEXT_TOOL_CALL_RECORDS_TAG}>${JSON.stringify(records)}</${TEXT_TOOL_CALL_RECORDS_TAG}>`
 }
 
 function toolObservationForText(
@@ -312,21 +334,64 @@ function toolObservationForText(
   }
 }
 
-export function formatTextToolObservations(
+export function formatTextToolExecutionReport(
   calls: RuntimeWorkspaceToolCall[],
   observations: RuntimeWorkspaceToolObservation[],
-): { text: string; imageParts: ContentPart[] } {
-  const records = observations.map((observation, index) =>
+): string | ContentPart[] {
+  const executionRecords = textToolExecutionRecords(calls)
+  const observationRecords = observations.map((observation, index) =>
     toolObservationForText(calls[index], observation, index)
   )
   const imageParts = observations.flatMap((observation) => observation.imageParts ?? [])
-  return {
-    text: [
-      "Text Tool Protocol observations:",
-      `<${TEXT_TOOL_OBSERVATIONS_TAG}>${JSON.stringify(records)}</${TEXT_TOOL_OBSERVATIONS_TAG}>`,
-      "Use these observations to continue. If you have enough context, provide the required final output without protocol tags.",
-    ].join("\n"),
-    imageParts,
+  const text = [
+    "Text Tool Protocol execution report:",
+    `<${TEXT_TOOL_EXECUTED_TOOLS_TAG}>${JSON.stringify(executionRecords)}</${TEXT_TOOL_EXECUTED_TOOLS_TAG}>`,
+    `<${TEXT_TOOL_OBSERVATIONS_TAG}>${JSON.stringify(observationRecords)}</${TEXT_TOOL_OBSERVATIONS_TAG}>`,
+    `Use these completed results to continue. If another tool is needed, emit one ${TEXT_TOOL_CALLS_OPEN_TAG} block; otherwise answer normally without protocol tags.`,
+  ].join("\n")
+  if (imageParts.length === 0) return text
+  return [{ type: "text", text }, ...imageParts]
+}
+
+function textToolProtocolCorrectionAction(code: string): string {
+  switch (code) {
+    case "TEXT_TOOL_PROTOCOL_INVALID_JSON":
+      return "Regenerate the complete call as a strict JSON array. Use double-quoted keys and strings, escape newlines, quotes, and control characters, and place commas only between items."
+    case "TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG":
+      return "Express only the intended new calls in the executable block, with each array item containing name and arguments."
+    case "TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED":
+    case "TEXT_TOOL_PROTOCOL_MULTIPLE_BLOCKS":
+      return "Emit exactly one executable block with one matched opening tag and closing tag."
+    case "TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY":
+    case "TEXT_TOOL_PROTOCOL_CALLS_EMPTY":
+      return "Put one or more calls in a non-empty JSON array. If no tool is needed, leave the protocol and answer normally."
+    case "TEXT_TOOL_PROTOCOL_CALL_INVALID":
+    case "TEXT_TOOL_PROTOCOL_TOOL_NAME_REQUIRED":
+    case "TEXT_TOOL_PROTOCOL_ARGUMENTS_INVALID":
+      return "Encode every array item as a name-and-arguments object: name must be a non-empty string, and arguments must be an object."
+    default:
+      return "Regenerate the complete call using the correct tool-call format."
+  }
+}
+
+function textToolProtocolCorrectionReason(code: string): string {
+  switch (code) {
+    case "TEXT_TOOL_PROTOCOL_INVALID_JSON":
+      return "The executable block requires one complete strict JSON array."
+    case "TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG":
+      return "New tool requests use the executable tool-call block."
+    case "TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED":
+    case "TEXT_TOOL_PROTOCOL_MULTIPLE_BLOCKS":
+      return "A tool-call round uses one matched executable block."
+    case "TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY":
+    case "TEXT_TOOL_PROTOCOL_CALLS_EMPTY":
+      return "The executable block contains a non-empty JSON array."
+    case "TEXT_TOOL_PROTOCOL_CALL_INVALID":
+    case "TEXT_TOOL_PROTOCOL_TOOL_NAME_REQUIRED":
+    case "TEXT_TOOL_PROTOCOL_ARGUMENTS_INVALID":
+      return "Every call contains a non-empty name and an arguments object."
+    default:
+      return "The response requires the executable tool-call format."
   }
 }
 
@@ -335,11 +400,17 @@ export function formatTextToolProtocolError(
   retryRemaining: number,
 ): string {
   return [
-    "Text Tool Protocol error:",
-    `<${TEXT_TOOL_PROTOCOL_ERROR_TAG}>${JSON.stringify({ ok: false, error, retryRemaining })}</${TEXT_TOOL_PROTOCOL_ERROR_TAG}>`,
-    retryRemaining > 0
-      ? `Retry by emitting exactly one ${TEXT_TOOL_CALLS_OPEN_TAG} JSON array block, or answer normally without protocol tags if no tool call is needed.`
-      : "Retry budget exhausted; the runtime will fail this turn.",
+    "Text Tool Protocol correction:",
+    `<${TEXT_TOOL_PROTOCOL_ERROR_TAG}>${JSON.stringify({
+      code: error.code,
+      message: textToolProtocolCorrectionReason(error.code),
+      retryRemaining,
+    })}</${TEXT_TOOL_PROTOCOL_ERROR_TAG}>`,
+    "The previous response was not executed.",
+    `Correction attempts remaining, including this attempt: ${retryRemaining}.`,
+    `Correction action: ${textToolProtocolCorrectionAction(error.code)}`,
+    `Correct tool-call format: ${TEXT_TOOL_CALL_TEMPLATE}`,
+    "If no tool is needed, answer normally without protocol tags.",
   ].join("\n")
 }
 
@@ -356,27 +427,22 @@ function parseFirstArrayTag(text: string, pattern: RegExp): unknown[] | undefine
 
 export function isTextToolInteractionMessage(message: MessageLike): boolean {
   const text = textFromContent(message.content)
-  if (message.role === "assistant" && text.includes(`<${TEXT_TOOL_CALL_RECORDS_TAG}>`)) return true
-  if (message.role === "user" && text.includes(`<${TEXT_TOOL_OBSERVATIONS_TAG}>`)) return true
-  if (message.role === "user" && text.includes(`<${TEXT_TOOL_PROTOCOL_ERROR_TAG}>`)) return true
-  return false
+  return text.includes(`<${TEXT_TOOL_EXECUTED_TOOLS_TAG}>`)
+    || text.includes(`<${TEXT_TOOL_OBSERVATIONS_TAG}>`)
+    || text.includes(`<${TEXT_TOOL_PROTOCOL_ERROR_TAG}>`)
 }
 
 export function extractTextToolNameFromMessage(message: MessageLike): string | undefined {
   const text = textFromContent(message.content)
-  if (message.role === "assistant") {
-    const records = parseFirstArrayTag(text, CALL_RECORDS_PATTERN)
-    const first = records?.[0]
-    if (isRecord(first) && typeof first.name === "string" && first.name.trim()) {
-      return first.name.trim()
-    }
+  const executions = parseFirstArrayTag(text, EXECUTED_TOOLS_PATTERN)
+  const firstExecution = executions?.[0]
+  if (isRecord(firstExecution) && typeof firstExecution.name === "string" && firstExecution.name.trim()) {
+    return firstExecution.name.trim()
   }
-  if (message.role === "user") {
-    const observations = parseFirstArrayTag(text, OBSERVATIONS_PATTERN)
-    const first = observations?.[0]
-    if (isRecord(first) && typeof first.name === "string" && first.name.trim()) {
-      return first.name.trim()
-    }
+  const observations = parseFirstArrayTag(text, OBSERVATIONS_PATTERN)
+  const firstObservation = observations?.[0]
+  if (isRecord(firstObservation) && typeof firstObservation.name === "string" && firstObservation.name.trim()) {
+    return firstObservation.name.trim()
   }
   return undefined
 }

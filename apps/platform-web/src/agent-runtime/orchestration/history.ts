@@ -133,8 +133,8 @@ export function replaceHistorySpan<T extends MessageLike>(
 /**
  * 列举一个 message 是否属于"工具交互"(供 locateTaskInteractionSpan 从末尾向前扫描).
  * - native 形态:`role === "tool"` 或 `role === "assistant" && toolCalls?.length > 0`.
- * - text 形态：Text Tool Protocol v2 的 call-records / observations /
- *   protocol-error 消息。
+ * - text 形态：Text Tool Protocol v2 的单条 executed-tools + observations
+ *   执行报告或 protocol-error 消息；识别不依赖 message role。
  *
  * 框架段 user(含历史窗口/目标上下文/请求等 section)不含这些标签,不会被误判为工具交互.
  */
@@ -155,7 +155,7 @@ function isTaskInteractionMessage(
 
 /**
  * 定位任务型 messages 的工具交互段边界,供任务压缩 slice+替换用(design §2.8).
- * 工具交互段 = 框架段之后到 messages 末尾(assistant toolCalls + tool observation 交替).
+ * 工具交互段 = 框架段之后到 messages 末尾(native structured round 或 text runtime report/correction).
  * 从末尾向前扫描,跳过所有"工具交互 message",定位到第一条"非工具交互"message 的下一索引.
  *
  * 两种 messages 结构都适用(delegated 单条框架 user / assistant entry 多条框架),扫描逻辑

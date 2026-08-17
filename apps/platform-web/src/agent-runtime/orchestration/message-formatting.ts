@@ -1,9 +1,25 @@
-import type { RuntimeChatMessage } from "../../runtime-host/ai"
+import type { ContentPart, RuntimeChatMessage } from "../../runtime-host/ai"
 
 function carriesToolProtocol(message: RuntimeChatMessage): boolean {
   return message.role === "tool"
     || ("toolCallId" in message && message.toolCallId !== undefined)
     || ("toolCalls" in message && message.toolCalls !== undefined && message.toolCalls.length > 0)
+}
+
+function mergeMessageContent(
+  previous: string | ContentPart[],
+  next: string | ContentPart[],
+): string | ContentPart[] {
+  if (typeof previous === "string" && typeof next === "string") {
+    return `${previous}\n\n${next}`
+  }
+  const previousParts = typeof previous === "string"
+    ? [{ type: "text" as const, text: previous }]
+    : previous
+  const nextParts = typeof next === "string"
+    ? [{ type: "text" as const, text: next }]
+    : next
+  return [...previousParts, { type: "text", text: "\n\n" }, ...nextParts]
 }
 
 /**
@@ -39,15 +55,9 @@ export function mergeConsecutiveRoleMessages(
       && !carriesToolProtocol(msg)
     ) {
       // 合并：纯换行拼接，不加自动标签（标签由作者在内容里显式写）。
-      // content 可能是 string 或 ContentPart[]；合并只处理 string content
-      // （连续同 role 的注入消息都是 string；多模态 ContentPart[] 只出现在
-      // 当前轮 user 输入，不会与同 role 注入消息连续）。
-      if (typeof last.content === "string" && typeof msg.content === "string") {
-        last.content += `\n\n${msg.content}`
-      } else {
-        // 多模态 content 不合并（罕见边界：同 role 连续但其中一条是 ContentPart[]）。
-        result.push({ ...msg })
-      }
+      // 多模态消息保留所有 ContentPart；例如 text 工具执行报告可同时携带
+      // 图片，并在下一轮协议纠错时与相邻 user 消息合并为一个 provider 消息。
+      last.content = mergeMessageContent(last.content, msg.content)
     } else {
       result.push({ ...msg })
     }
@@ -59,14 +69,13 @@ export function mergeConsecutiveRoleMessages(
  * 剥离消息内容开头的内部标记前缀（`<!-- tsian-layer: -->` 和 `<!-- source: -->`）。
  * 在 mergeConsecutiveRoleMessages 之后、API 调用之前执行——模型看到的是干净内容。
  * 只剥离消息**开头**的标记（`^` 锚定），不剥离消息内部合法的 HTML 注释。
- * 只处理 string content；ContentPart[]（多模态）不处理。
+ * 多模态消息逐个清理 text part，图片 part 原样保留。
  */
 export function stripInternalMarkers(messages: RuntimeChatMessage[]): RuntimeChatMessage[] {
   const layerRe = /^<!-- tsian-layer: [^>]* -->\n?/
   const sourceRe = /^<!-- source: [^>]* -->\n?/
-  return messages.map(msg => {
-    if (typeof msg.content !== "string") return msg
-    let content = msg.content
+  const stripMarkerPrefix = (text: string): string => {
+    let content = text
     // 可能同时有 layer 和 source 前缀（理论上不会，但防御性循环 2 次）
     for (let i = 0; i < 2; i++) {
       if (layerRe.test(content)) {
@@ -77,6 +86,23 @@ export function stripInternalMarkers(messages: RuntimeChatMessage[]): RuntimeCha
         break
       }
     }
-    return { ...msg, content }
+    return content
+  }
+  return messages.map((msg): RuntimeChatMessage => {
+    if (msg.role === "user" || msg.role === "system") {
+      if (typeof msg.content === "string") {
+        return { ...msg, content: stripMarkerPrefix(msg.content) }
+      }
+      return {
+        ...msg,
+        content: msg.content.map((part) => part.type === "text"
+          ? { ...part, text: stripMarkerPrefix(part.text) }
+          : part),
+      }
+    }
+    if (typeof msg.content === "string") {
+      return { ...msg, content: stripMarkerPrefix(msg.content) }
+    }
+    return msg
   })
 }

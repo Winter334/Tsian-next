@@ -34,6 +34,13 @@ import {
 import {
   createRuntimeWorkspaceToolSessionState,
 } from "../agent-runtime/workspace-tools"
+import {
+  formatTextToolExecutionReport,
+  formatTextToolProtocolError,
+  TEXT_TOOL_CALLS_CLOSE_TAG,
+  TEXT_TOOL_CALLS_OPEN_TAG,
+} from "../agent-runtime/text-tool-protocol"
+import { mergeConsecutiveRoleMessages } from "../agent-runtime/orchestration/message-formatting"
 import { executeWorkspaceOperation } from "../agent-runtime/workspace-operations"
 import { executeRunScript } from "../agent-runtime/workspace-tools/skill-actions"
 import type { RuntimeChatMessage } from "../runtime-host/ai"
@@ -75,6 +82,8 @@ const MODEL_ID = "assistant-smoke-model"
 const PROVIDER_ID = "assistant-smoke-provider"
 const PROVIDER_CREDENTIAL = "assistant-provider-secret"
 const WORKSPACE_PATH = "save/assistant-smoke.txt"
+const WORKSPACE_IMAGE_PATH = "save/assistant-smoke.png"
+const LEGACY_REPLAY_PATH = "save/legacy-replay-must-not-run.txt"
 const WORKSPACE_BASELINE = "before"
 const STAGED_VALUE = "same-turn-staged-value"
 const SIDE_AGENT_ID = "world-architect"
@@ -123,11 +132,36 @@ function openAiFinalResponse(content: string): Response {
   })
 }
 
+function openAiTextToolResponse(name: string, args: Record<string, unknown>): Response {
+  return openAiFinalResponse(
+    `${TEXT_TOOL_CALLS_OPEN_TAG}${JSON.stringify([{ name, arguments: args }])}${TEXT_TOOL_CALLS_CLOSE_TAG}`,
+  )
+}
+
 function requestBody(init?: RequestInit): OpenAiRequestBody {
   if (typeof init?.body !== "string") {
     throw new Error("Assistant smoke expected a JSON request body.")
   }
   return JSON.parse(init.body) as OpenAiRequestBody
+}
+
+function requestMessageText(body: OpenAiRequestBody): string {
+  return (body.messages ?? [])
+    .map((message) => typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? ""))
+    .join("\n")
+}
+
+function latestTextProtocolError(body: OpenAiRequestBody): {
+  code: string
+  retryRemaining: number
+} | undefined {
+  const matches = [...requestMessageText(body).matchAll(
+    /<tsian-tool-protocol-error>([\s\S]*?)<\/tsian-tool-protocol-error>/g,
+  )]
+  const payload = matches[matches.length - 1]?.[1]
+  if (!payload) return undefined
+  const parsed = JSON.parse(payload) as { code: string; retryRemaining: number }
+  return { code: parsed.code, retryRemaining: parsed.retryRemaining }
 }
 
 function toolObservation(body: OpenAiRequestBody, callId: string): string {
@@ -137,7 +171,7 @@ function toolObservation(body: OpenAiRequestBody, callId: string): string {
   return typeof value === "string" ? value : JSON.stringify(value ?? "")
 }
 
-async function configureProvider(): Promise<void> {
+async function configureProvider(toolCallMode: "native" | "text" = "native"): Promise<void> {
   const providerType = createBrowserAiProviderType("openai-compatible")
   providerType.presets.push(createBrowserAiProviderPreset({
     id: PROVIDER_ID,
@@ -147,7 +181,7 @@ async function configureProvider(): Promise<void> {
     models: [createBrowserAiModelConfig({
       id: MODEL_ID,
       enabled: true,
-      toolCallMode: "native",
+      toolCallMode,
       streaming: false,
     })],
     fallbackStrategy: "primary-only",
@@ -301,23 +335,33 @@ function nativeToolRound(
 
 function textToolRound(
   index: number,
-  input?: { name?: string; path?: string; failed?: boolean; content?: string },
+  input?: {
+    name?: string
+    path?: string
+    failed?: boolean
+    content?: string
+    parallel?: boolean
+    reverseObservations?: boolean
+  },
 ): RuntimeChatMessage[] {
   const name = input?.name ?? "read"
   const path = input?.path ?? `save/text-round-${index}.txt`
-  const id = `text-${index}-a`
-  const call = { id, name, arguments: { path, ...(input?.content ? { content: input.content } : {}) } }
-  const observation = input?.failed
-    ? { id, name, ok: false, error: { code: "WRITE_FAILED", message: "retry the exact payload" } }
-    : { id, name, ok: true, result: { path, status: "ok" } }
+  const calls = [{ id: `text-${index}-a`, name, arguments: { path, ...(input?.content ? { content: input.content } : {}) } }]
+  if (input?.parallel) {
+    calls.push({ id: `text-${index}-b`, name: "read", arguments: { path: `save/text-round-${index}-b.txt` } })
+  }
+  const observations = calls.map((call, callIndex) => input?.failed && callIndex === 0
+    ? { id: call.id, name: call.name, ok: false, error: { code: "WRITE_FAILED", message: "retry the exact payload" } }
+    : { id: call.id, name: call.name, ok: true, result: { path: call.arguments.path, status: "ok" } })
+  if (input?.reverseObservations) observations.reverse()
   return [
     {
-      role: "assistant",
-      content: `<tsian-tool-call-records>\n${JSON.stringify([call])}\n</tsian-tool-call-records>`,
-    },
-    {
       role: "user",
-      content: `<tsian-tool-observations>\n${JSON.stringify([observation])}\n</tsian-tool-observations>`,
+      content: [
+        "Text Tool Protocol execution report:",
+        `<tsian-executed-tools>\n${JSON.stringify(calls)}\n</tsian-executed-tools>`,
+        `<tsian-tool-observations>\n${JSON.stringify(observations)}\n</tsian-tool-observations>`,
+      ].join("\n"),
     },
   ]
 }
@@ -355,6 +399,43 @@ describe("Agent context contracts smoke", () => {
     ])
     expect(retained).toEqual([expect.objectContaining({ sequence: 3, status: "failed" })])
     expect(applyTaskToolMemoryRetention(retained, 6)).toEqual([])
+  })
+
+  it("keeps text execution reports multimodal and provider-merge safe", () => {
+    const multimodalReport = formatTextToolExecutionReport(
+      [{ id: "text-r4-c0", name: "read", arguments: { path: WORKSPACE_IMAGE_PATH } }],
+      [{
+        index: 0,
+        name: "read",
+        ok: true,
+        result: { path: WORKSPACE_IMAGE_PATH },
+        imageParts: [{ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" }],
+      }],
+    )
+    expect(Array.isArray(multimodalReport)).toBe(true)
+    if (!Array.isArray(multimodalReport)) throw new Error("Expected multimodal execution report content")
+    expect(multimodalReport).toHaveLength(2)
+    expect(multimodalReport[0]).toMatchObject({ type: "text" })
+    expect(JSON.stringify(multimodalReport[0])).toContain("<tsian-executed-tools>")
+    expect(JSON.stringify(multimodalReport[0])).toContain("<tsian-tool-observations>")
+    expect(multimodalReport[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" })
+
+    const mergedMultimodalCorrection = mergeConsecutiveRoleMessages([
+      { role: "user", content: multimodalReport },
+      {
+        role: "user",
+        content: formatTextToolProtocolError(
+          { code: "TEXT_TOOL_PROTOCOL_INVALID_JSON", message: "rejected detail" },
+          3,
+        ),
+      },
+    ])
+    expect(mergedMultimodalCorrection).toHaveLength(1)
+    expect(mergedMultimodalCorrection[0]?.role).toBe("user")
+    expect(Array.isArray(mergedMultimodalCorrection[0]?.content)).toBe(true)
+    expect(JSON.stringify(mergedMultimodalCorrection[0]?.content)).toContain("TEXT_TOOL_PROTOCOL_INVALID_JSON")
+    expect(JSON.stringify(mergedMultimodalCorrection[0]?.content)).toContain("iVBORw0KGgo=")
+    expect(JSON.stringify(mergedMultimodalCorrection[0]?.content)).not.toContain("rejected detail")
   })
 
   it("keeps atomic native and text rounds and pins unresolved exact operations outside lossy compression", async () => {
@@ -423,7 +504,7 @@ describe("Agent context contracts smoke", () => {
     const textMessages: RuntimeChatMessage[] = [
       { role: "user", content: "framework" },
       ...textToolRound(0, { name: "write", path: "save/text-exact.json", failed: true, content: "TEXT-EXACT-PAYLOAD" }),
-      ...textToolRound(1),
+      ...textToolRound(1, { parallel: true }),
       ...textToolRound(2),
       ...textToolRound(3),
       ...textToolRound(4),
@@ -440,20 +521,49 @@ describe("Agent context contracts smoke", () => {
     )
     expect(textResult.compressed).toBe(true)
     expect(JSON.stringify(textCompressor.mock.calls)).not.toContain("TEXT-EXACT-PAYLOAD")
+    expect(JSON.stringify(textCompressor.mock.calls)).toContain("text-1-a")
+    expect(JSON.stringify(textCompressor.mock.calls)).toContain("text-1-b")
     const textSummaryIndex = textResult.messages.findIndex((message) =>
       typeof message.content === "string" && message.content.startsWith("任务恢复 checkpoint："))
-    const textPinnedAssistantIndex = textResult.messages.findIndex((message) =>
-      message.role === "assistant" && typeof message.content === "string" && message.content.includes("text-0-a"))
-    const textPinnedObservationIndex = textResult.messages.findIndex((message) =>
+    const textPinnedReportIndex = textResult.messages.findIndex((message) =>
       message.role === "user" && typeof message.content === "string" && message.content.includes("text-0-a"))
-    const textRecentAssistantIndex = textResult.messages.findIndex((message) =>
-      message.role === "assistant" && typeof message.content === "string" && message.content.includes("text-2-a"))
+    const textRecentReportIndex = textResult.messages.findIndex((message) =>
+      message.role === "user" && typeof message.content === "string" && message.content.includes("text-2-a"))
     expect(textSummaryIndex).toBeGreaterThan(0)
-    expect(textPinnedAssistantIndex).toBeGreaterThan(textSummaryIndex)
-    expect(textPinnedObservationIndex).toBe(textPinnedAssistantIndex + 1)
-    expect(textRecentAssistantIndex).toBeGreaterThan(textPinnedObservationIndex)
+    expect(textPinnedReportIndex).toBeGreaterThan(textSummaryIndex)
+    expect(textRecentReportIndex).toBeGreaterThan(textPinnedReportIndex)
     expect(textResult.messages.filter((message) =>
-      typeof message.content === "string" && message.content.includes("text-0-a"))).toHaveLength(2)
+      typeof message.content === "string" && message.content.includes("text-0-a"))).toHaveLength(1)
+
+    const idAlignedResolvedMessages: RuntimeChatMessage[] = [
+      { role: "user", content: "framework" },
+      ...textToolRound(0, {
+        name: "write",
+        path: "save/text-id-aligned.json",
+        failed: true,
+        content: "TEXT-ID-ALIGNED-PAYLOAD",
+        parallel: true,
+        reverseObservations: true,
+      }),
+      ...textToolRound(1, { name: "write", path: "save/text-id-aligned.json" }),
+      ...textToolRound(2),
+      ...textToolRound(3),
+      ...textToolRound(4),
+      ...textToolRound(5),
+      ...textToolRound(6),
+      ...textToolRound(7),
+    ]
+    const idAlignedCompressor = vi.fn(async () => CHECKPOINT_SUMMARY)
+    const idAlignedResolved = await compressTaskContext(
+      idAlignedResolvedMessages,
+      { start: 1, end: idAlignedResolvedMessages.length },
+      null,
+      idAlignedCompressor,
+      { debugLabel: "agent:text-compression-id-alignment-smoke" },
+    )
+    expect(idAlignedResolved.compressed).toBe(true)
+    expect(JSON.stringify(idAlignedCompressor.mock.calls)).toContain("TEXT-ID-ALIGNED-PAYLOAD")
+    expect(JSON.stringify(idAlignedResolved.messages)).not.toContain("TEXT-ID-ALIGNED-PAYLOAD")
   })
 
   it("validates all fixed compression contracts and repairs one malformed checkpoint", async () => {
@@ -1009,6 +1119,84 @@ describe("Assistant Runtime transaction smoke", () => {
     expect(diagnostics).toHaveLength(7)
     expect(diagnostics.every((record) => record.attempts.length === 1)).toBe(true)
     expect(JSON.stringify(diagnostics)).not.toContain(PROVIDER_CREDENTIAL)
+
+    await configureProvider("text")
+    const textSeeded = await seedRuntime({ contextMarker: "text-protocol-success-baseline" })
+    const textRequests: OpenAiRequestBody[] = []
+    const completedTextWriteIds: string[] = []
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = requestBody(init)
+      textRequests.push(body)
+      if (textRequests.length === 1) {
+        return openAiFinalResponse(
+          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"invalid",}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`,
+        )
+      }
+      if (textRequests.length === 2) {
+        return openAiFinalResponse(
+          `<tsian-tool-call-records>[{"id":"old-write","name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"must-not-run"}}]</tsian-tool-call-records>`,
+        )
+      }
+      if (textRequests.length === 3) {
+        return openAiFinalResponse(
+          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"unclosed"}}]`,
+        )
+      }
+      if (textRequests.length === 4) {
+        return openAiTextToolResponse("write", { path: WORKSPACE_PATH, content: STAGED_VALUE })
+      }
+      return openAiFinalResponse("Text protocol correction completed")
+    }))
+
+    await expect(runAssistantChat({
+      message: "Recover from protocol mistakes, write once, and finish.",
+      sessionId: textSeeded.sessionId,
+      history: textSeeded.baselineMessages,
+      onTool: (_agentId, _round, callId, name, status) => {
+        if (name === "write" && status === "success") completedTextWriteIds.push(callId)
+      },
+    })).resolves.toMatchObject({ replyText: "Text protocol correction completed" })
+
+    expect(textRequests).toHaveLength(5)
+    expect(completedTextWriteIds).toHaveLength(1)
+    expect((await readWorkspaceFileForSave(textSeeded.saveId, WORKSPACE_PATH))?.content).toBe(STAGED_VALUE)
+    expect(await readWorkspaceFileForSave(textSeeded.saveId, LEGACY_REPLAY_PATH)).toBeNull()
+
+    const initialPrompt = requestMessageText(textRequests[0]!)
+    expect(initialPrompt.match(
+      /<tsian-tool-calls>\s*\[\s*\{\s*"name"\s*:\s*"TOOL_NAME"\s*,\s*"arguments"\s*:\s*\{\s*\}\s*\}\s*\]\s*<\/tsian-tool-calls>/g,
+    )).toHaveLength(1)
+    expect(initialPrompt).not.toContain("<tsian-tool-call-records>")
+    expect(initialPrompt).not.toContain("<tsian-tool-protocol-error>")
+
+    expect(textRequests.slice(1, 4).map((request) => latestTextProtocolError(request))).toEqual([
+      { code: "TEXT_TOOL_PROTOCOL_INVALID_JSON", retryRemaining: 3 },
+      { code: "TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG", retryRemaining: 2 },
+      { code: "TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED", retryRemaining: 1 },
+    ])
+
+    const providerMessages = textRequests.flatMap((request) => request.messages ?? [])
+    const reportMessages = providerMessages.filter((message) => (
+      JSON.stringify(message.content ?? "").includes("<tsian-executed-tools>")
+      && JSON.stringify(message.content ?? "").includes("</tsian-executed-tools>")
+    ))
+    expect(reportMessages.length).toBeGreaterThan(0)
+    expect(reportMessages.every((message) => message.role === "user")).toBe(true)
+    expect(providerMessages.some((message) => (
+      message.role === "assistant"
+      && JSON.stringify(message.content ?? "").includes("<tsian-tool-call-records>")
+    ))).toBe(false)
+    expect(requestMessageText(textRequests[4]!).match(
+      /<tsian-executed-tools>[\s\S]*?<\/tsian-executed-tools>/g,
+    )).toHaveLength(1)
+
+    const textMessages = await getAssistantSessionMessages(textSeeded.sessionId)
+    expect(textMessages).toMatchObject([
+      { role: "user", content: "Recover from protocol mistakes, write once, and finish." },
+      { role: "assistant", content: "Text protocol correction completed" },
+    ])
+    expect(JSON.stringify(textMessages)).not.toContain("tsian-executed-tools")
+    expect(JSON.stringify(textMessages)).not.toContain(STAGED_VALUE)
   })
 
   it("rolls back workspace, session, and context while retaining failed diagnostics", async () => {
@@ -1057,5 +1245,59 @@ describe("Assistant Runtime transaction smoke", () => {
       attempts: [{ status: "failed", error: { type: "http", status: 400 } }],
     })
     expect(JSON.stringify(failedDiagnostics)).not.toContain(PROVIDER_CREDENTIAL)
+
+    await configureProvider("text")
+    const textSeeded = await seedRuntime({
+      baselineMessages,
+      contextMarker: "text-protocol-failure-baseline",
+    })
+    const exhaustionRequests: OpenAiRequestBody[] = []
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = requestBody(init)
+      exhaustionRequests.push(body)
+      if (exhaustionRequests.length === 1) {
+        return openAiTextToolResponse("write", { path: WORKSPACE_PATH, content: STAGED_VALUE })
+      }
+      if (exhaustionRequests.length === 2) {
+        return openAiFinalResponse(
+          `${TEXT_TOOL_CALLS_OPEN_TAG}{"name":"read","arguments":{}}${TEXT_TOOL_CALLS_CLOSE_TAG}`,
+        )
+      }
+      if (exhaustionRequests.length === 3) {
+        return openAiFinalResponse(`${TEXT_TOOL_CALLS_OPEN_TAG}[]${TEXT_TOOL_CALLS_CLOSE_TAG}`)
+      }
+      if (exhaustionRequests.length === 4) {
+        return openAiFinalResponse(
+          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"read","arguments":[]}]${TEXT_TOOL_CALLS_CLOSE_TAG}`,
+        )
+      }
+      return openAiFinalResponse(
+        `${TEXT_TOOL_CALLS_OPEN_TAG}[{"arguments":{}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`,
+      )
+    }))
+
+    await expect(runAssistantChat({
+      message: "Stage a text-protocol write, then exhaust protocol correction.",
+      sessionId: textSeeded.sessionId,
+      history: baselineMessages,
+    })).rejects.toThrow("TEXT_TOOL_PROTOCOL_TOOL_NAME_REQUIRED")
+
+    expect(exhaustionRequests).toHaveLength(5)
+    expect(exhaustionRequests.slice(2, 5).map((request) => latestTextProtocolError(request))).toEqual([
+      { code: "TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY", retryRemaining: 3 },
+      { code: "TEXT_TOOL_PROTOCOL_CALLS_EMPTY", retryRemaining: 2 },
+      { code: "TEXT_TOOL_PROTOCOL_ARGUMENTS_INVALID", retryRemaining: 1 },
+    ])
+    expect((await readWorkspaceFileForSave(textSeeded.saveId, WORKSPACE_PATH))?.content)
+      .toBe(WORKSPACE_BASELINE)
+    expect(await getAssistantSessionMessages(textSeeded.sessionId)).toEqual(baselineMessages)
+    expect(await assistantContextContent(textSeeded.sessionId)).toBe(textSeeded.baselineContext)
+    expect((exhaustionRequests[1]?.messages ?? []).some((message) => (
+      message.role === "user"
+      && (typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? ""))
+        .includes("<tsian-executed-tools>")
+      && (typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? ""))
+        .includes('"name":"write"')
+    ))).toBe(true)
   })
 })
