@@ -1092,3 +1092,24 @@ Moved text tool execution history into runtime user reports, added three-attempt
 ### Status
 
 [OK] **Completed**
+
+
+## Session 199: 文本工具协议纠错与当前轮结果引用
+
+**Date**: 2026-08-18
+**Task**: 文本工具协议纠错与当前轮结果引用
+**Branch**: `master`
+
+### Summary
+
+按错误代码独立累计文本协议纠错预算；为 accepted agent_call.response 增加当前工具循环 responseRef，并由 run_script.inputRefs 在 action 校验前解析；更新开局建模 Skill、核心 smoke 与跨层规范。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7f34a234` | (see git log) |
+
+### Status
+
+[OK] **Completed**
