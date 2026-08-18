@@ -37,6 +37,7 @@ function exactFields(value: unknown): Record<string, JsonValue> | undefined {
   const names = /^(id|.*Id|.*Ref|.*Hash|hash|revision|receipt|code|status|phase|path|sequence)$/
   for (const [key, entry] of Object.entries(value)) {
     if (Object.keys(exact).length >= MAX_EXACT_FIELDS) break
+    if (key === "responseRef") continue
     if (names.test(key) && isJsonValue(entry)) exact[key] = entry
   }
   return Object.keys(exact).length > 0 ? exact : undefined

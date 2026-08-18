@@ -24,7 +24,9 @@ export function finalizeStreamedToolCalls(
 }
 
 const DISPLAY_PROTOCOL_PATTERNS = [
+  /<tool_call>\s*[\s\S]*?\s*<\/tool_call>/g,
   /<tsian-tool-calls>\s*[\s\S]*?\s*<\/tsian-tool-calls>/g,
+  /<tsian-tool-call>\s*[\s\S]*?\s*<\/tsian-tool-call>/g,
   /<tsian-tool-call-records>\s*[\s\S]*?\s*<\/tsian-tool-call-records>/g,
   /<tsian-executed-tools>\s*[\s\S]*?\s*<\/tsian-executed-tools>/g,
   /<tsian-tool-observations>\s*[\s\S]*?\s*<\/tsian-tool-observations>/g,

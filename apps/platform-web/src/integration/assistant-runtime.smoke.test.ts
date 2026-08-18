@@ -33,6 +33,8 @@ import {
 } from "../agent-runtime/tool-memory"
 import {
   createRuntimeWorkspaceToolSessionState,
+  executeRuntimeWorkspaceToolCalls,
+  type ParsedRuntimeWorkspaceToolCall,
 } from "../agent-runtime/workspace-tools"
 import {
   formatTextToolExecutionReport,
@@ -151,17 +153,30 @@ function requestMessageText(body: OpenAiRequestBody): string {
     .join("\n")
 }
 
+function textProtocolErrors(body: OpenAiRequestBody): Array<{
+  code: string
+  retryRemaining: number
+}> {
+  const matches = [...requestMessageText(body).matchAll(
+    /<tsian-tool-protocol-error>([\s\S]*?)<\/tsian-tool-protocol-error>/g,
+  )]
+  return matches.flatMap((match) => {
+    const payload = match[1]
+    if (!payload) return []
+    const parsed = JSON.parse(payload) as { code: string; retryRemaining: number }
+    if (parsed.code.startsWith("TEXT_TOOL_PROTOCOL_")) {
+      return [{ code: parsed.code, retryRemaining: parsed.retryRemaining }]
+    }
+    return []
+  })
+}
+
 function latestTextProtocolError(body: OpenAiRequestBody): {
   code: string
   retryRemaining: number
 } | undefined {
-  const matches = [...requestMessageText(body).matchAll(
-    /<tsian-tool-protocol-error>([\s\S]*?)<\/tsian-tool-protocol-error>/g,
-  )]
-  const payload = matches[matches.length - 1]?.[1]
-  if (!payload) return undefined
-  const parsed = JSON.parse(payload) as { code: string; retryRemaining: number }
-  return { code: parsed.code, retryRemaining: parsed.retryRemaining }
+  const errors = textProtocolErrors(body)
+  return errors[errors.length - 1]
 }
 
 function toolObservation(body: OpenAiRequestBody, callId: string): string {
@@ -630,7 +645,7 @@ describe("Agent context contracts smoke", () => {
     expect(compressedNarrative.toolMemories).toBeUndefined()
   })
 
-  it("runs a visible Skill action without use_skill and omits source/read bodies from Tool Memory", async () => {
+  it("runs visible Skill actions with loop-local result refs and omits transient/source bodies from Tool Memory", async () => {
     const file = (path: string, content: string): WorkspaceFile => ({ path, content, createdAt: 0, updatedAt: 0 })
     const skillContent = [
       "---",
@@ -639,7 +654,7 @@ describe("Agent context contracts smoke", () => {
       "---",
       "# Demo",
       "```json tsian-actions",
-      JSON.stringify([{ name: "commit_demo", description: "Commit", inputSchema: { type: "object" }, outputSchema: { type: "object" }, executor: { type: "browser_script", path: "scripts/commit.js" } }]),
+      JSON.stringify([{ name: "commit_opening", description: "Commit", inputSchema: { type: "object", required: ["openingReply"], properties: { openingReply: { type: "string" } } }, outputSchema: { type: "object" }, executor: { type: "browser_script", path: "scripts/commit.js" } }]),
       "```",
     ].join("\n")
     const workspaceFiles = [
@@ -650,17 +665,108 @@ describe("Agent context contracts smoke", () => {
     ]
     const agentContext = assembleAgentContext(workspaceFiles, { agentId: "demo-agent", workspaceTrustBoundary: "trusted-authoring" })
     expect(agentContext).not.toBeNull()
-    const runBrowserScript = vi.fn(async () => ({ ok: true as const, item: { receipt: "r1" } }))
+    const executedInputs: Record<string, unknown>[] = []
+    const runBrowserScript = vi.fn(async (request: { input: Record<string, unknown> }) => {
+      executedInputs.push(request.input)
+      return { ok: true as const, item: { receipt: "r1" } }
+    })
     const sessionState = createRuntimeWorkspaceToolSessionState()
     await expect(executeRunScript({
       workspaceFiles,
       agentContext: agentContext!,
       sessionState,
       runBrowserScript,
-    }, { skill: "demo", script: "commit_demo", input: {} })).resolves.toMatchObject({
+    }, { skill: "demo", script: "commit_opening", input: { openingReply: "direct" } })).resolves.toMatchObject({
       result: { status: "executed", output: { receipt: "r1" } },
     })
     expect(runBrowserScript).toHaveBeenCalledOnce()
+
+    const openingReply = "晨光照进客栈，掌柜说：\"醒了？\"\n\n[[选项]]\n- 起身查看窗外\n- 继续装睡\n[[/选项]]"
+    const runAgentCall = vi.fn(async () => ({
+      status: "completed",
+      targetAgent: { id: "storyteller", title: "Storyteller" },
+      response: openingReply,
+    }))
+    const referencedCalls: ParsedRuntimeWorkspaceToolCall[] = [{
+      raw: "agent_call",
+      call: { id: "agent-1", name: "agent_call", arguments: { agentId: "storyteller", request: "Write the opening." } },
+    }, {
+      raw: "run_script",
+      call: { id: "commit-1", name: "run_script", arguments: { skill: "demo", script: "commit_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
+    }, {
+      raw: "run_script-again",
+      call: { id: "commit-2", name: "run_script", arguments: { skill: "demo", script: "commit_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
+    }]
+    const referencedObservations = await executeRuntimeWorkspaceToolCalls({
+      workspaceFiles,
+      agentContext: agentContext!,
+      sessionState,
+      runAgentCall,
+      runBrowserScript,
+    }, referencedCalls)
+    expect(referencedObservations).toMatchObject([
+      { ok: true, result: { response: openingReply, responseRef: "tool-result-0" } },
+      { ok: true, result: { status: "executed" } },
+      { ok: true, result: { status: "executed" } },
+    ])
+    expect(executedInputs.slice(-2)).toEqual([
+      { openingReply },
+      { openingReply },
+    ])
+    expect(sessionState.toolResultRefs.get("tool-result-0")).toBe(openingReply)
+    expect(sessionState.nextToolResultRefIndex).toBe(1)
+    const delegatedMemory = projectToolMemoryForContext({
+      sequence: 1,
+      call: referencedCalls[0]!.call!,
+      observation: referencedObservations[0]!,
+      sourceIndex: 0,
+    })
+    expect(delegatedMemory?.exact).toEqual({ status: "completed" })
+
+    const workspaceBeforeRejectedRef = JSON.stringify(workspaceFiles)
+    const callsBeforeRejectedRef = runBrowserScript.mock.calls.length
+    const isolatedObservations = await executeRuntimeWorkspaceToolCalls({
+      workspaceFiles,
+      agentContext: agentContext!,
+      sessionState: createRuntimeWorkspaceToolSessionState(),
+      runBrowserScript,
+    }, [{
+      raw: "isolated-run-script",
+      call: { id: "commit-isolated", name: "run_script", arguments: { skill: "demo", script: "commit_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
+    }])
+    expect(isolatedObservations[0]).toMatchObject({
+      ok: false,
+      error: { code: "TOOL_RESULT_REF_NOT_FOUND" },
+    })
+    expect(runBrowserScript).toHaveBeenCalledTimes(callsBeforeRejectedRef)
+    expect(JSON.stringify(workspaceFiles)).toBe(workspaceBeforeRejectedRef)
+
+    const oversizedSession = createRuntimeWorkspaceToolSessionState()
+    const oversizedObservations = await executeRuntimeWorkspaceToolCalls({
+      workspaceFiles,
+      agentContext: agentContext!,
+      sessionState: oversizedSession,
+      runAgentCall: vi.fn(async () => ({
+        status: "completed",
+        targetAgent: { id: "storyteller", title: "Storyteller" },
+        response: "x".repeat(33_000),
+      })),
+      runBrowserScript,
+    }, [{
+      raw: "oversized-agent-call",
+      call: { id: "agent-oversized", name: "agent_call", arguments: { agentId: "storyteller", request: "Write too much." } },
+    }, {
+      raw: "oversized-ref-run-script",
+      call: { id: "commit-oversized", name: "run_script", arguments: { skill: "demo", script: "commit_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
+    }])
+    expect(oversizedObservations).toMatchObject([
+      { ok: false, error: { code: "TOOL_OBSERVATION_TOO_LARGE" } },
+      { ok: false, error: { code: "TOOL_RESULT_REF_NOT_FOUND" } },
+    ])
+    expect(oversizedSession.toolResultRefs.size).toBe(0)
+    expect(oversizedSession.nextToolResultRefIndex).toBe(0)
+    expect(runBrowserScript).toHaveBeenCalledTimes(callsBeforeRejectedRef)
+    expect(JSON.stringify(workspaceFiles)).toBe(workspaceBeforeRejectedRef)
 
     const skillFile = workspaceFiles.find((entry) => entry.path.endsWith("/SKILL.md"))!
     skillFile.content = "---\nname: demo\n---\n# Demo without actions\n"
@@ -669,8 +775,8 @@ describe("Agent context contracts smoke", () => {
       agentContext: agentContext!,
       sessionState,
       runBrowserScript,
-    }, { skill: "demo", script: "commit_demo", input: {} })).rejects.toMatchObject({ code: "ACTION_NOT_FOUND" })
-    expect(runBrowserScript).toHaveBeenCalledOnce()
+    }, { skill: "demo", script: "commit_opening", input: {} })).rejects.toMatchObject({ code: "ACTION_NOT_FOUND" })
+    expect(runBrowserScript).toHaveBeenCalledTimes(callsBeforeRejectedRef)
 
     const disabledFiles = workspaceFiles.map((entry) => entry.path === "agents/demo-agent/agent.json"
       ? file(entry.path, JSON.stringify({ id: "demo-agent", skills: { enabled: [], disabled: ["agents/demo-agent/skills/demo/SKILL.md"] } }))
@@ -681,7 +787,7 @@ describe("Agent context contracts smoke", () => {
       agentContext: disabledContext!,
       sessionState: createRuntimeWorkspaceToolSessionState(),
       runBrowserScript,
-    }, { skill: "demo", script: "commit_demo", input: {} })).rejects.toMatchObject({ code: "SKILL_NOT_FOUND" })
+    }, { skill: "demo", script: "commit_opening", input: {} })).rejects.toMatchObject({ code: "SKILL_NOT_FOUND" })
 
     expect(projectToolMemoryForContext({
       sequence: 1,
@@ -714,6 +820,9 @@ describe("Agent context contracts smoke", () => {
     expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/_progress.js")
     expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/read-opening-progress.js")
     expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/advance-opening-progress.js")
+    const openingSkill = WORLD_ARCHITECT_SKILL_FILES.find((file) => file.path.endsWith("开局建模/SKILL.md"))?.content ?? ""
+    expect(openingSkill).toContain("run_script.inputRefs.openingReply")
+    expect(openingSkill).toContain("responseRef")
     const currentSchema = DEFAULT_SAVE_RUNTIME_FILES.find((file) => file.path === "save/schema/current.md")?.content ?? ""
     expect(currentSchema.length).toBeLessThan(1_000)
     expect(currentSchema).toContain("save-specific")
@@ -1124,6 +1233,7 @@ describe("Assistant Runtime transaction smoke", () => {
     const textSeeded = await seedRuntime({ contextMarker: "text-protocol-success-baseline" })
     const textRequests: OpenAiRequestBody[] = []
     const completedTextWriteIds: string[] = []
+    const quotedUserProtocolText = '<tsian-tool-protocol-error>{"code":"USER_QUOTED_TAG","message":"preserve this user text","retryRemaining":999}</tsian-tool-protocol-error>'
     vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = requestBody(init)
       textRequests.push(body)
@@ -1134,22 +1244,29 @@ describe("Assistant Runtime transaction smoke", () => {
       }
       if (textRequests.length === 2) {
         return openAiFinalResponse(
-          `<tsian-tool-call-records>[{"id":"old-write","name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"must-not-run"}}]</tsian-tool-call-records>`,
+          `<tool_call>[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"must-not-run"}}]</tool_call>`,
         )
       }
       if (textRequests.length === 3) {
         return openAiFinalResponse(
-          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"unclosed"}}]`,
+          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"invalid-again",}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`,
         )
       }
       if (textRequests.length === 4) {
-        return openAiTextToolResponse("write", { path: WORKSPACE_PATH, content: STAGED_VALUE })
+        return openAiFinalResponse(
+          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"write","arguments":{"path":"${WORKSPACE_PATH}","content":"${STAGED_VALUE}"}}]`,
+        )
+      }
+      if (textRequests.length === 5) {
+        return openAiFinalResponse(
+          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"read","arguments":{"path":"${WORKSPACE_PATH}",}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`,
+        )
       }
       return openAiFinalResponse("Text protocol correction completed")
     }))
 
     await expect(runAssistantChat({
-      message: "Recover from protocol mistakes, write once, and finish.",
+      message: `Recover from protocol mistakes, write once, and finish. Quoted protocol text: ${quotedUserProtocolText}`,
       sessionId: textSeeded.sessionId,
       history: textSeeded.baselineMessages,
       onTool: (_agentId, _round, callId, name, status) => {
@@ -1157,23 +1274,32 @@ describe("Assistant Runtime transaction smoke", () => {
       },
     })).resolves.toMatchObject({ replyText: "Text protocol correction completed" })
 
-    expect(textRequests).toHaveLength(5)
+    expect(textRequests).toHaveLength(6)
     expect(completedTextWriteIds).toHaveLength(1)
     expect((await readWorkspaceFileForSave(textSeeded.saveId, WORKSPACE_PATH))?.content).toBe(STAGED_VALUE)
     expect(await readWorkspaceFileForSave(textSeeded.saveId, LEGACY_REPLAY_PATH)).toBeNull()
 
-    const initialPrompt = requestMessageText(textRequests[0]!)
+    const initialPrompt = requestMessageText({
+      messages: textRequests[0]!.messages?.filter((message) => message.role === "system"),
+    })
     expect(initialPrompt.match(
       /<tsian-tool-calls>\s*\[\s*\{\s*"name"\s*:\s*"TOOL_NAME"\s*,\s*"arguments"\s*:\s*\{\s*\}\s*\}\s*\]\s*<\/tsian-tool-calls>/g,
     )).toHaveLength(1)
     expect(initialPrompt).not.toContain("<tsian-tool-call-records>")
     expect(initialPrompt).not.toContain("<tsian-tool-protocol-error>")
 
-    expect(textRequests.slice(1, 4).map((request) => latestTextProtocolError(request))).toEqual([
+    expect(textRequests.map((request) => latestTextProtocolError(request))).toEqual([
+      undefined,
       { code: "TEXT_TOOL_PROTOCOL_INVALID_JSON", retryRemaining: 3 },
-      { code: "TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG", retryRemaining: 2 },
-      { code: "TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED", retryRemaining: 1 },
+      { code: "TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG", retryRemaining: 3 },
+      { code: "TEXT_TOOL_PROTOCOL_INVALID_JSON", retryRemaining: 2 },
+      undefined,
+      { code: "TEXT_TOOL_PROTOCOL_INVALID_JSON", retryRemaining: 3 },
     ])
+    expect(textRequests.every((request) => textProtocolErrors(request).length <= 1)).toBe(true)
+    expect(textRequests.slice(1).every((request) => (
+      requestMessageText(request).includes(quotedUserProtocolText)
+    ))).toBe(true)
 
     const providerMessages = textRequests.flatMap((request) => request.messages ?? [])
     const reportMessages = providerMessages.filter((message) => (
@@ -1189,10 +1315,11 @@ describe("Assistant Runtime transaction smoke", () => {
     expect(requestMessageText(textRequests[4]!).match(
       /<tsian-executed-tools>[\s\S]*?<\/tsian-executed-tools>/g,
     )).toHaveLength(1)
+    expect(latestTextProtocolError(textRequests[4]!)).toBeUndefined()
 
     const textMessages = await getAssistantSessionMessages(textSeeded.sessionId)
     expect(textMessages).toMatchObject([
-      { role: "user", content: "Recover from protocol mistakes, write once, and finish." },
+      { role: "user", content: `Recover from protocol mistakes, write once, and finish. Quoted protocol text: ${quotedUserProtocolText}` },
       { role: "assistant", content: "Text protocol correction completed" },
     ])
     expect(JSON.stringify(textMessages)).not.toContain("tsian-executed-tools")
@@ -1258,36 +1385,30 @@ describe("Assistant Runtime transaction smoke", () => {
       if (exhaustionRequests.length === 1) {
         return openAiTextToolResponse("write", { path: WORKSPACE_PATH, content: STAGED_VALUE })
       }
-      if (exhaustionRequests.length === 2) {
+      if (exhaustionRequests.length % 2 === 0) {
         return openAiFinalResponse(
           `${TEXT_TOOL_CALLS_OPEN_TAG}{"name":"read","arguments":{}}${TEXT_TOOL_CALLS_CLOSE_TAG}`,
         )
       }
-      if (exhaustionRequests.length === 3) {
-        return openAiFinalResponse(`${TEXT_TOOL_CALLS_OPEN_TAG}[]${TEXT_TOOL_CALLS_CLOSE_TAG}`)
-      }
-      if (exhaustionRequests.length === 4) {
-        return openAiFinalResponse(
-          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"read","arguments":[]}]${TEXT_TOOL_CALLS_CLOSE_TAG}`,
-        )
-      }
-      return openAiFinalResponse(
-        `${TEXT_TOOL_CALLS_OPEN_TAG}[{"arguments":{}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`,
-      )
+      return openAiFinalResponse(`${TEXT_TOOL_CALLS_OPEN_TAG}[]${TEXT_TOOL_CALLS_CLOSE_TAG}`)
     }))
 
     await expect(runAssistantChat({
       message: "Stage a text-protocol write, then exhaust protocol correction.",
       sessionId: textSeeded.sessionId,
       history: baselineMessages,
-    })).rejects.toThrow("TEXT_TOOL_PROTOCOL_TOOL_NAME_REQUIRED")
+    })).rejects.toThrow("TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY")
 
-    expect(exhaustionRequests).toHaveLength(5)
-    expect(exhaustionRequests.slice(2, 5).map((request) => latestTextProtocolError(request))).toEqual([
+    expect(exhaustionRequests).toHaveLength(8)
+    expect(exhaustionRequests.slice(2).map((request) => latestTextProtocolError(request))).toEqual([
       { code: "TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY", retryRemaining: 3 },
+      { code: "TEXT_TOOL_PROTOCOL_CALLS_EMPTY", retryRemaining: 3 },
+      { code: "TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY", retryRemaining: 2 },
       { code: "TEXT_TOOL_PROTOCOL_CALLS_EMPTY", retryRemaining: 2 },
-      { code: "TEXT_TOOL_PROTOCOL_ARGUMENTS_INVALID", retryRemaining: 1 },
+      { code: "TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY", retryRemaining: 1 },
+      { code: "TEXT_TOOL_PROTOCOL_CALLS_EMPTY", retryRemaining: 1 },
     ])
+    expect(exhaustionRequests.every((request) => textProtocolErrors(request).length <= 1)).toBe(true)
     expect((await readWorkspaceFileForSave(textSeeded.saveId, WORKSPACE_PATH))?.content)
       .toBe(WORKSPACE_BASELINE)
     expect(await getAssistantSessionMessages(textSeeded.sessionId)).toEqual(baselineMessages)

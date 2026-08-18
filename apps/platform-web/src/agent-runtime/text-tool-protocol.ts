@@ -13,6 +13,9 @@ export const TEXT_TOOL_EXECUTED_TOOLS_TAG = "tsian-executed-tools"
 export const TEXT_TOOL_OBSERVATIONS_TAG = "tsian-tool-observations"
 export const TEXT_TOOL_PROTOCOL_ERROR_TAG = "tsian-tool-protocol-error"
 
+const MODEL_NATIVE_TEXT_TOOL_CALL_TAG = "tool_call"
+const LEGACY_TEXT_TOOL_CALL_TAG = "tsian-tool-call"
+
 export const TEXT_TOOL_CALLS_OPEN_TAG = `<${TEXT_TOOL_CALLS_TAG}>`
 export const TEXT_TOOL_CALLS_CLOSE_TAG = `</${TEXT_TOOL_CALLS_TAG}>`
 export const TEXT_TOOL_CALL_TEMPLATE = `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"TOOL_NAME","arguments":{}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`
@@ -44,12 +47,16 @@ interface MessageLike {
 }
 
 const EXECUTABLE_CALLS_PATTERN = /<tsian-tool-calls>\s*([\s\S]*?)\s*<\/tsian-tool-calls>/g
+const MODEL_NATIVE_CALL_PATTERN = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g
+const LEGACY_EXECUTABLE_CALL_PATTERN = /<tsian-tool-call>\s*([\s\S]*?)\s*<\/tsian-tool-call>/g
 const CALL_RECORDS_PATTERN = /<tsian-tool-call-records>\s*([\s\S]*?)\s*<\/tsian-tool-call-records>/g
 const EXECUTED_TOOLS_PATTERN = /<tsian-executed-tools>\s*([\s\S]*?)\s*<\/tsian-executed-tools>/g
 const OBSERVATIONS_PATTERN = /<tsian-tool-observations>\s*([\s\S]*?)\s*<\/tsian-tool-observations>/g
 const PROTOCOL_ERROR_PATTERN = /<tsian-tool-protocol-error>\s*([\s\S]*?)\s*<\/tsian-tool-protocol-error>/g
 
 const NON_EXECUTABLE_TEXT_PROTOCOL_TAGS = [
+  MODEL_NATIVE_TEXT_TOOL_CALL_TAG,
+  LEGACY_TEXT_TOOL_CALL_TAG,
   TEXT_TOOL_CALL_RECORDS_TAG,
   TEXT_TOOL_EXECUTED_TOOLS_TAG,
   TEXT_TOOL_OBSERVATIONS_TAG,
@@ -119,9 +126,14 @@ function firstNonExecutableTextProtocolTag(text: string): string | undefined {
 }
 
 function nonExecutableProtocolError(tag: string): RuntimeWorkspaceToolError {
+  const rejectedFormat = tag === MODEL_NATIVE_TEXT_TOOL_CALL_TAG
+    ? "is a model-native tool-call format, not the executable text-protocol format"
+    : tag === LEGACY_TEXT_TOOL_CALL_TAG
+    ? "is a legacy tool-call format, not the executable tool-call format"
+    : "is runtime history, not an executable tool-call format"
   return protocolError(
     "TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG",
-    `<${tag}> is runtime history, not an executable tool-call format. To call tools, emit exactly one ${TEXT_TOOL_CALLS_OPEN_TAG} JSON array block; if no tool call is needed, answer normally without protocol tags.`,
+    `<${tag}> ${rejectedFormat}. To call tools, emit exactly one complete ${TEXT_TOOL_CALLS_OPEN_TAG}...${TEXT_TOOL_CALLS_CLOSE_TAG} JSON array block; if no tool call is needed, answer normally without protocol tags.`,
     { tag },
   )
 }
@@ -136,9 +148,10 @@ export function stripTextExecutableToolCalls(text: string): string {
 }
 
 export function stripTextProtocolArtifacts(text: string): string {
-  let result = text
+  let result = stripTextExecutableToolCalls(text)
   for (const pattern of [
-    EXECUTABLE_CALLS_PATTERN,
+    MODEL_NATIVE_CALL_PATTERN,
+    LEGACY_EXECUTABLE_CALL_PATTERN,
     CALL_RECORDS_PATTERN,
     EXECUTED_TOOLS_PATTERN,
     OBSERVATIONS_PATTERN,
@@ -147,6 +160,8 @@ export function stripTextProtocolArtifacts(text: string): string {
     result = replacePattern(result, pattern)
   }
   for (const tag of [
+    MODEL_NATIVE_TEXT_TOOL_CALL_TAG,
+    LEGACY_TEXT_TOOL_CALL_TAG,
     TEXT_TOOL_CALL_RECORDS_TAG,
     TEXT_TOOL_EXECUTED_TOOLS_TAG,
     TEXT_TOOL_OBSERVATIONS_TAG,
@@ -195,52 +210,10 @@ function validateTextToolCallItem(
   }
 }
 
-export function parseTextToolProtocolResponse(text: string): TextToolProtocolParseResult {
-  const matches = [...text.matchAll(clonePattern(EXECUTABLE_CALLS_PATTERN))]
-  const openTagCount = countOccurrences(text, TEXT_TOOL_CALLS_OPEN_TAG)
-  const closeTagCount = countOccurrences(text, TEXT_TOOL_CALLS_CLOSE_TAG)
-  const nonExecutableTag = firstNonExecutableTextProtocolTag(text)
-
-  if (nonExecutableTag) {
-    return {
-      kind: "protocol_error",
-      error: nonExecutableProtocolError(nonExecutableTag),
-      // A malformed or dangling runtime-history tag has no reliable payload
-      // boundary. Drop the rejected response from interim persistence so raw
-      // call arguments or observations cannot leak into the turn timeline.
-      interimText: "",
-    }
-  }
-
-  if (matches.length === 0) {
-    if (openTagCount > 0 || closeTagCount > 0) {
-      return {
-        kind: "protocol_error",
-        error: protocolError(
-          "TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED",
-          `A ${TEXT_TOOL_CALLS_OPEN_TAG} block must include exactly one matching ${TEXT_TOOL_CALLS_CLOSE_TAG}.`,
-          { openTagCount, closeTagCount },
-        ),
-        interimText: stripTextExecutableToolCalls(text),
-      }
-    }
-    return { kind: "stop" }
-  }
-
-  const interimText = stripTextExecutableToolCalls(text)
-  if (matches.length > 1 || openTagCount !== 1 || closeTagCount !== 1) {
-    return {
-      kind: "protocol_error",
-      error: protocolError(
-        "TEXT_TOOL_PROTOCOL_MULTIPLE_BLOCKS",
-        `Use exactly one ${TEXT_TOOL_CALLS_OPEN_TAG} JSON array block per round.`,
-        { blockCount: matches.length, openTagCount, closeTagCount },
-      ),
-      interimText,
-    }
-  }
-
-  const raw = matches[0]?.[1] ?? ""
+function parseTextToolCallsJson(
+  raw: string,
+  interimText: string,
+): TextToolProtocolParseResult {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -287,6 +260,68 @@ export function parseTextToolProtocolResponse(text: string): TextToolProtocolPar
   }
 
   return { kind: "tool_calls", calls, interimText }
+}
+
+export function parseTextToolProtocolResponse(text: string): TextToolProtocolParseResult {
+  const matches = [...text.matchAll(clonePattern(EXECUTABLE_CALLS_PATTERN))]
+  const openTagCount = countOccurrences(text, TEXT_TOOL_CALLS_OPEN_TAG)
+  const closeTagCount = countOccurrences(text, TEXT_TOOL_CALLS_CLOSE_TAG)
+  const nonExecutableTag = firstNonExecutableTextProtocolTag(text)
+
+  if (nonExecutableTag) {
+    return {
+      kind: "protocol_error",
+      error: nonExecutableProtocolError(nonExecutableTag),
+      // A malformed or dangling runtime-history tag has no reliable payload
+      // boundary. Drop the rejected response from interim persistence so raw
+      // call arguments or observations cannot leak into the turn timeline.
+      interimText: "",
+    }
+  }
+
+  if (matches.length === 0) {
+    const interimText = stripTextExecutableToolCalls(text)
+    if (openTagCount === 1 && closeTagCount === 0) {
+      const openTagIndex = text.indexOf(TEXT_TOOL_CALLS_OPEN_TAG)
+      const raw = text.slice(openTagIndex + TEXT_TOOL_CALLS_OPEN_TAG.length).trim()
+      const fallbackResult = parseTextToolCallsJson(raw, interimText)
+      if (fallbackResult.kind === "tool_calls") {
+        return fallbackResult
+      }
+      if (
+        fallbackResult.kind === "protocol_error"
+        && fallbackResult.error.code !== "TEXT_TOOL_PROTOCOL_INVALID_JSON"
+      ) return fallbackResult
+    }
+    if (openTagCount > 0 || closeTagCount > 0) {
+      return {
+        kind: "protocol_error",
+        error: protocolError(
+          "TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED",
+          `A ${TEXT_TOOL_CALLS_OPEN_TAG} block must include exactly one matching ${TEXT_TOOL_CALLS_CLOSE_TAG}.`,
+          { openTagCount, closeTagCount },
+        ),
+        interimText,
+      }
+    }
+    return { kind: "stop" }
+  }
+
+  const interimText = stripTextExecutableToolCalls(text)
+  if (matches.length > 1 || openTagCount !== 1 || closeTagCount !== 1) {
+    return {
+      kind: "protocol_error",
+      error: protocolError(
+        "TEXT_TOOL_PROTOCOL_MULTIPLE_BLOCKS",
+        `Use exactly one ${TEXT_TOOL_CALLS_OPEN_TAG} JSON array block per round.`,
+        { blockCount: matches.length, openTagCount, closeTagCount },
+      ),
+      interimText,
+    }
+  }
+
+  const raw = matches[0]?.[1] ?? ""
+  return parseTextToolCallsJson(raw, interimText)
 }
 
 export function assignTextToolCallIds(
@@ -347,7 +382,7 @@ export function formatTextToolExecutionReport(
     "Text Tool Protocol execution report:",
     `<${TEXT_TOOL_EXECUTED_TOOLS_TAG}>${JSON.stringify(executionRecords)}</${TEXT_TOOL_EXECUTED_TOOLS_TAG}>`,
     `<${TEXT_TOOL_OBSERVATIONS_TAG}>${JSON.stringify(observationRecords)}</${TEXT_TOOL_OBSERVATIONS_TAG}>`,
-    `Use these completed results to continue. If another tool is needed, emit one ${TEXT_TOOL_CALLS_OPEN_TAG} block; otherwise answer normally without protocol tags.`,
+    `Use these completed results to continue. If another tool is needed, emit one complete block beginning with ${TEXT_TOOL_CALLS_OPEN_TAG} and ending with ${TEXT_TOOL_CALLS_CLOSE_TAG}; otherwise answer normally without protocol tags.`,
   ].join("\n")
   if (imageParts.length === 0) return text
   return [{ type: "text", text }, ...imageParts]
@@ -360,8 +395,9 @@ function textToolProtocolCorrectionAction(code: string): string {
     case "TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG":
       return "Express only the intended new calls in the executable block, with each array item containing name and arguments."
     case "TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED":
+      return `Regenerate the complete block and end it with the literal closing tag ${TEXT_TOOL_CALLS_CLOSE_TAG}. End of message does not replace the closing tag.`
     case "TEXT_TOOL_PROTOCOL_MULTIPLE_BLOCKS":
-      return "Emit exactly one executable block with one matched opening tag and closing tag."
+      return `Emit exactly one complete block beginning with ${TEXT_TOOL_CALLS_OPEN_TAG} and ending with ${TEXT_TOOL_CALLS_CLOSE_TAG}.`
     case "TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY":
     case "TEXT_TOOL_PROTOCOL_CALLS_EMPTY":
       return "Put one or more calls in a non-empty JSON array. If no tool is needed, leave the protocol and answer normally."
@@ -381,8 +417,9 @@ function textToolProtocolCorrectionReason(code: string): string {
     case "TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG":
       return "New tool requests use the executable tool-call block."
     case "TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED":
+      return `The executable block is missing the literal closing tag ${TEXT_TOOL_CALLS_CLOSE_TAG}.`
     case "TEXT_TOOL_PROTOCOL_MULTIPLE_BLOCKS":
-      return "A tool-call round uses one matched executable block."
+      return "A tool-call round uses exactly one matched executable block."
     case "TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY":
     case "TEXT_TOOL_PROTOCOL_CALLS_EMPTY":
       return "The executable block contains a non-empty JSON array."
@@ -407,7 +444,7 @@ export function formatTextToolProtocolError(
       retryRemaining,
     })}</${TEXT_TOOL_PROTOCOL_ERROR_TAG}>`,
     "The previous response was not executed.",
-    `Correction attempts remaining, including this attempt: ${retryRemaining}.`,
+    `Correction attempts remaining for this error code, including this attempt: ${retryRemaining}.`,
     `Correction action: ${textToolProtocolCorrectionAction(error.code)}`,
     `Correct tool-call format: ${TEXT_TOOL_CALL_TEMPLATE}`,
     "If no tool is needed, answer normally without protocol tags.",

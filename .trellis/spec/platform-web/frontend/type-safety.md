@@ -487,7 +487,7 @@ await reloadAuthoritativeState()
 
 - `agent-runtime` must not import Dexie, storage helpers, bridge objects, or `platform-host` (purity boundary).
 - The Agent Runtime supports two peer tool-call modes, selected per model via `toolCallMode`:
-  - `text`: Text Tool Protocol v2. `callModel` returns ordinary chat text; the text loop parses exactly one executable `<tsian-tool-calls>` JSON-array block per tool-call round, assigns stable text call ids (`text-r<round>-c<index>`), executes through the shared tool executor, then injects one non-executable `user` execution report containing `<tsian-executed-tools>` plus id-aligned `<tsian-tool-observations>`. Legacy `<tsian-tool-call>` is not executable, and legacy `<tsian-tool-call-records>` remains reject/strip compatibility input only. If a model echoes any execution-report, observation, protocol-error, or legacy history tag in a fresh response, the parser returns a protocol error through the bounded correction path; it never treats the response as a normal empty `stop`.
+  - `text`: Text Tool Protocol v2. `callModel` returns ordinary chat text; the text loop parses exactly one executable `<tsian-tool-calls>` JSON-array block per tool-call round, assigns stable text call ids (`text-r<round>-c<index>`), executes through the shared tool executor, then injects one non-executable `user` execution report containing `<tsian-executed-tools>` plus id-aligned `<tsian-tool-observations>`. Model-native `<tool_call>`, legacy `<tsian-tool-call>`, and legacy `<tsian-tool-call-records>` remain reject/strip compatibility input only. If a model echoes any execution-report, observation, protocol-error, or non-executable tool tag in a fresh response, the parser returns a protocol error through the bounded correction path; it never treats the response as a normal empty `stop`.
   - `native`: API-native function calling. The runtime sends the provider's native `tools` field and structured messages (assistant `toolCalls` + tool observation role with `toolCallId`), and returns a structured result. Tool execution logic is shared with the text path.
 - Enabled tool schemas are built from the same `ToolSchema[]` source for both modes. Native mode sends them to the provider; text mode renders them into the Text Tool Protocol manifest. Controlled tools such as `inspect_frontend`, `test_skill_script`, and `query_diagnostics` require both Agent config enablement and a physically supplied Environment port.
 - The `toolCallMode` capability is resolved once per turn from the entry/local-assistant agent's model config and drives the whole turn's dispatch, including delegated `agent_call` loops. Host model-call closures may still resolve provider/model parameters by `options.agentId`, but the protocol mode is not automatically switched. If `native` is selected and no native caller is available, fail loudly.
@@ -499,7 +499,7 @@ await reloadAuthoritativeState()
 - `use_skill` sizes the complete result envelope before caching parsed declarations. If it cannot fit, return `SKILL_DETAIL_TOO_LARGE` with `actualChars`, `maxChars`, path, and split-resource guidance. This does not disable the Skill's actions: `run_script` independently resolves the current visible declaration. Native and Text Tool Protocol still deliver the same accepted result.
 - `use_skill` resolves only against the current Agent's visible `skillIndex` (disabled or non-enabled Skills are unavailable). Match `name` first, then `id`; prefer the current Agent's local Skill on a local/shared name collision. It is parallel-safe because its session cache is only an optimization and it does not mutate workspace.
 - Declared Skill action summaries (name + description + `browser_script` executor type) are parsed at registry build time into the Skill Index so the model can see which actions a Skill offers before `use_skill`. Full action declarations (inputSchema/outputSchema/executor path) are NOT in the eager Skill Index or `agent-context` — progressive disclosure is preserved.
-- `run_script` does not require a prior `use_skill`. Every call re-resolves the named Skill from the current Agent's visible/enabled `skillIndex`, reads the current `SKILL.md`, and parses the declared action; a same-loop cache may be used only when both path and exact source content still match. It then validates executor type, input, executor policy, workspace scope, and optional output schema. It stays serial because `browser_script` has side effects and a bounded timeout.
+- `run_script` does not require a prior `use_skill`. Every call re-resolves the named Skill from the current Agent's visible/enabled `skillIndex`, reads the current `SKILL.md`, and parses the declared action; a same-loop cache may be used only when both path and exact source content still match. It stays serial because `browser_script` has side effects and a bounded timeout. Current-loop `agent_call.responseRef` handoff is specified separately under “Current-Loop Agent Response References”.
 - `agent_call` is exposed only when the current Agent has visible contacts, the tool loop allows Agent calls, and the Agent's platform tool config enables `agent_call`. It validates the target against the caller's `contacts` (a runtime stability boundary, not a full security model). It builds the target Agent's own context (`AGENT.md`, optional `SOUL.md`, notes/session, declared context files, filtered lightweight Skill Index) and returns a structured observation; the target response does not directly become player-visible history. `historyMode` defaults to `recent`.
 - Agent Runtime collaboration policy is code-level/default-only: defaults are `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`; runtime capabilities may inject policy overrides, but there is no Settings UI/localStorage/trust state. The tool loop has **no per-Agent round limit** and `agent_call` has **no per-turn call-count limit** — termination relies on `finishReason: stop`, abort, and the mode-specific budget fallback. `maxDepth=2` remains as the recursion safety net. The root turn shares one `agent_call` budget across the entry agent and nested delegated steps.
 - Delegated Agents re-derive registry, Tool/Skill view, permissions, and runtime-game WorkspaceView from the target Agent. Desktop tool filters, diagnostics/inspect/test ports, local files, and trusted authoring mutations must not be inherited. Delegated mutation adapters allow only the game-runtime save/platform envelope. They may use their own workspace operations, `use_skill`/`run_script`, and limited nested `agent_call` (contacts-gated at every hop, depth-limited).
@@ -520,10 +520,10 @@ await reloadAuthoritativeState()
 
 - Malformed/non-object tool payload, missing name, non-object arguments, or unknown tool name -> error observation.
 - Strict JSON-invalid Tool delivery -> `TOOL_OBSERVATION_INVALID`; oversized delivery -> `TOOL_OBSERVATION_TOO_LARGE` with `actualChars`/`maxChars` and remediation, without the rejected raw body. Both are failed observations and failed terminal Tool status.
-- Text Protocol v2 malformed executable block (missing close tag, multiple `<tsian-tool-calls>` blocks, invalid JSON, non-array content, or empty array) -> `protocol_error`; after the initial invalid response, allow at most three correction model calls (`TEXT_TOOL_PROTOCOL_MAX_RETRIES = 3`). A valid tool-call round resets this consecutive-error budget.
-- Text Protocol v2 non-executable tag echoed by the model (`<tsian-executed-tools>`, `<tsian-tool-observations>`, `<tsian-tool-protocol-error>`, or legacy `<tsian-tool-call-records>`) -> `TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG` + correction; never execute, replay as assistant history, or strip it to an empty final reply.
+- Text Protocol v2 malformed executable block (missing close tag, multiple `<tsian-tool-calls>` blocks, invalid JSON, non-array content, or empty array) -> `protocol_error`; exception: one opening tag with no closing tag may execute only when the entire remaining response is a complete strict-JSON non-empty call array whose items all validate. This fallback is parser-only and must never be advertised in model-facing prompts. Within one correction episode, count failures independently by error code. A code's first failure allows at most three correction model calls (`TEXT_TOOL_PROTOCOL_MAX_RETRIES = 3`); its fourth failure terminates even when other codes occur between failures. A valid tool-call round clears every code's count.
+- Text Protocol v2 non-executable tag echoed by the model (`<tsian-executed-tools>`, `<tsian-tool-observations>`, `<tsian-tool-protocol-error>`, model-native `<tool_call>`, or legacy `<tsian-tool-call>`, `<tsian-tool-call-records>`) -> `TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG` + correction; never execute, replay as assistant history, or strip it to an empty final reply.
 - `use_skill`: missing/blank name -> `SKILL_NAME_REQUIRED`; unknown/invisible Skill -> `SKILL_NOT_FOUND`; ambiguous after local/shared priority -> `SKILL_NAME_AMBIGUOUS`; missing `SKILL.md` -> `SKILL_DETAIL_NOT_FOUND`; oversized direct result -> `SKILL_DETAIL_TOO_LARGE` and no cache update.
-- `run_script`: missing skill/action -> required errors; invisible/disabled Skill -> `SKILL_NOT_FOUND`; undeclared action -> `ACTION_NOT_FOUND`; non-`browser_script` executor -> `ACTION_NOT_BROWSER_SCRIPT`; schema-invalid input -> `ACTION_INPUT_INVALID`; executor denied by policy -> `ACTION_EXECUTOR_DISABLED`; timeout/abort/script/output failure -> roll back the action savepoint; malformed memory side channel -> `TSIAN_MEMORY_PROJECTION_INVALID`; output fails `outputSchema` -> `ACTION_OUTPUT_INVALID`; malformed `outputSchema` -> `ACTION_OUTPUT_SCHEMA_INVALID`; path outside owner directory -> `BROWSER_SCRIPT_PATH_INVALID`.
+- `run_script`: missing skill/action -> required errors; malformed `inputRefs`/field/ref -> `TOOL_RESULT_REFS_INVALID`; same top-level field in `input` and `inputRefs` -> `TOOL_RESULT_REF_CONFLICT`; unknown/expired/other-loop ref -> `TOOL_RESULT_REF_NOT_FOUND`; invisible/disabled Skill -> `SKILL_NOT_FOUND`; undeclared action -> `ACTION_NOT_FOUND`; non-`browser_script` executor -> `ACTION_NOT_BROWSER_SCRIPT`; resolved schema-invalid input -> `ACTION_INPUT_INVALID`; executor denied by policy -> `ACTION_EXECUTOR_DISABLED`; timeout/abort/script/output failure -> roll back the action savepoint; malformed memory side channel -> `TSIAN_MEMORY_PROJECTION_INVALID`; output fails `outputSchema` -> `ACTION_OUTPUT_INVALID`; malformed `outputSchema` -> `ACTION_OUTPUT_SCHEMA_INVALID`; path outside owner directory -> `BROWSER_SCRIPT_PATH_INVALID`.
 - `agent_call`: missing agentId/request -> required errors; no active Agent context -> `AGENT_CALL_CONTEXT_REQUIRED`; target not found -> `AGENT_CALL_TARGET_NOT_FOUND`; target not in contacts -> `AGENT_CALL_TARGET_NOT_CONTACT`; beyond `maxDepth` or unavailable -> `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata (no per-turn call-count limit; `callCount` is diagnostic only); invalid `historyMode` -> `AGENT_CALL_HISTORY_MODE_INVALID`; delegated execution failure -> `AGENT_CALL_FAILED` (timeout -> `{ timeout: true }`).
 - Workspace: unexposed operation or disabled read/write group (generic or browser script SDK) -> `WORKSPACE_OPERATION_NOT_EXPOSED`; actor level below target read/edit level -> `WORKSPACE_READ_ACCESS_DENIED`/`WORKSPACE_EDIT_ACCESS_DENIED`; `.tsian/*` without level 4 -> structured workspace error; missing file on read -> `WORKSPACE_FILE_NOT_FOUND`; invalid path -> workspace path error.
 - Action executor declaration missing or non-`browser_script` type, or invalid `path`/`timeoutMs` -> `ACTION_EXECUTOR_INVALID` at parse time, reported in `actionDeclarationErrors`, that action not registered.
@@ -555,11 +555,11 @@ TEXT_TOOL_PROTOCOL_MAX_RETRIES = 3
 
 ### 3. Contracts
 
-- The only executable text is one strict-JSON array block: `<tsian-tool-calls>[{"name":"TOOL_NAME","arguments":{}}]</tsian-tool-calls>`. Do not add JSON repair, alternate executable tags, or runtime ids to model-authored calls.
+- The canonical executable text is one explicitly closed strict-JSON array block: `<tsian-tool-calls>[{"name":"TOOL_NAME","arguments":{}}]</tsian-tool-calls>`. Every model-facing instruction must show or name both literal tags and state that message end does not replace `</tsian-tool-calls>`. The parser may silently execute one missing-close response only when everything after its sole `<tsian-tool-calls>` opening tag is a complete valid call array; do not expose this fallback in prompts, add JSON repair, accept alternate executable tags, or accept runtime ids in model-authored calls. In particular, `<tool_call>` is non-executable because provider/model-native grammars may mix function, attribute, or `<arg_value>` syntax into its payload.
 - After execution, emit one `user` message containing `<tsian-executed-tools>` records `{id,name,arguments}` and `<tsian-tool-observations>` records with the same ids. Append image parts to this message's `ContentPart[]`; do not create an adjacent assistant record.
 - Provider-bound same-role normalization must also merge a multimodal execution report with a following runtime correction while preserving every image part; rejected non-executable-tag payloads never become persisted interim timeline text.
-- Protocol correction messages include the current error code, state that the prior response was not executed, report remaining correction calls including the imminent call, select the code-specific positive action, show the single correct template, and offer normal prose as the no-tool exit.
-- Do not append the rejected assistant protocol response to provider history. A valid tool-call round resets the correction budget; four consecutive invalid responses (initial + three corrections) terminate with the last error code and no fifth correction call.
+- Protocol correction messages include the current error code, state that the prior response was not executed, report remaining correction calls including the imminent call, select the code-specific positive action, show the single correct template, and offer normal prose as the no-tool exit. Keep only the latest correction message in provider-bound context so obsolete error codes and retry counts do not accumulate, then remove that correction after a valid tool-call round.
+- Do not append the rejected assistant protocol response to provider history. Error-code counts survive switches such as A→B→A, while a valid tool-call round clears the whole map. The fourth failure of one code (initial + three corrections for that code) terminates with that triggering code and message, without issuing a fourth correction call for that code.
 - Text task compression recognizes execution-report/protocol-error tags independent of role. One report is one atomic round; align calls and observations by id, preserve parallel calls together, retain the latest configured rounds, and pin unresolved failed operation keys exactly as native mode does.
 
 ### 4. Validation & Error Matrix
@@ -568,11 +568,11 @@ TEXT_TOOL_PROTOCOL_MAX_RETRIES = 3
 |---|---|
 | Invalid strict JSON | `TEXT_TOOL_PROTOCOL_INVALID_JSON`; regenerate the whole strict array, with quoted/escaped JSON and no comments/trailing commas |
 | Executed/observation/error/legacy-history opening or closing tag in model response | `TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG`; re-express only a new intent with the executable tag and no runtime id |
-| Unclosed or multiple executable blocks | `TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED` / `TEXT_TOOL_PROTOCOL_MULTIPLE_BLOCKS`; emit one matched block |
+| Unclosed or multiple executable blocks | Execute the single `<tsian-tool-calls>` opening fallback only for a complete valid call array through end of response; otherwise `TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED` / `TEXT_TOOL_PROTOCOL_MULTIPLE_BLOCKS` and require one explicitly closed block |
 | Non-array or empty array | `TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY` / `TEXT_TOOL_PROTOCOL_CALLS_EMPTY`; use a non-empty array or answer normally |
 | Invalid call item/name/arguments | `TEXT_TOOL_PROTOCOL_CALL_INVALID` / `TEXT_TOOL_PROTOCOL_TOOL_NAME_REQUIRED` / `TEXT_TOOL_PROTOCOL_ARGUMENTS_INVALID`; each item is a non-empty `name` plus object `arguments` |
-| Valid call after one to three consecutive errors | Execute exactly once and reset correction budget |
-| Fourth consecutive protocol error | Throw with the fourth error code; do not call the model again; enclosing workspace transaction rolls back |
+| Valid call after mixed protocol errors | Execute exactly once, clear all per-code counts, and let a later error begin a new episode with `retryRemaining=3` |
+| Fourth occurrence of one error code, consecutive or interleaved | Throw with the triggering code and message; do not issue that code's fourth correction call; enclosing workspace transaction rolls back |
 
 ### 5. Good / Base / Bad Cases
 
@@ -582,8 +582,8 @@ TEXT_TOOL_PROTOCOL_MAX_RETRIES = 3
 
 ### 6. Tests Required
 
-- Assistant Runtime smoke: invalid JSON -> legacy tag -> unclosed block -> valid write -> final prose; assert one write, three correction calls, no assistant call-record history, and one user report per tool round.
-- Assistant Runtime smoke: valid staged write followed by four invalid protocol responses; assert no fifth correction call and transaction/session/context rollback.
+- Assistant Runtime smoke: invalid JSON -> non-executable tag -> invalid JSON -> valid unclosed-fallback write -> invalid JSON -> final prose; assert per-code remaining counts `3/3/2`, reset to `3` after the write, one execution, no assistant call-record history, and one user report per tool round.
+- Assistant Runtime smoke: valid staged write followed by alternating non-array/empty-array errors until one code's fourth failure; assert independent `3/2/1` countdowns, no correction call after the terminating failure, and transaction/session/context rollback.
 - Compression fixture: one text user report per round, parallel observations are deliberately reversed to prove id rather than index alignment, recent-round retention remains five by default, and unresolved exact failures remain pinned outside lossy compression.
 - Provider-message assertions inspect structured protocol-error codes/retry counts, one complete executable template in the first system prompt, and absence of a complete legacy negative block without binding correction prose word-for-word. Keep one multimodal formatter/merge check that preserves the image and strips rejected detail; treat the remaining error-matrix rows as review cases rather than permanent assertion variants.
 
@@ -604,6 +604,93 @@ messages.push({
   role: "user",
   content: report,
 })
+```
+
+## Scenario: Current-Loop Agent Response References
+
+### 1. Scope / Trigger
+
+- Trigger: passing a successful delegated Agent's long string response to a later Skill action without asking the model to serialize that response again.
+
+### 2. Signatures
+
+```ts
+interface RuntimeWorkspaceToolSessionState {
+  loadedSkills: RuntimeLoadedSkill[]
+  toolResultRefs: Map<string, string>
+  nextToolResultRefIndex: number
+}
+
+// accepted agent_call result
+type AgentCallResult = {
+  status: "completed"
+  targetAgent: { id: string; title: string }
+  response: string
+  responseRef: `tool-result-${number}`
+}
+
+// run_script arguments
+type RunScriptArguments = {
+  skill: string
+  script: string
+  input?: Record<string, unknown>
+  inputRefs?: Record<string, `tool-result-${number}`>
+}
+```
+
+### 3. Contracts
+
+- Only a successful `agent_call` with a string `response` may prepare a ref. Add the candidate `responseRef` to the result before the strict JSON/32-KiB acceptance gate, then register the exact response and advance the sequence only if that complete observation remains accepted.
+- Each entry or delegated Agent tool loop owns a fresh registry. IDs are Provider-independent and consumption is non-destructive within that loop; refs cannot cross turns, parent/child loops, or separate invocations.
+- `run_script.inputRefs` maps action-input top-level field names to refs. Resolve into a new ordinary input before action schema validation, executor policy, savepoint creation, or browser-script execution. The action and browser script never receive `inputRefs` or registry access.
+- A field must appear in either `input` or `inputRefs`, never both. Do not add recursive paths, JSON Pointer, result slicing, other Tool producers, or a persistent artifact fallback without a new contract.
+- The accepted observation remains the immediate authority. Registry values and `responseRef` are absent from Workspace, Dexie, conversation/history persistence, UI presentation, and cross-turn Tool Memory. Text/native modes share the same accepted observation, registry, and resolver.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| `inputRefs` is not a plain object, a field is malformed, or a ref is not `tool-result-<n>` | `TOOL_RESULT_REFS_INVALID`; no script/savepoint |
+| Same top-level field exists in `input` and `inputRefs` | `TOOL_RESULT_REF_CONFLICT`; do not compare or overwrite values |
+| Ref is unknown, expired, or from another loop | `TOOL_RESULT_REF_NOT_FOUND`; no script/savepoint |
+| Resolved value violates the action schema | Existing `ACTION_INPUT_INVALID` |
+| `agent_call` result fails observation acceptance | Return the acceptance error; do not register or advance the ref sequence |
+| Accepted ref is consumed more than once in the same loop | Resolve the same exact string each time |
+
+### 5. Good / Base / Bad Cases
+
+- Good: `agent_call` returns `{response,responseRef}`; the next `run_script` sends the short ref in `inputRefs.openingReply`, and the action receives the exact response string.
+- Base: a small action input stays inline in `run_script.input`; no ref is required.
+- Bad: copy the delegated response into nested JSON again, silently replace an explicit input field, persist the registry, or let a browser script query it.
+
+### 6. Tests Required
+
+- Existing Assistant Runtime smoke: accepted `agent_call` registers one ref; two same-loop `run_script` calls receive the byte-identical multiline/quoted response.
+- In the same smoke transaction, an isolated session cannot consume the ref and an oversized rejected observation leaves the registry/sequence and staged Workspace unchanged.
+- Tool-memory projection excludes `responseRef`; the existing world-architect template smoke confirms the Skill uses `run_script.inputRefs.openingReply`.
+- Do not add a dedicated result-ref test file; keep these assertions in the retained runtime transaction smoke.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```json
+{
+  "skill": "开局建模",
+  "script": "commit_opening",
+  "input": { "openingReply": "<model reserialized long response>" }
+}
+```
+
+#### Correct
+
+```json
+{
+  "skill": "开局建模",
+  "script": "commit_opening",
+  "input": { "summary": "..." },
+  "inputRefs": { "openingReply": "tool-result-0" }
+}
 ```
 
 ## Scenario: Native AIRP History Writeback
@@ -921,7 +1008,7 @@ stageAgentContextFile(transaction, {
 
 - A successful `invokeAgent` with `persist:true` passes the runtime's `contextUpdate.toolMemories` into the same `context-<slot>.json` snapshot that receives the projected user/assistant sequence. `persist:false` and failed invocations do not write context or Tool memory.
 - Writeback starts from the compressed snapshot when present, otherwise the current slot snapshot, otherwise an empty snapshot. It appends the text-only sequence, merges existing and current Tool memories, applies semantic supersession/resolution, then applies stable sorting, recency retention, and the total budget before serialization.
-- Cross-turn Tool memory is a bounded semantic projection: `key/status/title/summary`, optional anchors, small exact JSON values, and optional `resolves`. Raw observations, call arguments, Skill/source bodies, provider Tool protocol messages, and UI timeline/presentation are not persisted as model history.
+- Cross-turn Tool memory is a bounded semantic projection: `key/status/title/summary`, optional anchors, small exact JSON values, and optional `resolves`. Raw observations, call arguments, Skill/source bodies, provider Tool protocol messages, current-loop `responseRef`, and UI timeline/presentation are not persisted as model history.
 - Producers may provide an explicit projection. Built-in projectors retain only downstream decision state; read/source-like and `use_skill` observations are omitted, not truncated into memory. Browser-script/custom-Tool fallback is conservative and never copies arbitrary output bodies.
 - A newer memory with the same `key` supersedes the older one. A successful memory whose `resolves` names failed keys removes those failures. Unresolved failed memories are retained preferentially within the bounded recent-sequence window so the Agent can avoid repeating them blindly.
 - `sequence` is the only aging, grouping, compression, and append-order key. `gameTurn` is optional domain correlation and must never drive Tool-memory retention; opening interviews can therefore produce multiple Agent sequences while game turn remains zero.
@@ -1180,7 +1267,7 @@ buildToolPresentation(
 - **Runtime acceptance is a strict fail-loud gate, not a projector.** `acceptToolObservationForAgent` accepts strict JSON-compatible values unchanged when the serialized observation is at most 32 KiB. It never compacts, slices, stringifies exotic values, or emits preview success. Invalid values return `TOOL_OBSERVATION_INVALID`; oversized values return `TOOL_OBSERVATION_TOO_LARGE` without the raw body. The Environment has no per-product observation budget knob.
 - **Protocol and memory consume the same accepted observation.** Native and Text Tool Protocol serialize that value directly; text mode must not run a second `compactLargeValueForModel` pass. Cross-turn `toolMemories` may still summarize accepted observations under its independent retention budget.
 - **Skill detail has one full-content channel.** `use_skill` returns load metadata, one complete `SKILL.md` `content` field, counts, and declaration diagnostics in its Tool observation. It does not return a duplicate action-schema list and the framework emits no synthetic post-round Skill message. `run_script` authorizes against the current visible Skill source, not this observation.
-- **agent_call presentation**: the UI projector extracts `{type:"agent_call", targetAgent, response, responseTruncated?, status, error?}`. Response is capped at the UI presentation limit; the bounded Agent observation remains a separate consumer.
+- **agent_call presentation**: the UI projector extracts `{type:"agent_call", targetAgent, response, responseTruncated?, status, error?}` and ignores the model-only current-loop `responseRef`. Response is capped at the UI presentation limit; the bounded Agent observation remains a separate consumer.
 - **Ordinary tools**: no presentation payload. UI receives only call identity, name/displayName, status, round and agent id; arguments and results never enter bridge/timeline/session storage.
 - **Process retention**: formal turn history and assistant sessions persist presentation-only `thought`/`tool`/`interim` timeline nodes in occurrence order. Reload reconstructs the same display nodes without rebuilding model messages.
 - **ask_user rendering model (desktop assistant only)**: an active `ask_user` request does **not** render an interactive card in the timeline. Instead the view deforms the footer input area into a question surface (question + option buttons + optional custom input + cancel) — the normal textarea/send/stop are hidden, so only one input region exists at a time and the question stays pinned at the focus position regardless of scroll. The thinking bubble is gated off while ask is active. A read-only `ask` node is written into the timeline only *after* the player answers or cancels — preserving the Q&A as scrollable history. Re-introducing an interactive ask card in the timeline regresses the two-input-box / scrolling-question problem — don't.

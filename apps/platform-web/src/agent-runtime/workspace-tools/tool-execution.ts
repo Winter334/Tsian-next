@@ -471,6 +471,7 @@ async function executeRuntimeWorkspaceToolCall(
 
   const toolStartedAt = Date.now()
   let rollbackScriptWrites: (() => void) | undefined
+  let pendingToolResultRef: { id: string; value: string } | undefined
   let observation: RuntimeWorkspaceToolObservation
   try {
     if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.useSkill) {
@@ -503,11 +504,27 @@ async function executeRuntimeWorkspaceToolCall(
           "agent_call is not available in this Agent step.",
         )
       }
-      observation = {
-        index,
-        name: call.name,
-        ok: true,
-        result: await context.runAgentCall(normalizeAgentCallArguments(call.arguments)),
+      const result = await context.runAgentCall(normalizeAgentCallArguments(call.arguments))
+      const resultRecord = isRecord(result) ? result : undefined
+      const response = typeof resultRecord?.response === "string"
+        ? resultRecord.response
+        : undefined
+      if (resultRecord && response !== undefined && context.sessionState) {
+        const responseRef = `tool-result-${context.sessionState.nextToolResultRefIndex}`
+        pendingToolResultRef = { id: responseRef, value: response }
+        observation = {
+          index,
+          name: call.name,
+          ok: true,
+          result: { ...resultRecord, responseRef },
+        }
+      } else {
+        observation = {
+          index,
+          name: call.name,
+          ok: true,
+          result,
+        }
       }
     } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend) {
       if (!context.runInspectFrontend) {
@@ -662,6 +679,18 @@ async function executeRuntimeWorkspaceToolCall(
 
   const agentObservation = acceptToolObservationForAgent(call, observation)
   if (observation.ok && !agentObservation.ok) rollbackScriptWrites?.()
+  const acceptedResult = agentObservation.ok && isRecord(agentObservation.result)
+    ? agentObservation.result
+    : undefined
+  if (
+    pendingToolResultRef
+    && acceptedResult?.responseRef === pendingToolResultRef.id
+    && acceptedResult.response === pendingToolResultRef.value
+    && context.sessionState
+  ) {
+    context.sessionState.toolResultRefs.set(pendingToolResultRef.id, pendingToolResultRef.value)
+    context.sessionState.nextToolResultRefIndex += 1
+  }
   emitToolObservationTrace(
     context,
     call,

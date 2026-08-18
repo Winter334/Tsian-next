@@ -40,6 +40,8 @@ export function toolError(
 export function createRuntimeWorkspaceToolSessionState(): RuntimeWorkspaceToolSessionState {
   return {
     loadedSkills: [],
+    toolResultRefs: new Map(),
+    nextToolResultRefIndex: 0,
   }
 }
 

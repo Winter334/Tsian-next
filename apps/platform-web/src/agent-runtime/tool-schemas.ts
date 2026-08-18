@@ -72,6 +72,12 @@ const runScriptSchema: ToolSchema = {
         description:
           "Action input object. Must satisfy the action's declared inputSchema when present.",
       },
+      inputRefs: {
+        type: "object",
+        additionalProperties: { type: "string" },
+        description:
+          "Map top-level action input fields to responseRef values returned by successful agent_call observations in this tool loop. Omit those fields from input; the resolved action input must satisfy the action's inputSchema.",
+      },
     },
   },
 }

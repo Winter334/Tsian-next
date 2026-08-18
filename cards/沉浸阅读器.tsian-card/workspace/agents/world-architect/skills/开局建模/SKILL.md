@@ -192,21 +192,21 @@ appliesTo:
 
 ### 阶段 5：委派首回合正文
 
-玩家确认开始且草案完成后，通过 `agent_call` 调用 `storyteller`，把阶段 4 的完整 storyteller brief 作为请求交给它。storyteller 根据自己的上下文决定叙事人称与文风，并返回可直接作为 `openingReply` 的首回合正文和末尾正式 `[[选项]]`；返回值只承载正文与正式选项，不承载开局访谈选项块。
+玩家确认开始且草案完成后，通过 `agent_call` 调用 `storyteller`，把阶段 4 的完整 storyteller brief 作为请求交给它。storyteller 根据自己的上下文决定叙事人称与文风。成功 observation 中保留 `response` 和 `responseRef`：`response` 是可直接作为 `openingReply` 的首回合正文和末尾正式 `[[选项]]`，`responseRef` 留给阶段 7 提交；正文只承载叙事与正式选项，不承载开局访谈选项块。
 
-- 完成条件：得到非空正文，末尾有 1–12 个与正文终点一致的正式选项。
+- 完成条件：得到非空 `response`、对应的 `responseRef`，且正文末尾有 1–12 个与正文终点一致的正式选项。
 - 未完成或失败：缺正文或正式选项时，带着明确缺项重新委派一次；委派不可用、返回错误，或同一缺项再次出现时，保留当前草案和错误 code/message/details，简短报告并停止。
 
 ### 阶段 6：对齐正文终点
 
-以 `openingReply` 末尾等待玩家选择的瞬间作为模型当前时点。逐项核对：正文来源事实来自已读内容或玩家明确决定；`runtime.location`、`runtime.activeSceneRefs` 指向的 active scene、scene 的 `present` 和出场实体当前状态与正文终点一致。
+将阶段 5 observation 的 `response` 作为 `openingReply`，以其末尾等待玩家选择的瞬间作为模型当前时点。逐项核对：正文来源事实来自已读内容或玩家明确决定；`runtime.location`、`runtime.activeSceneRefs` 指向的 active scene、scene 的 `present` 和出场实体当前状态与正文终点一致。
 
 - 完成条件：正文事实和草案事实一致，正文结束时的人物、地点、场景与草案当前状态完全对齐。
 - 未完成或失败：正文偏离已确认事实时，把具体修正点加入 brief 并回到阶段 5；草案漏项或状态落后时回到阶段 4 修正；出现新的玩家级分歧时回到阶段 3。
 
 ### 阶段 7：原子提交
 
-用已对齐的草案和 `openingReply` 调用 `commit_opening`。每版完整输入只提交一次；失败后只有先回到对应阶段并改变相关输入，才提交下一版。同一份完整输入再次返回相同 code 时保留 code/message/details 并停止。action 成功后只回复一句自然语言完成提示，不附 `[[开局选项]]`。
+用已对齐的草案调用 `commit_opening`：草案字段放在 `run_script.input`，其中省略 `openingReply`；将阶段 5 的 `responseRef` 放在 `run_script.inputRefs.openingReply`。每版完整输入只提交一次；失败后只有先回到对应阶段并改变相关输入，才提交下一版。同一份完整输入再次返回相同 code 时保留 code/message/details 并停止。引用解析错误时保留 code/message/details 并停止本次提交。action 成功后只回复一句自然语言完成提示，不附 `[[开局选项]]`。
 
 - `OPENING_REF_UNKNOWN`：回到阶段 4，补入目标或修正引用。
 - `OPENING_SOURCE_REF_UNKNOWN`：回到阶段 2 核对章节范围和锚点，再在阶段 4 修正 `frontier`。

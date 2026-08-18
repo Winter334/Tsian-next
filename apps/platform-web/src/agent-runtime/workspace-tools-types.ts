@@ -513,6 +513,9 @@ export interface RuntimeLoadedSkill {
 
 export interface RuntimeWorkspaceToolSessionState {
   loadedSkills: RuntimeLoadedSkill[]
+  /** Current tool-loop only. Values are never persisted or exposed to browser scripts. */
+  toolResultRefs: Map<string, string>
+  nextToolResultRefIndex: number
 }
 
 export interface SkillActionParseResult {

@@ -85,6 +85,7 @@ import {
   parseTextToolProtocolResponse,
   stripTextProtocolArtifacts,
   TEXT_TOOL_CALL_TEMPLATE,
+  TEXT_TOOL_CALLS_CLOSE_TAG,
   TEXT_TOOL_CALLS_OPEN_TAG,
   TEXT_TOOL_EXECUTED_TOOLS_TAG,
   TEXT_TOOL_OBSERVATIONS_TAG,
@@ -411,19 +412,20 @@ function buildWorkspaceToolInstructions(
   return [
     ...sharedRules,
     "当前工具调用方式：在回复中写工具调用块。",
-    `需要调用工具时，本轮只输出一个 ${TEXT_TOOL_CALLS_OPEN_TAG} JSON 数组块。`,
+    `需要调用工具时，本轮只输出一个以 ${TEXT_TOOL_CALLS_OPEN_TAG} 开始、以 ${TEXT_TOOL_CALLS_CLOSE_TAG} 结束的完整 JSON 数组块。`,
     "规则：",
     "- JSON 必须是数组；单个工具也写成一元素数组；数组不能为空。",
+    `- 开始和结束标签必须成对出现；必须显式输出 ${TEXT_TOOL_CALLS_CLOSE_TAG}，消息结束不能代替闭合标签。`,
     "- 一轮最多一个工具调用块；不要使用 Markdown 代码块；不要在 JSON 中写注释。",
     "- 工具名必须来自当前可用工具清单，arguments 必须符合对应说明。",
-    `runtime user 消息中的 <${TEXT_TOOL_EXECUTED_TOOLS_TAG}> 和 <${TEXT_TOOL_OBSERVATIONS_TAG}> 是已经完成的调用及结果。需要新调用时只使用 ${TEXT_TOOL_CALLS_OPEN_TAG}。`,
+    `runtime user 消息中的 <${TEXT_TOOL_EXECUTED_TOOLS_TAG}> 和 <${TEXT_TOOL_OBSERVATIONS_TAG}> 是已经完成的调用及结果。需要新调用时只使用 ${TEXT_TOOL_CALLS_OPEN_TAG}...${TEXT_TOOL_CALLS_CLOSE_TAG} 完整块。`,
     "当前可用工具清单：",
     formatTextToolManifest(options.tools),
     "收到工具结果后：",
     `- 阅读 runtime user 执行报告中的 <${TEXT_TOOL_OBSERVATIONS_TAG}> 结果。`,
-    `- 还需要工具时，再输出 ${TEXT_TOOL_CALLS_OPEN_TAG}。`,
+    `- 还需要工具时，再输出 ${TEXT_TOOL_CALLS_OPEN_TAG}...${TEXT_TOOL_CALLS_CLOSE_TAG} 完整块。`,
     "- 信息足够时，直接输出最终结果。",
-    "- 最终结果不要包含任何 <tsian-...> 标签、工具 JSON、工具结果原文或实现说明。",
+    `- 最终结果不要包含 ${TEXT_TOOL_CALLS_OPEN_TAG}...${TEXT_TOOL_CALLS_CLOSE_TAG}、任何其他协议标签、工具 JSON、工具结果原文或实现说明。`,
     "正确示例（把工具名和参数替换为当前可用工具清单中的实际值）：",
     TEXT_TOOL_CALL_TEMPLATE,
   ].join("\n")
@@ -1559,7 +1561,8 @@ async function callAgentModelWithWorkspaceTools(
   // text-protocol 路径 callModel 返回 string 不带 usage,此变量恒 undefined.
   // 声明它只为与 native loop 的 return 结构对称(避免类型分叉).
   let lastRoundUsage: { input?: number; output?: number; total?: number } | undefined
-  let protocolErrorRetriesRemaining = TEXT_TOOL_PROTOCOL_MAX_RETRIES
+  const protocolErrorCountsByCode = new Map<string, number>()
+  let protocolCorrectionMessage: AiChatMessage | undefined
 
   for (let round = 0; ; round += 1) {
     assertNotAborted(options.signal)
@@ -1778,22 +1781,41 @@ async function callAgentModelWithWorkspaceTools(
         const combinedThink = thinkBlocksProtocolRound.join("\n\n")
         collectedTimelineItems.push({ kind: "thought", id: `thought-r${round}`, round, text: combinedThink, collapsed: true })
       }
-      if (protocolErrorRetriesRemaining <= 0) {
+      const previousErrorCount = protocolErrorCountsByCode.get(parseResult.error.code) ?? 0
+      if (previousErrorCount >= TEXT_TOOL_PROTOCOL_MAX_RETRIES) {
         throw new Error(`Text Tool Protocol error after retry exhaustion: ${parseResult.error.code}: ${parseResult.error.message}`)
       }
-      const retryRemaining = protocolErrorRetriesRemaining
-      protocolErrorRetriesRemaining -= 1
-      nextMessages = [
-        ...nextMessages,
-        {
-          role: "user",
-          content: formatTextToolProtocolError(parseResult.error, retryRemaining),
-        },
-      ]
+      protocolErrorCountsByCode.set(parseResult.error.code, previousErrorCount + 1)
+      const retryRemaining = TEXT_TOOL_PROTOCOL_MAX_RETRIES - previousErrorCount
+      const correctionMessage: AiChatMessage = {
+        role: "user",
+        content: formatTextToolProtocolError(parseResult.error, retryRemaining),
+      }
+      const previousCorrectionIndex = protocolCorrectionMessage
+        ? nextMessages.lastIndexOf(protocolCorrectionMessage)
+        : -1
+      nextMessages = previousCorrectionIndex >= 0
+        ? [
+            ...nextMessages.slice(0, previousCorrectionIndex),
+            correctionMessage,
+            ...nextMessages.slice(previousCorrectionIndex + 1),
+          ]
+        : [...nextMessages, correctionMessage]
+      protocolCorrectionMessage = correctionMessage
       continue
     }
 
-    protocolErrorRetriesRemaining = TEXT_TOOL_PROTOCOL_MAX_RETRIES
+    protocolErrorCountsByCode.clear()
+    if (protocolCorrectionMessage) {
+      const correctionIndex = nextMessages.lastIndexOf(protocolCorrectionMessage)
+      if (correctionIndex >= 0) {
+        nextMessages = [
+          ...nextMessages.slice(0, correctionIndex),
+          ...nextMessages.slice(correctionIndex + 1),
+        ]
+      }
+      protocolCorrectionMessage = undefined
+    }
 
     // 采集 interim processNode:tool_calls 轮的过渡文本(剥离 executable block + think blocks 后的正文).
     const interimText = stripThinkBlocks(stripTextProtocolArtifacts(parseResult.interimText)).trim()

@@ -289,6 +289,67 @@ function findDeclaredAction(
   return loadedSkill.actions.find((action) => normalizedLookupKey(action.name) === requestedKey) ?? null
 }
 
+const TOOL_RESULT_REF_PATTERN = /^tool-result-(?:0|[1-9]\d*)$/
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false
+  try {
+    const prototype = Object.getPrototypeOf(value)
+    return prototype === Object.prototype || prototype === null
+  } catch {
+    return false
+  }
+}
+
+function resolveActionInputRefs(
+  actionInput: Record<string, unknown>,
+  inputRefs: unknown,
+  sessionState: RuntimeWorkspaceToolSessionState | undefined,
+): Record<string, unknown> {
+  if (inputRefs === undefined) return actionInput
+  if (!isPlainRecord(inputRefs)) {
+    throw toolError(
+      "TOOL_RESULT_REFS_INVALID",
+      "run_script inputRefs must be an object mapping top-level action input fields to responseRef strings.",
+    )
+  }
+
+  const refs = Object.entries(inputRefs)
+  for (const [field, responseRef] of refs) {
+    if (!field || field.trim() !== field || typeof responseRef !== "string" || !TOOL_RESULT_REF_PATTERN.test(responseRef)) {
+      throw toolError(
+        "TOOL_RESULT_REFS_INVALID",
+        "run_script inputRefs contains an invalid top-level field or responseRef.",
+        { field },
+      )
+    }
+  }
+
+  for (const [field, responseRef] of refs) {
+    if (Object.prototype.hasOwnProperty.call(actionInput, field)) {
+      throw toolError(
+        "TOOL_RESULT_REF_CONFLICT",
+        `run_script input and inputRefs both provide the top-level field "${field}".`,
+        { field, responseRef },
+      )
+    }
+  }
+
+  const resolvedEntries: Array<[string, unknown]> = [...Object.entries(actionInput)]
+  for (const [field, responseRef] of refs as Array<[string, string]>) {
+    const value = sessionState?.toolResultRefs.get(responseRef)
+    if (value === undefined) {
+      throw toolError(
+        "TOOL_RESULT_REF_NOT_FOUND",
+        `The current tool loop does not contain responseRef "${responseRef}".`,
+        { field, responseRef },
+      )
+    }
+    resolvedEntries.push([field, value])
+  }
+  return Object.fromEntries(resolvedEntries)
+}
+
 export function loadSkillByName(
   context: RuntimeWorkspaceToolExecutionContext,
   input: Record<string, unknown>,
@@ -381,13 +442,14 @@ export async function executeRunScript(
     "ACTION_NAME_REQUIRED",
     "run_script requires a non-empty string script.",
   )
-  const actionInput = input.input === undefined ? {} : input.input
-  if (!isRecord(actionInput)) {
+  const rawActionInput = input.input === undefined ? {} : input.input
+  if (!isPlainRecord(rawActionInput)) {
     throw toolError(
       "ACTION_INPUT_INVALID",
       "run_script input must be a JSON object when provided.",
     )
   }
+  const actionInput = resolveActionInputRefs(rawActionInput, input.inputRefs, context.sessionState)
 
   if (!context.agentContext) {
     throw toolError("SKILL_CONTEXT_REQUIRED", "run_script requires an active Agent context.")
