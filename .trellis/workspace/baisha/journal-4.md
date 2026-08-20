@@ -1113,3 +1113,24 @@ Moved text tool execution history into runtime user reports, added three-attempt
 ### Status
 
 [OK] **Completed**
+
+
+## Session 200: Fix Gemini streamed tool calls and diagnostics
+
+**Date**: 2026-08-20
+**Task**: Fix Gemini streamed tool calls and diagnostics
+**Branch**: `master`
+
+### Summary
+
+Fixed Gemini native streaming tool-call classification when providers return functionCall with STOP, hardened the Agent loop to execute parsed calls, redacted x-goog-api-key in persisted/exported diagnostics, documented temporary focused-test policy and provider invariants, and verified with two temporary focused tests plus contracts build, Web smoke, and platform-web build.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c81739f2` | (see git log) |
+
+### Status
+
+[OK] **Completed**
