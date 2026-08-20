@@ -44,6 +44,7 @@ const SECRET_KEYS = new Set([
   "setcookie",
   "xapikey",
   "xauthtoken",
+  "xgoogapikey",
   "token",
   "bearertoken",
   "accesstoken",

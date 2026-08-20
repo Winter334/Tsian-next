@@ -16,16 +16,23 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
 
 ## Test Maintenance Policy
 
-The repository deliberately uses a smoke-only automated suite. Tests protect a few
-end-to-end product transactions; the specs below preserve the exhaustive behavior
-contracts without requiring one automated assertion per row.
+The repository deliberately keeps its permanent automated suite smoke-only. Tests
+protect a few end-to-end product transactions; the specs below preserve the
+exhaustive behavior contracts without requiring one automated assertion per row.
 
-- The only ordinary test files are `src/bridge/remote-iframe-bridge.test.ts`,
+- The only permanent ordinary test files are `src/bridge/remote-iframe-bridge.test.ts`,
   `src/integration/assistant-runtime.smoke.test.ts`, and
   `apps/platform-server/internal/server/market_test.go`.
+- A reviewed task may create focused temporary tests for one-off bug diagnosis or
+  implementation verification. Run each temporary test explicitly by exact path,
+  keep it out of smoke scripts, do not enable repository-wide discovery for it,
+  record the command/result, and remove it before the final commit.
 - Each smoke owns one success and at most one critical failure/rollback scenario.
   Unit, component, controller, validator, storage/host/bridge-seam, pure-algorithm,
   and UI/Spatial tests are not retained independently.
+- Permanent smoke tests remain small project-operability gates. They should not
+  absorb one-off bug-specific assertions by default; permanent admission still
+  requires a stable retained contract and the explicit scope/risk decision below.
 - `Validation & Error Matrix` and `Verification Required` sections are
   implementation-review checklists. A row not sampled by a retained smoke is
   verified manually when its owning behavior changes; it does not authorize a new
@@ -35,9 +42,9 @@ contracts without requiring one automated assertion per row.
 - The production-browser Frontend Action preflight is a separate mandatory gate.
   Node, happy-dom, fake IndexedDB, and scripted Worker fixtures cannot replace its
   production bundle, real Worker, or opaque-origin checks.
-- A new automated file requires an explicit scope/risk decision and an explicit
-  `test:smoke` entry. Prefer changing an existing smoke scenario when the contract
-  still belongs to one of the three main transactions.
+- A new permanent automated file requires an explicit scope/risk decision and an
+  explicit `test:smoke` entry. Prefer changing an existing smoke scenario when the
+  stable contract still belongs to one of the three main transactions.
 - Before committing each task, apply a retention-value gate to touched tests and
   obvious duplicates only. Permanent coverage must protect a stable product,
   core, safety, or data-integrity contract; remove one-off diagnostic and temporary
@@ -95,13 +102,16 @@ npm run verify            -> build:all + smoke + production-browser preflight
 | Frontend Action Worker/schema/preflight | `test:frontend-actions:production-browser` in addition to builds/smoke |
 | UI/Spatial/controller/presentation | `build:web` plus manual user verification; no dedicated automated suite |
 | Server market/auth transaction | `test:smoke:server` plus `build:server` |
-| New proposed test file | Explicit user approval and explicit smoke-script admission |
+| New proposed permanent test file | Explicit user approval and explicit smoke-script admission |
+| Reviewed task-scoped temporary test | Run explicitly by exact path, record result, remove before final commit |
 | Behavior not sampled by a smoke | Manual verification or accepted later-discovery risk |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: extend the Assistant smoke when a regression belongs to the same
-  host/runtime/transaction/persistence path.
+- Good: use an explicitly run task-scoped temporary test for a one-off bug branch,
+  record the result, and remove it before the final commit.
+- Good: extend the Assistant smoke when a stable retained regression contract
+  belongs to the same host/runtime/transaction/persistence path.
 - Base: update a behavior matrix and verify it manually because no retained smoke
   owns that low-level branch.
 - Bad: restore a validator/component/unit suite merely because its old file existed
@@ -110,7 +120,8 @@ npm run verify            -> build:all + smoke + production-browser preflight
 ### 6. Verification Required
 
 - Run `npm run verify` for repository-wide verification changes.
-- Confirm the test inventory remains exactly the three approved files.
+- After removing any task-scoped temporary tests, confirm the permanent test
+  inventory remains exactly the three approved files.
 - Record any manual UI/Spatial verification separately; do not describe a build as
   UI behavior evidence.
 - If the real-browser gate passes assertions but Windows profile cleanup reports a

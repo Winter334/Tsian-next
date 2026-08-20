@@ -1330,7 +1330,7 @@ async function callAgentModelWithWorkspaceToolsNative(
       },
     })
 
-    if (result.finishReason === "stop" || result.toolCalls.length === 0) {
+    if (result.toolCalls.length === 0) {
       return { text: result.text.trim(), usage: lastRoundUsage, ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
     }
 

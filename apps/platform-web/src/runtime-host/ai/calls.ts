@@ -489,7 +489,7 @@ export async function streamAssistantReplyNative(
           partialText = textBuffer
           partialToolCalls = toolCalls
           const resolvedFinish: "stop" | "tool_calls" =
-            finishReason ?? (isToolRound || toolCalls.length > 0 ? "tool_calls" : "stop")
+            toolCalls.length > 0 ? "tool_calls" : finishReason ?? "stop"
 
           const result: ModelCallResult = {
             text: resolvedFinish === "tool_calls" ? "" : textBuffer,

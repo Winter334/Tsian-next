@@ -128,7 +128,7 @@ function redactCredentialText(value: string): string {
       (_match, name: string, separator: string) => `${name}${separator}[redacted]`,
     )
     .replace(
-      /\b(authorization|proxy-authorization|cookie|set-cookie|x-api-key|x-auth-token)\s*:\s*[^\r\n]+/gi,
+      /\b(authorization|proxy-authorization|cookie|set-cookie|x-api-key|x-auth-token|x-goog-api-key)\s*:\s*[^\r\n]+/gi,
       (_match, name: string) => `${name}: [redacted]`,
     )
     .replace(

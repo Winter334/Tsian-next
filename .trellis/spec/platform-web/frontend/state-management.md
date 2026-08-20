@@ -62,6 +62,7 @@ Conventions:
 - `fetchBrowserAiProviderModels({ baseUrl, apiKey, kind })` fetches model ids for Settings; Gemini uses `{ models, nextPageToken }`, while OpenAI-compatible / Responses / DeepSeek / Claude use the generic `{ data }` or bare-array extraction.
 - `probeAssistantNativeToolCalling(config)` sends one non-streaming native tool-call probe with a harmless `tsian_tool_probe` schema and returns `{ ok, message }` without executing workspace tools or persisting results.
 - `getBrowserAiProviderPresetModels(providerId)` reads `contextWindow` from `parameters.common.contextWindow`.
+- Native provider calls return `ModelCallResult { text, toolCalls, finishReason }`, where `finishReason` is platform-normalized to `"stop" | "tool_calls"` after response parsing.
 
 ### 3. Contracts
 
@@ -72,6 +73,7 @@ Conventions:
 - Custom request params are provider-branch-local. There is no shared model-level custom JSON field. Runtime-owned fields must be protected and/or overwritten after merge (`model`, messages/input/contents, stream/tools, auth/header/baseUrl, provider-owned request keys, Responses `store`/conversation fields, Claude `thinking`, etc.).
 - `toolCallMode: "native" | "text"` is required on model config and resolved config. New models default to `text`; stored models missing/invalid `toolCallMode` are dropped during normalization.
 - `streaming: boolean` lives on model config and resolved config. Both native and text protocol paths can stream when the endpoint supports SSE; the switch is explicit and preserved. Text-mode streaming accumulates raw text and parses tool-call blocks at round end.
+- In Native mode, successfully parsed `toolCalls` are the authoritative round classification for both streaming and non-streaming responses. A non-empty tool-call list must normalize to `finishReason: "tool_calls"` and enter tool execution even when the provider reports `STOP` / `stop`; provider finish text is advisory when it contradicts structured calls. The shared stream loop owns this decision because a terminating SSE chunk may not repeat a `functionCall` emitted in an earlier chunk.
 - Resolution order for every model call: Agent-selected preset -> platform-global active provider -> complete `VITE_AI_*` environment defaults. AIRP play turns and desktop Assistant chat turns pass the resolved config only when non-null.
 - Per-Agent provider selection stores only `providerPresetId?: string` on Agent config. The preset including `apiKey`/`baseUrl` stays platform-local and is never distributed with game-card content.
 - Settings model ping uses an in-memory draft config, forces non-streaming chat, and surfaces pass/fail text in the UI.
@@ -92,6 +94,8 @@ Conventions:
 - Settings native tool-call probe returns no tool call -> show a failure suggesting text-compatible mode; do not mutate saved model config.
 - Settings native tool-call probe provider rejects `tools` / `tool_choice` / `toolConfig` -> surface the provider error as a tool-call-parameter failure; do not execute or emulate tools locally.
 - Settings native tool-call probe auth/network failure -> show the failure in the test result only; no persistence side effects.
+- Native response contains one or more parsed tool calls plus provider `STOP` / `stop` -> classify as `tool_calls`, execute every call in order, inject observations, and continue the model loop.
+- Native response contains no parsed tool calls plus provider `STOP` / `stop` -> classify as the final stop round and return its text.
 - Common numeric model parameter outside range -> validation throws with a field-specific error.
 - Active provider custom JSON is invalid, not an object, or tries to override protected runtime fields -> validation/runtime request build throws with a clear error.
 - Gemini `responseSchemaText` non-empty but invalid JSON object -> fail before sending the request.
@@ -105,10 +109,13 @@ Conventions:
 - Good: A player pastes `https://proxy.example.com/v1/chat/completions`; Settings stores/uses `https://proxy.example.com/v1` without trying to infer whether the proxy is OpenAI-compatible or Gemini-native.
 - Good: Gemini `/models` returns both `embedContent`-only and `generateContent` models; Settings only offers `generateContent` entries for chat.
 - Good: Native tool-call probe returns `tsian_tool_probe`; Settings reports native tool support but does not save any capability field.
+- Good: Gemini SSE emits `functionCall` in one chunk and `finishReason: "STOP"` in a later chunk; the accumulated call wins, executes, and the next round receives its `functionResponse`.
+- Base: a no-tool Gemini response ends with `STOP`; the platform returns the assembled final text.
 - Base: Inactive provider branches may be populated because the UI creates defaults; runtime reads only the branch selected by `BrowserAiProviderType.kind`.
 - Bad: Provider base URL normalization rewrites an unknown middleman path to an official provider root or adds `/v1beta` because the selected kind is Gemini.
 - Bad: Treating a successful model-list fetch or ordinary chat ping as proof that native tool calling works.
 - Bad: Persisting `nativeToolCallSupported` / last probe status on the model config without a new schema decision.
+- Bad: ending a Native Agent turn solely because the provider finish string says `STOP` while parsed tool calls are non-empty.
 - Good: Claude defaults to `thinkingMode: "disabled"`, so unsupported models do not receive a `thinking` object unless the user enables advanced thinking.
 - Base: Inactive provider branches may be populated because the UI creates defaults; runtime reads only the branch selected by `BrowserAiProviderType.kind`.
 - Bad: A request builder reads old top-level `parameters.reasoningEffort` or reads the OpenAI-compatible branch for a Responses preset.
@@ -120,6 +127,7 @@ Conventions:
 - Manually inspect that each provider maps common + active-branch fields correctly and that runtime-owned keys survive custom JSON.
 - Manually verify Settings add/edit windows, relevant provider controls, and model ping UI.
 - For Settings native tool-call probe changes, verify the probe is manual, model-level, non-streaming, native-mode-only for the probe call, and does not persist state or auto-switch `toolCallMode`.
+- For Native stream classification changes, use a task-scoped temporary test with a tool-call chunk plus a `STOP` terminator; assert tool execution/observation continuation, run it explicitly, and remove it before final commit unless permanent admission is separately approved.
 - Manually verify provider model-list and config-normalization branches. Do not add dedicated request-builder, controller, or Settings tests.
 
 ### 7. Wrong vs Correct
@@ -166,6 +174,22 @@ model.nativeToolCallSupported = true
 ```ts
 const result = await probeAssistantNativeToolCalling({ ...config, toolCallMode: "native", streaming: false })
 // Display result in Settings only; do not persist it to BrowserAiModelConfig.
+```
+
+#### Wrong
+
+```ts
+// Provider finish text can contradict structured calls (Gemini commonly uses STOP).
+const resolvedFinish = providerFinish ?? (toolCalls.length > 0 ? "tool_calls" : "stop")
+if (result.finishReason === "stop") return result.text
+```
+
+#### Correct
+
+```ts
+const resolvedFinish = toolCalls.length > 0 ? "tool_calls" : providerFinish ?? "stop"
+if (result.toolCalls.length === 0) return result.text
+// Otherwise execute calls, append observations, and continue the model loop.
 ```
 
 ## Scenario: Current Game Card And Active Save State
