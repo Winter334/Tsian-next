@@ -37,7 +37,8 @@ async function commitFrontierState(input, tsian, signal) {
       if (chapter < newStart || chapter > newEnd) fail('FRONTIER_TIMELINE_CHAPTER_OUT_OF_WINDOW', 'Timeline anchor chapter must be within the new sourceWindow range.', { chapter: chapter, windowStart: newStart, windowEnd: newEnd });
       const time = normalizeString(anchor.time, 'FRONTIER_TIMELINE_TIME_REQUIRED', 'Timeline anchor time', 120);
       const label = normalizeString(anchor.label, 'FRONTIER_TIMELINE_LABEL_REQUIRED', 'Timeline anchor label', 120);
-      newAnchors.push({ kind: 'source', order: order, chapter: chapter, time: time, label: label });
+      const summary = normalizeString(anchor.summary, 'FRONTIER_TIMELINE_SUMMARY_REQUIRED', 'Timeline anchor summary', 1000);
+      newAnchors.push({ kind: 'source', order: order, chapter: chapter, time: time, label: label, summary: summary });
     }
     // 5. 校验 extractedThrough
     const lastChapterRef = chapters.length ? sourceRefForChapter(chapters[chapters.length - 1]) : null;

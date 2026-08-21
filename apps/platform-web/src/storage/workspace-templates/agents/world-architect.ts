@@ -3,10 +3,14 @@ import cardWorldArchitectAgentConfig from "../../../../../../cards/沉浸阅读�
 import cardWorldArchitectAgentInstructions from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/AGENT.md?raw"
 import cardOpeningSkill from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/SKILL.md?raw"
 import cardOpeningCommon from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/_common.js?raw"
+import cardOpeningWorkflow from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/_opening-workflow.js?raw"
 import cardOpeningValidation from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/_validation.js?raw"
 import cardOpeningInspectSource from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js?raw"
 import cardOpeningReadSlice from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/read-opening-slice.js?raw"
-import cardOpeningCommit from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/commit-opening.js?raw"
+import cardOpeningCommitEntities from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/commit-opening-entities.js?raw"
+import cardOpeningCommitGraph from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/commit-opening-graph.js?raw"
+import cardOpeningCommitState from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/commit-opening-state.js?raw"
+import cardOpeningPublish from "../../../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/publish-opening.js?raw"
 import {
   COMMIT_PLAY_SETUP_SCRIPT_JS,
   OPENING_COMMON_JS,
@@ -239,10 +243,14 @@ export const WORLD_ARCHITECT_AGENT_FILES: TemplateFile[] = [
 export const WORLD_ARCHITECT_SKILL_FILES: TemplateFile[] = [
   { path: "agents/world-architect/skills/开局建模/SKILL.md", content: cardOpeningSkill },
   { path: "agents/world-architect/skills/开局建模/scripts/_common.js", content: cardOpeningCommon },
+  { path: "agents/world-architect/skills/开局建模/scripts/_opening-workflow.js", content: cardOpeningWorkflow },
   { path: "agents/world-architect/skills/开局建模/scripts/_validation.js", content: cardOpeningValidation },
   { path: "agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js", content: cardOpeningInspectSource },
   { path: "agents/world-architect/skills/开局建模/scripts/read-opening-slice.js", content: cardOpeningReadSlice },
-  { path: "agents/world-architect/skills/开局建模/scripts/commit-opening.js", content: cardOpeningCommit },
+  { path: "agents/world-architect/skills/开局建模/scripts/commit-opening-entities.js", content: cardOpeningCommitEntities },
+  { path: "agents/world-architect/skills/开局建模/scripts/commit-opening-graph.js", content: cardOpeningCommitGraph },
+  { path: "agents/world-architect/skills/开局建模/scripts/commit-opening-state.js", content: cardOpeningCommitState },
+  { path: "agents/world-architect/skills/开局建模/scripts/publish-opening.js", content: cardOpeningPublish },
   { path: "agents/world-architect/skills/游玩设定/SKILL.md", content: PLAY_SETUP_SKILL_MD },
   { path: "agents/world-architect/skills/游玩设定/scripts/_common.js", content: OPENING_COMMON_JS },
   { path: "agents/world-architect/skills/游玩设定/scripts/_validation.js", content: OPENING_VALIDATION_JS },

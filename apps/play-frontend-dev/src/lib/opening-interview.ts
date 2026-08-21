@@ -6,9 +6,11 @@ export const OPENING_CONTROL_SCHEMA = "novel-airp.opening-interview.v2"
 const CLOSED_CHOICES_BLOCK_RE = /\[\[开局选项\]\]\s*([\s\S]*?)\s*\[\[\/开局选项\]\]/g
 const OPENING_CHOICE_START = "[[开局选项]]"
 const OPENING_CHOICE_END = "[[/开局选项]]"
-const OPENING_HIDDEN_MARKERS = [OPENING_CHOICE_START, OPENING_CHOICE_END] as const
+export const OPENING_CONTINUE_MARKER = "[[开局继续]]"
+const OPENING_HIDDEN_MARKERS = [OPENING_CHOICE_START, OPENING_CHOICE_END, OPENING_CONTINUE_MARKER] as const
 const START_MARKER_RE = /^opening-interview:start:([a-z0-9-]+)$/
 const ANSWER_MARKER_RE = /^opening-interview:answer\n([\s\S]*)$/
+const CONTINUE_MARKER_RE = /^opening-interview:continue:([a-z0-9-]+)$/
 const SOURCE_HASH_RE = /^[a-f0-9]{8}$/
 const SESSION_ID_RE = /^opening-[a-f0-9]{8}$/
 const SESSION_SLOT_RE = /^opening-interview-[a-f0-9]{8}$/
@@ -42,6 +44,7 @@ export interface OpeningInterviewControl {
 export interface ParsedOpeningAssistant {
   displayContent: string
   choices: string[]
+  openingContinue: boolean
 }
 
 export interface OpeningTranscriptEntry {
@@ -59,6 +62,7 @@ export interface OpeningTranscriptEntry {
 export type ParsedOpeningUser =
   | { kind: "start"; sessionId: string }
   | { kind: "answer"; content: string }
+  | { kind: "continue"; sessionId: string }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -123,6 +127,10 @@ export function openingAnswerMarker(input: string): string {
   return `opening-interview:answer\n${input}`
 }
 
+export function openingContinueMarker(sessionId: string): string {
+  return `opening-interview:continue:${sessionId}`
+}
+
 export function parseOpeningUser(content: string): ParsedOpeningUser | null {
   const start = START_MARKER_RE.exec(content)
   if (start?.[1]) return { kind: "start", sessionId: start[1] }
@@ -131,6 +139,8 @@ export function parseOpeningUser(content: string): ParsedOpeningUser | null {
     const answerContent = cleanString(answer[1], 4_000)
     if (answerContent) return { kind: "answer", content: answerContent }
   }
+  const continuation = CONTINUE_MARKER_RE.exec(content)
+  if (continuation?.[1]) return { kind: "continue", sessionId: continuation[1] }
   return null
 }
 
@@ -164,7 +174,9 @@ export function parseOpeningAssistant(content: string, projections?: Record<stri
   if (choices.length > 12 || choices.some((choice) => choice.length > 300)) return null
   const displayContent = sanitizeOpeningDisplay(content)
   if (displayContent.length > 12_000 || !displayContent) return null
-  return { displayContent, choices }
+  const openingContinue = content.includes(OPENING_CONTINUE_MARKER)
+    || projections?.openingContinue === OPENING_CONTINUE_MARKER
+  return { displayContent, choices, openingContinue }
 }
 
 export function sanitizeOpeningDisplay(content: string): string {
@@ -266,6 +278,23 @@ export function openingControlMatchesSession(control: OpeningInterviewControl, m
   if (!openingControlMatchesManifest(control, manifest)) return false
   const expected = openingSession(openingSourceIdentity(manifest))
   return control.session.id === expected.id && control.session.slot === expected.slot
+}
+
+export function isRecoverableOpeningModelState(input: {
+  manifest: SourceManifest | null
+  control: OpeningInterviewControl | null
+  setupStatus: "pending" | "complete" | null
+  hasOpeningNotes: boolean
+  runtimeRecoverable: boolean
+  frontierRecoverable: boolean
+}): boolean {
+  return Boolean(input.manifest
+    && input.control
+    && openingControlMatchesSession(input.control, input.manifest)
+    && input.setupStatus === "pending"
+    && input.hasOpeningNotes
+    && input.runtimeRecoverable
+    && input.frontierRecoverable)
 }
 
 export function buildOpeningInjection(control: OpeningInterviewControl): string {

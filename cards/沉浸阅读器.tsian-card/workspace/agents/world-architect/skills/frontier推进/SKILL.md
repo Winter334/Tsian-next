@@ -33,7 +33,7 @@ appliesTo:
 
 - 不抽场景（scene 由 stage-manager 维护）。
 - 不抽 player 锚点（stage-manager 维护）。
-- 不抽剧情摘要/阶段目标/创作指导。
+- 不抽阶段目标或创作指导；source 锚点只附带已读原著的客观梗概。
 - 不全量提取窗口内所有内容——只抽"与当前阶段可能相关的最小增量"。
 
 ## source 锚点建立规范
@@ -42,6 +42,7 @@ appliesTo:
 - 原文有明确时间词 → 直接用。
 - 原文无时间词 → 从剧情推断估计时间（如"赶路翻三座山"→ 估"数周后"→ 按当前时间线推算）。不允许因"读不到时间词"而跳过锚点建立——time 可为估计值，order 照常递增。
 - label 一句话客观标签，不是剧情摘要。
+- summary 用 1～3 句概括该节点实际读到的原著事件与关键因果，不写未读内容、创作方向或玩家已发生事实。
 - order 赋值：严格大于现有最后一个 source 锚点的 order，连续递增。
 - 锚点的 chapter 必须落在你提交的 sourceWindow 范围内（脚本会校验）。
 
@@ -77,7 +78,7 @@ appliesTo:
   },
   {
     "name": "commit_frontier_state",
-    "description": "校验 order 严格大于现有最后 source 锚点 order、sourceWindow 顺序推进、timeline 锚点 chapter 在新窗口内，写入 frontier.json（合并新 source 锚点到 timeline 数组）。",
+    "description": "校验 order 递增、sourceWindow 顺序推进、timeline 锚点 chapter 在新窗口内且含已读原著客观梗概，写入 frontier.json。",
     "inputSchema": { "type": "object", "required": ["sourceWindow", "timelineAnchors"], "properties": { "sourceWindow": { "type": "object" }, "extractedThrough": { "type": "string" }, "timelineAnchors": { "type": "array" } } },
     "outputSchema": { "type": "object" },
     "executor": { "type": "browser_script", "path": "scripts/commit-frontier-state.js", "timeoutMs": 10000, "helpers": ["_common.js", "_validation.js"] }

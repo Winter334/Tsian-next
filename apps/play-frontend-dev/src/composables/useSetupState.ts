@@ -29,10 +29,12 @@ import {
   createOpeningControl,
   openingAnswerMarker,
   openingBootstrapMarker,
+  openingContinueMarker,
   openingControlMatchesManifest,
   openingControlMatchesSession,
   openingSession,
   openingSourceIdentity,
+  isRecoverableOpeningModelState,
   parseOpeningAssistant,
   parseOpeningControl,
   parseOpeningTranscript,
@@ -81,6 +83,10 @@ let rawStreamingText = ""
 let dialogMessageSeq = 0
 let openingStartPending = false
 let pendingOpeningInput: string | null = null
+let pendingOpeningContinuation = false
+let automaticContinuationCount = 0
+
+const MAX_AUTOMATIC_OPENING_CONTINUATIONS = 3
 
 const LEGACY_OPENING_PROGRESS_PATH = "save/playthrough/opening-progress.json"
 
@@ -270,7 +276,10 @@ async function directoryContainsFormalData(tsian: ReturnType<typeof getTsianClie
   return entries.some((entry) => entry.name !== "README.md" && entry.name !== ".keep")
 }
 
-async function hasLegacyOpeningState(tsian: ReturnType<typeof getTsianClient>): Promise<boolean> {
+async function hasLegacyOpeningState(
+  tsian: ReturnType<typeof getTsianClient>,
+  currentManifest: SourceManifest | null = null,
+): Promise<boolean> {
   const entrypoints = await tsian.card.entrypoints()
   const playerTurnAgent = entrypoints.playerTurn
   if (typeof playerTurnAgent !== "string" || !playerTurnAgent.trim()) {
@@ -285,6 +294,8 @@ async function hasLegacyOpeningState(tsian: ReturnType<typeof getTsianClient>): 
     legacyOpeningNarrative,
     legacyOpeningProgress,
     openingControlFile,
+    openingNotes,
+    setupSummaryFile,
     playerContext,
     entityData,
     sceneData,
@@ -299,6 +310,8 @@ async function hasLegacyOpeningState(tsian: ReturnType<typeof getTsianClient>): 
     tsian.workspace.read("save/playthrough/opening-narrative.json"),
     tsian.workspace.read(LEGACY_OPENING_PROGRESS_PATH),
     tsian.workspace.read(OPENING_CONTROL_PATH),
+    tsian.workspace.read("save/playthrough/opening-notes.md", "save-runtime"),
+    tsian.workspace.read(SETUP_SUMMARY_PATH, "save-runtime"),
     tsian.workspace.read(`save/agents/${playerTurnAgent}/context.json`),
     directoryContainsFormalData(tsian, "save/entities"),
     directoryContainsFormalData(tsian, "save/scenes"),
@@ -308,11 +321,29 @@ async function hasLegacyOpeningState(tsian: ReturnType<typeof getTsianClient>): 
   const understandingData = understanding?.content ? safeJsonParse(understanding.content) : null
   if (!isInitialUnderstandingSummary(understandingData)) return true
   if (understandingContext || playSetupContext || legacyOpeningNarrative || legacyOpeningProgress || playerContext) return true
-  if (openingControlFile?.content && !parseOpeningControl(safeJsonParse(openingControlFile.content))) return true
-  if (entityData || sceneData || relationshipData || turnData) return true
+  const control = openingControlFile?.content ? parseOpeningControl(safeJsonParse(openingControlFile.content)) : null
+  if (openingControlFile?.content && !control) return true
+  if (turnData) return true
   const runtime = runtimeFile?.content ? safeJsonParse(runtimeFile.content) : null
   const frontier = frontierFile?.content ? safeJsonParse(frontierFile.content) : null
-  return !isInitialPendingRuntime(runtime) || !isInitialPendingFrontier(frontier)
+  const runtimeInitial = isInitialPendingRuntime(runtime)
+  const frontierInitial = isInitialPendingFrontier(frontier)
+  const hasPartialModel = entityData || sceneData || relationshipData || !runtimeInitial || !frontierInitial
+  if (!hasPartialModel) return false
+
+  const setupSummary = setupSummaryFile?.content ? safeJsonParse(setupSummaryFile.content) : null
+  const runtimeRecoverable = runtimeInitial
+    || (isRecord(runtime) && runtime.turn === 0 && Array.isArray(runtime.activeSceneRefs))
+  const frontierRecoverable = frontierInitial
+    || (isRecord(frontier) && isRecord(frontier.sourceWindow) && Array.isArray(frontier.timeline))
+  return !isRecoverableOpeningModelState({
+    manifest: currentManifest,
+    control,
+    setupStatus: isSetupSummary(setupSummary) ? setupSummary.status : null,
+    hasOpeningNotes: Boolean(openingNotes?.content.trim()),
+    runtimeRecoverable,
+    frontierRecoverable,
+  })
 }
 
 function showFatalState(message: string): void {
@@ -404,7 +435,7 @@ async function showBranchChoice(): Promise<void> {
   if (!manifest.value) return
   const tsian = getTsianClient()
   try {
-    if (await hasLegacyOpeningState(tsian)) {
+    if (await hasLegacyOpeningState(tsian, manifest.value)) {
       playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
       setView("legacy-state")
       return
@@ -420,7 +451,7 @@ async function finishResolvedInvocation(
   tsian: ReturnType<typeof getTsianClient>,
   response: string,
   control: OpeningInterviewControl,
-): Promise<void> {
+): Promise<"complete" | "continue" | "ready"> {
   const parsed = parseOpeningAssistant(response)
   if (!parsed) throw new Error("访谈回复缺少可显示内容。")
 
@@ -441,11 +472,21 @@ async function finishResolvedInvocation(
     characterBranch.value = control.branch
     setView("opening-confirm")
     statusText.value = "开局已准备完成"
-    return
+    pendingOpeningContinuation = false
+    return "complete"
   }
+  if (parsed.openingContinue) {
+    pendingOpeningContinuation = true
+    playSetupStatus.value = "running"
+    playSetupError.value = ""
+    statusText.value = "正在继续准备开局…"
+    return "continue"
+  }
+  pendingOpeningContinuation = false
   playSetupStatus.value = "ready"
   playSetupError.value = ""
   statusText.value = "等待你的回答"
+  return "ready"
 }
 
 async function invokeOpening(
@@ -484,7 +525,17 @@ async function invokeOpening(
   }
 
   try {
-    await finishResolvedInvocation(tsian, response, control)
+    const outcome = await finishResolvedInvocation(tsian, response, control)
+    if (outcome === "continue") {
+      if (automaticContinuationCount >= MAX_AUTOMATIC_OPENING_CONTINUATIONS) {
+        playSetupStatus.value = "failed"
+        playSetupError.value = "开局资料已保存，但自动准备没有完成。请点击重试继续。"
+        statusText.value = "等待继续准备"
+        return
+      }
+      automaticContinuationCount += 1
+      await invokeOpening(control, openingContinueMarker(control.session.id))
+    }
   } catch (error) {
     pendingOpeningInput = null
     playSetupStatus.value = "recovering"
@@ -497,7 +548,7 @@ async function startOpeningInterview(branch: CharacterBranch): Promise<void> {
   openingStartPending = true
   const tsian = getTsianClient()
   try {
-    if (await hasLegacyOpeningState(tsian)) {
+    if (await hasLegacyOpeningState(tsian, manifest.value)) {
       playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
       setView("legacy-state")
       return
@@ -506,6 +557,8 @@ async function startOpeningInterview(branch: CharacterBranch): Promise<void> {
     await writeOpeningControl(tsian, control)
     characterBranch.value = branch
     playSetupMessages.value = []
+    pendingOpeningContinuation = false
+    automaticContinuationCount = 0
     setView("opening-interview")
     statusText.value = "正在准备第一次问题…"
     await invokeOpening(control, openingBootstrapMarker(control.session.id))
@@ -547,6 +600,8 @@ async function sendPlaySetupMessage(input: string): Promise<void> {
   clearLastOptions()
   playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: normalized })
   pendingOpeningInput = normalized
+  pendingOpeningContinuation = false
+  automaticContinuationCount = 0
   await invokeOpening(current, openingAnswerMarker(normalized))
 }
 
@@ -572,6 +627,15 @@ async function retryPlaySetupDialog(): Promise<void> {
     }
     if (previousStatus === "recovering") {
       await restoreOpeningInterviewV2(tsian, manifest.value)
+      if (pendingOpeningContinuation) {
+        automaticContinuationCount = 0
+        await invokeOpening(control, openingContinueMarker(control.session.id))
+      }
+      return
+    }
+    if (pendingOpeningContinuation) {
+      automaticContinuationCount = 0
+      await invokeOpening(control, openingContinueMarker(control.session.id))
       return
     }
     if (pendingOpeningInput) {
@@ -579,6 +643,11 @@ async function retryPlaySetupDialog(): Promise<void> {
       return
     }
     const restored = await restoreOpeningInterviewV2(tsian, manifest.value)
+    if (pendingOpeningContinuation) {
+      automaticContinuationCount = 0
+      await invokeOpening(control, openingContinueMarker(control.session.id))
+      return
+    }
     if (!restored || playSetupMessages.value.length === 0) {
       await invokeOpening(control, openingBootstrapMarker(control.session.id))
     }
@@ -618,7 +687,7 @@ async function restoreOpeningInterviewV2(
   }
   const parsedUsers = entries.map((entry) => parseOpeningUser(entry.request))
   if (parsedUsers.some((user) => !user)
-    || parsedUsers.some((user) => user?.kind === "start" && user.sessionId !== session.id)) {
+    || parsedUsers.some((user) => (user?.kind === "start" || user?.kind === "continue") && user.sessionId !== session.id)) {
     showInterviewRecovery("玩家会话 transcript 包含无法识别的输入。")
     return true
   }
@@ -656,6 +725,19 @@ async function restoreOpeningInterviewV2(
     return true
   }
   pendingOpeningInput = null
+  const lastEntry = entries[entries.length - 1]
+  const lastAssistant = lastEntry
+    ? parseOpeningAssistant(lastEntry.assistant.content, lastEntry.assistant.projections)
+    : null
+  if (lastAssistant?.openingContinue) {
+    pendingOpeningContinuation = true
+    automaticContinuationCount = 0
+    playSetupStatus.value = "failed"
+    playSetupError.value = "开局资料已保存，可以继续准备。"
+    statusText.value = "等待继续准备"
+    return true
+  }
+  pendingOpeningContinuation = false
   playSetupStatus.value = "ready"
   playSetupError.value = ""
   statusText.value = "访谈已恢复"
@@ -672,6 +754,8 @@ function resetOpeningMemory(): void {
   activeInvocationId = null
   rawStreamingText = ""
   pendingOpeningInput = null
+  pendingOpeningContinuation = false
+  automaticContinuationCount = 0
 }
 
 async function initialize(): Promise<void> {
@@ -709,7 +793,7 @@ async function initialize(): Promise<void> {
       throw new Error("小说来源清单与章节索引数量不一致。")
     }
     chapterIndex.value = loadedChapterIndex
-    if (await hasLegacyOpeningState(tsian)) {
+    if (await hasLegacyOpeningState(tsian, existingManifest)) {
       playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
       setView("legacy-state")
       return

@@ -25,6 +25,8 @@ export interface SourceAnchor {
   time: string
   /** 一句话客观标签，不是剧情摘要。 */
   label: string
+  /** 1～3 句已读原著客观梗概；旧锚点可缺省。 */
+  summary?: string
 }
 
 /** player 锚点：stage-manager 维护时追加，标记玩家视角显著事件。 */
@@ -53,7 +55,7 @@ export interface Frontier {
   sourceWindow: {
     start: number | null
     end: number | null
-    chapters?: Array<{ index: number; title: string; path: string }>
+    chapters?: Array<{ index: number; title: string; path?: string; ref?: string }>
   }
   /** 已抽取到的最远章节文件路径。 */
   extractedThrough: string | null

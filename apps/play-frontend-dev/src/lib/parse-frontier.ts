@@ -41,6 +41,7 @@ function parseAnchor(raw: unknown): TimelineAnchor | null {
       chapter: a.chapter,
       time: a.time,
       label: a.label,
+      ...(typeof a.summary === "string" && a.summary.trim() ? { summary: a.summary } : {}),
     }
     return anchor
   }

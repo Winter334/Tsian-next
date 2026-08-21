@@ -60,7 +60,7 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
   "sourceWindow": { "start": 1, "end": 8, "chapters": [...] },
   "extractedThrough": "source:chapter-0008",
   "timeline": [
-    { "kind": "source", "order": 1, "chapter": 1, "time": "元年", "label": "开局" },
+    { "kind": "source", "order": 1, "chapter": 1, "time": "元年", "label": "开局", "summary": "主角醒来并确认当前处境。" },
     { "kind": "player", "order": 2, "turn": 8, "time": "二年春", "label": "离开山门", "alignment": "diverged", "sourceRef": 2 }
   ],
   "notes": "...",
@@ -72,7 +72,7 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 - `sourceWindow`：已读章节窗口（`start`/`end` 为章节号，`chapters` 为窗口章节元信息）。推进 frontier 时移动。
 - `extractedThrough`：已抽取到的最远源章节引用。
 - `timeline`：时间标记锚点数组，用 `kind` 区分 source/player：
-  - source 锚点 `{ kind: "source", order, chapter, time, label }`：world-architect 推进时建立，标记原著剧情节点。
+  - source 锚点 `{ kind: "source", order, chapter, time, label, summary? }`：world-architect 推进时建立，标记原著剧情节点；`summary` 用 1～3 句客观概括实际已读原著，旧锚点可缺省。
   - player 锚点 `{ kind: "player", order, turn, time, label, alignment, sourceRef }`：stage-manager 维护时追加，标记玩家视角显著事件。
   - `order`：单调递增整数，是我们建立的线性轴，表示剧情事件先后顺序，与原著精确时间标记无关（即使原著写“回到过去”，order 也只向前）。
   - `alignment`（仅 player）：`diverged`（偏离原著，sourceRef=分叉自的 source order 或 null）、`rejoined`（从分支并回主干，sourceRef=并回的 source order）、`aligned`（经历 source 事件且结果相近，sourceRef=该 source order；可选，完美跟随时不建）。

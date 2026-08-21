@@ -33,7 +33,9 @@
     "disabled": []
   },
   "platformTools": {
-    "enabled": [],
+    "enabled": [
+      "workspace_read"
+    ],
     "disabled": []
   },
   "workspaceAccess": {

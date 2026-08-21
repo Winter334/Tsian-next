@@ -7,6 +7,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import type { Frontier, SourceAnchor, PlayerAnchor } from "../../lib/frontier-types"
+import { sourceSummaryState } from "../../lib/timeline-summary"
 
 const props = defineProps<{
   frontier: Frontier
@@ -65,6 +66,7 @@ interface TrackPaths {
 }
 
 const EMPTY_TRACK_PATHS: TrackPaths = { trunk: "", branches: [], leaders: [] }
+const expandedSourceSummaries = ref<Set<number>>(new Set())
 
 const sources = computed<SourceAnchor[]>(() => {
   return props.frontier.timeline
@@ -90,6 +92,14 @@ const chapterTitleByIndex = computed<Map<number, string>>(() => {
 
 function chapterTitle(source: SourceAnchor): string | null {
   return chapterTitleByIndex.value.get(source.chapter) ?? null
+}
+
+function toggleSourceSummary(source: SourceAnchor): void {
+  const next = new Set(expandedSourceSummaries.value)
+  if (next.has(source.order)) next.delete(source.order)
+  else next.add(source.order)
+  expandedSourceSummaries.value = next
+  void nextTick(scheduleRefresh)
 }
 
 const playersByOrder = computed<Map<number, PlayerAnchor[]>>(() => {
@@ -596,6 +606,30 @@ function nodeAlignmentClass(item: RenderItem): string {
               <span v-if="chapterTitle(item.anchor as SourceAnchor)"> · {{ chapterTitle(item.anchor as SourceAnchor) }}</span>
             </p>
             <p class="source-time">{{ (item.anchor as SourceAnchor).time }}</p>
+            <p
+              v-if="sourceSummaryState(item.anchor as SourceAnchor, plotOrder, expandedSourceSummaries) === 'visible'"
+              class="source-summary"
+            >
+              {{ (item.anchor as SourceAnchor).summary }}
+            </p>
+            <button
+              v-if="sourceSummaryState(item.anchor as SourceAnchor, plotOrder, expandedSourceSummaries) === 'spoiler'"
+              class="source-summary-toggle"
+              type="button"
+              :aria-expanded="false"
+              @click="toggleSourceSummary(item.anchor as SourceAnchor)"
+            >
+              查看原著剧情（可能剧透）
+            </button>
+            <button
+              v-else-if="(item.anchor as SourceAnchor).order > plotOrder && expandedSourceSummaries.has((item.anchor as SourceAnchor).order)"
+              class="source-summary-toggle"
+              type="button"
+              :aria-expanded="true"
+              @click="toggleSourceSummary(item.anchor as SourceAnchor)"
+            >
+              收起原著剧情
+            </button>
           </article>
         </template>
 
@@ -969,6 +1003,31 @@ function nodeAlignmentClass(item: RenderItem): string {
   font-size: 0.68rem;
   color: var(--prose-muted);
   letter-spacing: 0.03em;
+}
+
+.source-summary {
+  margin: 8px 0 0;
+  color: var(--prose-muted);
+  font-family: var(--font-serif);
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+
+.source-summary-toggle {
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ember-bright);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  cursor: pointer;
+}
+
+.source-summary-toggle:hover,
+.source-summary-toggle:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .player-card {

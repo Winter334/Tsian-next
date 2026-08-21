@@ -16,6 +16,14 @@
       "project": {
         "openingChoices": "$1|lines|stripList"
       }
+    },
+    {
+      "id": "opening-continue",
+      "match": "/\\[\\[开局继续\\]\\]/g",
+      "text": "",
+      "project": {
+        "openingContinue": "$&|trim"
+      }
     }
   ]
 }

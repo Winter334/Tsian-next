@@ -192,8 +192,8 @@ retired      # 已退出当前游玩，除非刻意重新引入
   "sourceWindow": { "start": 1, "end": 8, "chapters": [{ "index": 1, "title": "第 1 章", "ref": "source:chapter-0001" }] },
   "extractedThrough": "source:chapter-0008",
   "timeline": [
-    { "kind": "source", "order": 1, "chapter": 1, "time": "元年", "label": "开局" },
-    { "kind": "source", "order": 2, "chapter": 4, "time": "二年春", "label": "离山历练" },
+    { "kind": "source", "order": 1, "chapter": 1, "time": "元年", "label": "开局", "summary": "主角在山门醒来并确认当前处境。" },
+    { "kind": "source", "order": 2, "chapter": 4, "time": "二年春", "label": "离山历练", "summary": "主角奉命离山，在途中首次遭遇宗门之外的势力冲突。" },
     { "kind": "player", "order": 2, "turn": 8, "time": "二年春", "label": "提前离山", "alignment": "diverged", "sourceRef": 2 }
   ],
   "notes": "Track how far the imported source has been normalized, chunked, and extracted.",
@@ -207,11 +207,12 @@ retired      # 已退出当前游玩，除非刻意重新引入
 - `sourceWindow`：已读章节窗口。`start`/`end` 为章节号（闭区间），`chapters` 为窗口章节元信息数组（每项 `{ index, title, ref }`）。推进 frontier 时移动。
 - `extractedThrough`：已抽取到的最远源章节引用；缺省取窗口末章 ref。
 - `timeline`：时间标记锚点数组，用 `kind` 字段区分两类锚点：
-  - source 锚点：`{ kind: "source", order, chapter, time, label }`。world-architect 推进时建立，标记原著剧情节点。
+  - source 锚点：`{ kind: "source", order, chapter, time, label, summary? }`。world-architect 推进时建立，标记原著剧情节点。
     - `order`：单调递增整数，是我们建立的线性坐标轴，表示剧情事件先后顺序，与原著精确时间标记无关。即使原著写“回到过去”，`order` 也严格递增——`time` 字段可能变化，但 `order` 只向前。source 锚点 order 由 world-architect 推进时递增赋值。
     - `chapter`：原著章节号，与 `sourceWindow` 同一坐标。
     - `time`：游戏时间字符串，自由粒度（默认年+季/月）。原文无明确时间词时从剧情推断估计；开局第一个锚点 `time` 固定 `"元年"`。
     - `label`：一句话客观标签，不是剧情摘要。
+    - `summary`：可选的 1～3 句已读原著客观梗概。旧锚点可缺省；不写未读内容、创作指令或玩家尚未经历的事件。
   - player 锚点：`{ kind: "player", order, turn, time, label, alignment, sourceRef }`。stage-manager 维护时追加，标记玩家视角显著事件。
     - `order`：等于玩家当前所在 source 区间的起始 source 锚点 order。同一 source 区间内的多个 player 锚点共享相同 order，按 turn 排序展开。
     - `turn`：游戏回合号，分支内排序与后续精确找 turn 正文用。

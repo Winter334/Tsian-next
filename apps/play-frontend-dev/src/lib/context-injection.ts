@@ -145,6 +145,9 @@ export function formatTimelineBlock(runtime: Runtime, frontier: Frontier): strin
       lines.push(
         `  · [${side}] order ${anchor.order}｜chapter ${anchor.chapter}｜time ${orDefault(anchor.time, "未知")}｜${anchor.label}`,
       )
+      if (anchor.summary?.trim()) {
+        lines.push(`    梗概：${anchor.summary.trim()}`)
+      }
     }
   }
 

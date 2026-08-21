@@ -44,8 +44,10 @@ import {
 } from "../agent-runtime/text-tool-protocol"
 import { mergeConsecutiveRoleMessages } from "../agent-runtime/orchestration/message-formatting"
 import { executeWorkspaceOperation } from "../agent-runtime/workspace-operations"
-import { executeRunScript } from "../agent-runtime/workspace-tools/skill-actions"
+import { executeRunScript, parseActionDeclarations } from "../agent-runtime/workspace-tools/skill-actions"
 import type { RuntimeChatMessage } from "../runtime-host/ai"
+import cardReplyProjection from "../../../../cards/沉浸阅读器.tsian-card/workspace/config/reply-projection.json?raw"
+import cardStorytellerAgent from "../../../../cards/沉浸阅读器.tsian-card/workspace/agents/storyteller/agent.json?raw"
 import {
   createBrowserAiModelConfig,
   createBrowserAiProviderPreset,
@@ -77,7 +79,18 @@ import {
   writeWorkspaceFileForSave,
 } from "../storage"
 import { localDb } from "../storage/db"
-import { parseOpeningAssistant } from "../../../play-frontend-dev/src/lib/opening-interview"
+import {
+  createOpeningControl,
+  openingContinueMarker,
+  isRecoverableOpeningModelState,
+  parseOpeningAssistant,
+  parseOpeningUser,
+} from "../../../play-frontend-dev/src/lib/opening-interview"
+import { formatTimelineBlock } from "../../../play-frontend-dev/src/lib/context-injection"
+import { parseFrontier } from "../../../play-frontend-dev/src/lib/parse-frontier"
+import { sourceSummaryState } from "../../../play-frontend-dev/src/lib/timeline-summary"
+import type { SourceAnchor } from "../../../play-frontend-dev/src/lib/frontier-types"
+import type { Runtime } from "../../../play-frontend-dev/src/lib/runtime-types"
 
 const CARD_ID = "assistant-runtime-smoke"
 const MODEL_ID = "assistant-smoke-model"
@@ -654,7 +667,7 @@ describe("Agent context contracts smoke", () => {
       "---",
       "# Demo",
       "```json tsian-actions",
-      JSON.stringify([{ name: "commit_opening", description: "Commit", inputSchema: { type: "object", required: ["openingReply"], properties: { openingReply: { type: "string" } } }, outputSchema: { type: "object" }, executor: { type: "browser_script", path: "scripts/commit.js" } }]),
+      JSON.stringify([{ name: "publish_opening", description: "Publish", inputSchema: { type: "object", required: ["openingReply"], properties: { openingReply: { type: "string" } } }, outputSchema: { type: "object" }, executor: { type: "browser_script", path: "scripts/commit.js" } }]),
       "```",
     ].join("\n")
     const workspaceFiles = [
@@ -676,7 +689,7 @@ describe("Agent context contracts smoke", () => {
       agentContext: agentContext!,
       sessionState,
       runBrowserScript,
-    }, { skill: "demo", script: "commit_opening", input: { openingReply: "direct" } })).resolves.toMatchObject({
+    }, { skill: "demo", script: "publish_opening", input: { openingReply: "direct" } })).resolves.toMatchObject({
       result: { status: "executed", output: { receipt: "r1" } },
     })
     expect(runBrowserScript).toHaveBeenCalledOnce()
@@ -692,10 +705,10 @@ describe("Agent context contracts smoke", () => {
       call: { id: "agent-1", name: "agent_call", arguments: { agentId: "storyteller", request: "Write the opening." } },
     }, {
       raw: "run_script",
-      call: { id: "commit-1", name: "run_script", arguments: { skill: "demo", script: "commit_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
+      call: { id: "commit-1", name: "run_script", arguments: { skill: "demo", script: "publish_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
     }, {
       raw: "run_script-again",
-      call: { id: "commit-2", name: "run_script", arguments: { skill: "demo", script: "commit_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
+      call: { id: "commit-2", name: "run_script", arguments: { skill: "demo", script: "publish_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
     }]
     const referencedObservations = await executeRuntimeWorkspaceToolCalls({
       workspaceFiles,
@@ -732,7 +745,7 @@ describe("Agent context contracts smoke", () => {
       runBrowserScript,
     }, [{
       raw: "isolated-run-script",
-      call: { id: "commit-isolated", name: "run_script", arguments: { skill: "demo", script: "commit_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
+      call: { id: "commit-isolated", name: "run_script", arguments: { skill: "demo", script: "publish_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
     }])
     expect(isolatedObservations[0]).toMatchObject({
       ok: false,
@@ -757,7 +770,7 @@ describe("Agent context contracts smoke", () => {
       call: { id: "agent-oversized", name: "agent_call", arguments: { agentId: "storyteller", request: "Write too much." } },
     }, {
       raw: "oversized-ref-run-script",
-      call: { id: "commit-oversized", name: "run_script", arguments: { skill: "demo", script: "commit_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
+      call: { id: "commit-oversized", name: "run_script", arguments: { skill: "demo", script: "publish_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } } },
     }])
     expect(oversizedObservations).toMatchObject([
       { ok: false, error: { code: "TOOL_OBSERVATION_TOO_LARGE" } },
@@ -775,7 +788,7 @@ describe("Agent context contracts smoke", () => {
       agentContext: agentContext!,
       sessionState,
       runBrowserScript,
-    }, { skill: "demo", script: "commit_opening", input: {} })).rejects.toMatchObject({ code: "ACTION_NOT_FOUND" })
+    }, { skill: "demo", script: "publish_opening", input: {} })).rejects.toMatchObject({ code: "ACTION_NOT_FOUND" })
     expect(runBrowserScript).toHaveBeenCalledTimes(callsBeforeRejectedRef)
 
     const disabledFiles = workspaceFiles.map((entry) => entry.path === "agents/demo-agent/agent.json"
@@ -787,7 +800,7 @@ describe("Agent context contracts smoke", () => {
       agentContext: disabledContext!,
       sessionState: createRuntimeWorkspaceToolSessionState(),
       runBrowserScript,
-    }, { skill: "demo", script: "commit_opening", input: {} })).rejects.toMatchObject({ code: "SKILL_NOT_FOUND" })
+    }, { skill: "demo", script: "publish_opening", input: {} })).rejects.toMatchObject({ code: "SKILL_NOT_FOUND" })
 
     expect(projectToolMemoryForContext({
       sequence: 1,
@@ -814,26 +827,129 @@ describe("Agent context contracts smoke", () => {
     expect(WORLD_ARCHITECT_SKILL_FILES.map((file) => file.path)).toEqual(expect.arrayContaining([
       "agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js",
       "agents/world-architect/skills/开局建模/scripts/read-opening-slice.js",
-      "agents/world-architect/skills/开局建模/scripts/commit-opening.js",
+      "agents/world-architect/skills/开局建模/scripts/commit-opening-entities.js",
+      "agents/world-architect/skills/开局建模/scripts/commit-opening-graph.js",
+      "agents/world-architect/skills/开局建模/scripts/commit-opening-state.js",
+      "agents/world-architect/skills/开局建模/scripts/publish-opening.js",
     ]))
     const openingTemplatePaths = WORLD_ARCHITECT_SKILL_FILES.map((file) => file.path)
     expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/_progress.js")
     expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/read-opening-progress.js")
     expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/advance-opening-progress.js")
     const openingSkill = WORLD_ARCHITECT_SKILL_FILES.find((file) => file.path.endsWith("开局建模/SKILL.md"))?.content ?? ""
+    expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/commit-opening.js")
     expect(openingSkill).toContain("run_script.inputRefs.openingReply")
     expect(openingSkill).toContain("responseRef")
+    expect(openingSkill).toContain("opening-interview:continue:<sessionId>")
+    expect(openingSkill).toContain("不复制已在 workspace 中的实体、场景、关系或 runtime 全文")
+    expect(openingSkill).not.toContain("阶段 7 成功前")
+    expect(openingSkill).not.toContain("完整 storyteller brief")
+    const openingActions = parseActionDeclarations(openingSkill)
+    expect(openingActions.errors).toEqual([])
+    expect(openingActions.actions.map(action => action.name)).toEqual([
+      "inspect_source_opening",
+      "read_opening_slice",
+      "commit_opening_entities",
+      "commit_opening_graph",
+      "commit_opening_state",
+      "publish_opening",
+    ])
+    const publishAction = openingActions.actions.find(action => action.name === "publish_opening")
+    expect(Object.keys(publishAction?.inputSchema?.properties ?? {})).toEqual(["openingReply"])
+    const storytellerConfig = JSON.parse(cardStorytellerAgent) as { platformTools?: { enabled?: string[] } }
+    expect(storytellerConfig.platformTools?.enabled).toContain("workspace_read")
     const currentSchema = DEFAULT_SAVE_RUNTIME_FILES.find((file) => file.path === "save/schema/current.md")?.content ?? ""
     expect(currentSchema.length).toBeLessThan(1_000)
     expect(currentSchema).toContain("save-specific")
   })
 
-  it("keeps simplified opening recovery and commit boundaries executable", async () => {
+  it("keeps staged opening recovery, publication, and source summaries executable", async () => {
     expect(parseOpeningAssistant("你想从哪里开始？\n[[开局选项]]\n- 城门\n- 客栈")).toEqual({
       displayContent: "你想从哪里开始？",
       choices: ["城门", "客栈"],
+      openingContinue: false,
     })
+    expect(parseOpeningAssistant("资料已保存。\n[[开局继续]]")).toEqual({
+      displayContent: "资料已保存。",
+      choices: [],
+      openingContinue: true,
+    })
+    expect(parseOpeningAssistant("资料已保存。", { openingContinue: "[[开局继续]]" })).toMatchObject({ openingContinue: true })
+    const projectedContinuation = projectAssistantReply("资料已保存。\n[[开局继续]]", [
+      { path: "config/reply-projection.json", content: cardReplyProjection, createdAt: 0, updatedAt: 0 },
+    ])
+    expect(projectedContinuation.content).not.toContain("[[开局继续]]")
+    expect(projectedContinuation.displayContent ?? projectedContinuation.content).not.toContain("[[开局继续]]")
+    expect(projectedContinuation.projections).toEqual({ openingContinue: "[[开局继续]]" })
+    expect(parseOpeningAssistant(projectedContinuation.content, projectedContinuation.projections)).toMatchObject({
+      displayContent: "资料已保存。",
+      openingContinue: true,
+    })
+    expect(parseOpeningUser(openingContinueMarker("opening-1234abcd"))).toEqual({
+      kind: "continue",
+      sessionId: "opening-1234abcd",
+    })
+    const recoveryManifest = {
+      version: 1,
+      status: "ready",
+      title: "测试小说",
+      sourceFormat: "txt",
+      importMode: "paste",
+      recommendedExtractionMode: "frontier",
+      chapterDetection: "heuristic",
+      chapterDetectionConfidence: "strong",
+      importedAt: "2026-08-12T00:00:00.000Z",
+      normalizationVersion: "test-v1",
+      totalCharacters: 20,
+      chapterCount: 2,
+      files: { chaptersIndex: "save/source/chapters.index.json" },
+    } as const
+    const recoveryControl = createOpeningControl(recoveryManifest, "canon")
+    expect(isRecoverableOpeningModelState({
+      manifest: recoveryManifest,
+      control: recoveryControl,
+      setupStatus: "pending",
+      hasOpeningNotes: true,
+      runtimeRecoverable: true,
+      frontierRecoverable: true,
+    })).toBe(true)
+    expect(isRecoverableOpeningModelState({
+      manifest: recoveryManifest,
+      control: recoveryControl,
+      setupStatus: "pending",
+      hasOpeningNotes: false,
+      runtimeRecoverable: true,
+      frontierRecoverable: true,
+    })).toBe(false)
     expect(parseOpeningAssistant("问题\n[[开局选项]]\n- A\n[[/开局选项]]\n[[开局选项]]\n- B")).toBeNull()
+
+    const parsedFrontier = parseFrontier({
+      sourceWindow: { start: 1, end: 2 },
+      extractedThrough: "source:chapter-0002",
+      timeline: [
+        { kind: "source", order: 1, chapter: 1, time: "清晨", label: "醒来", summary: "主角在客栈醒来并确认处境。" },
+        { kind: "source", order: 2, chapter: 2, time: "午后", label: "出门" },
+      ],
+    })
+    const runtimeForTimeline = {
+      turn: 0,
+      worldTime: "清晨",
+      plotOrder: 1,
+      location: null,
+      weather: "",
+      activeSceneRefs: [],
+      protagonistRef: null,
+      extensions: {},
+      updatedAtTurn: 0,
+      updatedBy: null,
+    } as Runtime
+    expect(formatTimelineBlock(runtimeForTimeline, parsedFrontier.frontier!)).toContain("梗概：主角在客栈醒来并确认处境。")
+    const currentSource = parsedFrontier.frontier!.timeline.find(anchor => anchor.kind === "source") as SourceAnchor
+    const futureSource: SourceAnchor = { kind: "source", order: 2, chapter: 2, time: "午后", label: "出门", summary: "主角离开客栈。" }
+    expect(sourceSummaryState(currentSource, 1, new Set())).toBe("visible")
+    expect(sourceSummaryState(futureSource, 1, new Set())).toBe("spoiler")
+    expect(sourceSummaryState(futureSource, 1, new Set([2]))).toBe("visible")
+    expect(sourceSummaryState({ ...futureSource, summary: undefined }, 1, new Set())).toBe("hidden")
 
     const scriptContent = (suffix: string): string => {
       const file = WORLD_ARCHITECT_SKILL_FILES.find((entry) => entry.path.endsWith(suffix))
@@ -846,12 +962,17 @@ describe("Agent context contracts smoke", () => {
       signal: { throwIfAborted(): void },
     ) => Promise<Record<string, unknown>>
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (...args: string[]) => OpeningRunner
-    const runOpening = new AsyncFunction(
+    const compileOpening = (script: string): OpeningRunner => new AsyncFunction(
       "input",
       "tsian",
       "signal",
-      `${scriptContent("开局建模/scripts/_common.js")}\n${scriptContent("开局建模/scripts/_validation.js")}\n${scriptContent("开局建模/scripts/commit-opening.js")}`,
+      `${scriptContent("开局建模/scripts/_common.js")}\n${scriptContent("开局建模/scripts/_validation.js")}\n${scriptContent("开局建模/scripts/_opening-workflow.js")}\n${scriptContent(script)}`,
     )
+    const runEntities = compileOpening("开局建模/scripts/commit-opening-entities.js")
+    const runGraph = compileOpening("开局建模/scripts/commit-opening-graph.js")
+    const runState = compileOpening("开局建模/scripts/commit-opening-state.js")
+    const runPublish = compileOpening("开局建模/scripts/publish-opening.js")
+
     const hashText = (input: string): string => {
       let hash = 0x811c9dc5
       for (let index = 0; index < input.length; index += 1) {
@@ -862,12 +983,7 @@ describe("Agent context contracts smoke", () => {
     }
     const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
     const makeFiles = (): Map<string, string> => {
-      const source = {
-        importedAt: "2026-08-12T00:00:00.000Z",
-        normalizationVersion: "test-v1",
-        title: "测试小说",
-        chapterCount: 2,
-      }
+      const source = { importedAt: "2026-08-12T00:00:00.000Z", normalizationVersion: "test-v1", title: "测试小说", chapterCount: 2 }
       const sourceHash = hashText(JSON.stringify(source))
       return new Map<string, string>([
         ["save/source/manifest.json", json({ ...source, status: "ready" })],
@@ -886,18 +1002,14 @@ describe("Agent context contracts smoke", () => {
           session: { id: `opening-${sourceHash}`, slot: `opening-interview-${sourceHash}` },
           branch: "canon",
         })],
+        ["save/playthrough/opening-notes.md", "# 开局建模工作笔记\n\n## 已确认\n- 主角与切入点\n"],
         ["save/playthrough/runtime.json", json({ turn: 0, worldTime: "", plotOrder: 1, location: null, weather: "", activeSceneRefs: [], protagonistRef: null, extensions: {}, updatedAtTurn: 0, updatedBy: null })],
         ["save/playthrough/frontier.json", json({ sourceWindow: { start: null, end: null }, extractedThrough: null, timeline: [{ kind: "source", order: 1, chapter: 1, time: "元年", label: "开局" }], notes: "" })],
         ["save/playthrough/understanding-summary.json", json({ status: "pending", title: null, candidateCharacters: [] })],
         ["save/playthrough/setup-summary.json", json({ status: "pending", summary: null })],
         ["config/reply-projection.json", json({
           schema: "tsian.reply-projection.v1",
-          rules: [{
-            id: "choices",
-            match: "/\\[\\[选项\\]\\]([\\s\\S]*?)\\[\\[\\/选项\\]\\]/g",
-            text: "",
-            project: { choices: "$1|lines|stripList" },
-          }],
+          rules: [{ id: "choices", match: "/\\[\\[选项\\]\\]([\\s\\S]*?)\\[\\[\\/选项\\]\\]/g", text: "", project: { choices: "$1|lines|stripList" } }],
         })],
         ["game-card.json", json({ runtime: { entrypoints: { playerTurn: "storyteller" } } })],
         ["agents/storyteller/agent.json", json({ id: "storyteller" })],
@@ -907,24 +1019,27 @@ describe("Agent context contracts smoke", () => {
     const makeRuntime = (files = makeFiles(), options?: { exposeRead?: boolean }) => {
       const writes: string[] = []
       const workspaceFiles = (): WorkspaceFile[] =>
-        Array.from(files, ([path, fileContent]): WorkspaceFile => ({
-          path,
-          content: fileContent,
-          createdAt: 0,
-          updatedAt: 0,
-        }))
-      const project = vi.fn(async (content: string) => toBrowserScriptReplyProjection(
-        projectAssistantReply(content, workspaceFiles()),
-      ))
+        Array.from(files, ([path, content]): WorkspaceFile => ({ path, content, createdAt: 0, updatedAt: 0 }))
+      const project = vi.fn(async (content: string) => toBrowserScriptReplyProjection(projectAssistantReply(content, workspaceFiles())))
       const read = vi.fn(async (request: Omit<WorkspaceOperationRequest, "operation">) =>
         executeWorkspaceOperation(
           { ...request, operation: "read" },
-          {
-            workspaceFiles: workspaceFiles(),
-            actorLevel: 1,
-            exposedOperations: options?.exposeRead === false ? [] : ["read"],
-          },
+          { workspaceFiles: workspaceFiles(), actorLevel: 1, exposedOperations: options?.exposeRead === false ? [] : ["read"] },
         ))
+      const glob = vi.fn(async ({ pattern }: { pattern: string }) => {
+        const matches = Array.from(files.keys()).filter((path) => {
+          if (pattern === "save/entities/*/*.json") return path.startsWith("save/entities/") && path.split("/").length === 4 && path.endsWith(".json")
+          if (pattern === "save/scenes/*.json") return path.startsWith("save/scenes/") && path.split("/").length === 3 && path.endsWith(".json")
+          if (pattern === "save/relationships/*.json") return path.startsWith("save/relationships/") && path.split("/").length === 3 && path.endsWith(".json")
+          if (pattern === "save/history/turns/turn-*.json") return path.startsWith("save/history/turns/turn-") && path.endsWith(".json")
+          if (pattern.startsWith("save/agents/") && pattern.endsWith("/context*.json")) {
+            const prefix = pattern.slice(0, -14)
+            return path.startsWith(prefix + "/context") && path.endsWith(".json")
+          }
+          return false
+        })
+        return { matches: matches.sort(), truncated: false }
+      })
       const tsian = {
         workspace: {
           read,
@@ -933,165 +1048,134 @@ describe("Agent context contracts smoke", () => {
             writes.push(path)
             return { path, content }
           }),
-          glob: vi.fn(async () => ({ matches: [], truncated: false })),
+          glob,
           list: vi.fn(async () => ({ entries: [] })),
         },
         reply: { project },
         trace: vi.fn(),
         memory: { set: vi.fn() },
       }
-      return { files, writes, project, read, tsian }
+      return { files, writes, project, read, glob, tsian }
     }
-    const payload = (): Record<string, unknown> => ({
+    const entitiesPayload = {
       entities: [
         { id: "character:hero", name: "主角", brief: "测试主角" },
+        { id: "character:friend", name: "同伴", brief: "开局同伴" },
         { id: "location:inn", name: "客栈", brief: "开局地点" },
+        { id: "container:bag", name: "行囊", brief: "主角的行囊" },
       ],
-      scenes: [{ id: "scene:opening", name: "客栈清晨", location: { ref: "location:inn", name: "错误名称" }, present: [{ ref: "character:hero" }] }],
-      relationships: [],
-      runtime: { protagonistRef: { ref: "character:hero", name: "错误名称" }, location: { ref: "location:inn" }, activeSceneRefs: [{ ref: "scene:opening" }] },
-      frontier: { sourceWindow: { startIndex: 1, endIndex: 2 }, timeline: [{ chapter: 1, time: "清晨", label: "醒来" }] },
+    }
+    const graphPayload = {
+      scenes: [{ id: "scene:opening", name: "客栈清晨", location: { ref: "location:inn" }, present: [{ ref: "character:hero" }] }],
+      relationships: [{ subject: "character:hero", edges: [{ to: "character:friend", type: "同伴" }] }],
+    }
+    const statePayload = {
+      runtime: { protagonistRef: { ref: "character:hero" }, location: { ref: "location:inn" }, activeSceneRefs: [{ ref: "scene:opening" }] },
+      frontier: {
+        sourceWindow: { startIndex: 1, endIndex: 2 },
+        timeline: [{ chapter: 1, time: "清晨", label: "醒来", summary: "主角在客栈醒来并确认处境。" }],
+      },
       summary: "主角在客栈醒来。",
-      openingReply: "晨光照进客栈。\n[[选项]]\n- 起身\n[[/选项]]",
-    })
+    }
+    const openingReply = "晨光照进客栈。\n[[选项]]\n- 起身\n[[/选项]]"
     const signal = { throwIfAborted() {} }
+    const stageModel = async (runtime: ReturnType<typeof makeRuntime>) => {
+      await expect(runEntities(entitiesPayload, runtime.tsian, signal)).resolves.toMatchObject({ status: "ready", phase: "entities" })
+      runtime.files.set("save/playthrough/opening-notes.md", "# 开局建模工作笔记\n\n## 已完成\n- 实体\n")
+      await expect(runGraph(graphPayload, runtime.tsian, signal)).resolves.toMatchObject({ status: "ready", phase: "graph" })
+      runtime.files.set("save/playthrough/opening-notes.md", "# 开局建模工作笔记\n\n## 已完成\n- 实体\n- 场景与关系\n")
+      await expect(runState(statePayload, runtime.tsian, signal)).resolves.toMatchObject({ status: "ready", phase: "state" })
+      runtime.files.set("save/playthrough/opening-notes.md", "# 开局建模工作笔记\n\n## 已完成\n- 世界模型\n\n## 下一步\n- 正文与发布\n")
+    }
 
     const success = makeRuntime()
-    await expect(runOpening(payload(), success.tsian, signal)).resolves.toMatchObject({ status: "complete" })
-    const successProjection = await success.project.mock.results[0]!.value
-    expect(successProjection).toMatchObject({
-      kind: "assistant",
-      content: "晨光照进客栈。\n",
-      projections: { choices: ["起身"] },
-      diagnostics: [],
-      configPresent: true,
-      ruleCount: 1,
-      appliedRuleCount: 1,
+    await stageModel(success)
+    expect(JSON.parse(success.files.get("save/entities/container/bag.json") ?? "null")).toMatchObject({
+      id: "container:bag",
+      type: "container",
+      contents: [],
     })
-    expect(successProjection).not.toHaveProperty("displayContent")
+    expect(JSON.parse(success.files.get("save/playthrough/setup-summary.json") ?? "null")).toEqual({ status: "pending", summary: "主角在客栈醒来。" })
     expect(JSON.parse(success.files.get("save/playthrough/runtime.json") ?? "null").protagonistRef).toEqual({ ref: "character:hero", name: "主角" })
-    expect(JSON.parse(success.files.get("save/playthrough/frontier.json") ?? "null").timeline[0]).toEqual({ kind: "source", order: 1, chapter: 1, time: "清晨", label: "醒来" })
+    expect(JSON.parse(success.files.get("save/playthrough/frontier.json") ?? "null").timeline[0]).toMatchObject({
+      kind: "source",
+      order: 1,
+      summary: "主角在客栈醒来并确认处境。",
+    })
+    await expect(runEntities(entitiesPayload, success.tsian, signal)).resolves.toMatchObject({ alreadyComplete: true })
+    await expect(runGraph(graphPayload, success.tsian, signal)).resolves.toMatchObject({ alreadyComplete: true })
+    const writesBeforeStateRepeat = success.writes.length
+    await expect(runState(statePayload, success.tsian, signal)).resolves.toMatchObject({ alreadyComplete: true, phase: "state" })
+    expect(success.writes).toHaveLength(writesBeforeStateRepeat)
+    await expect(runPublish({ openingReply }, success.tsian, signal)).resolves.toMatchObject({ status: "complete" })
     const turn0Assistant = JSON.parse(success.files.get("save/history/turns/turn-000000.json") ?? "null").timeline[0]
-    expect(turn0Assistant).toEqual({
-      kind: "assistant",
-      content: "晨光照进客栈。\n",
-      projections: { choices: ["起身"] },
-    })
-    expect(turn0Assistant).not.toHaveProperty("displayContent")
+    expect(turn0Assistant).toEqual({ kind: "assistant", content: "晨光照进客栈。\n", projections: { choices: ["起身"] } })
     expect(JSON.parse(success.files.get("save/agents/storyteller/context.json") ?? "null").recentTurns[0].content).toBe("晨光照进客栈。\n")
-    expect(success.read).toHaveBeenCalledWith({
-      scope: "effective",
-      path: "save/agents/world-architect/context-understanding.json",
-    })
+    const writesBeforeRepeat = success.writes.length
+    await expect(runPublish({ openingReply }, success.tsian, signal)).resolves.toMatchObject({ alreadyComplete: true })
+    expect(success.writes).toHaveLength(writesBeforeRepeat)
 
-    const diagnosticSuccess = makeRuntime()
-    diagnosticSuccess.files.set("config/reply-projection.json", json({
-      schema: "tsian.reply-projection.v1",
-      rules: [
-        {
-          id: "choices",
-          match: "/\\[\\[选项\\]\\]([\\s\\S]*?)\\[\\[\\/选项\\]\\]/g",
-          text: "",
-          project: { choices: "$1|lines|stripList" },
-        },
-        { id: "broken", match: "/[/", text: "" },
-      ],
-    }))
-    await expect(runOpening(payload(), diagnosticSuccess.tsian, signal)).resolves.toMatchObject({ status: "complete" })
-    const diagnosticProjection = await diagnosticSuccess.project.mock.results[0]!.value
-    expect(diagnosticProjection).toMatchObject({
-      diagnostics: [expect.objectContaining({
-        scope: "rule",
-        code: "REPLY_PROJECTION_REGEX_INVALID",
-        path: "config/reply-projection.json",
-        ruleId: "broken",
-        ruleIndex: 1,
-      })],
-      configPresent: true,
-      ruleCount: 2,
-      appliedRuleCount: 1,
-    })
+    const unsafeEntity = makeRuntime()
+    const unsafePayload = JSON.parse(JSON.stringify(entitiesPayload)) as typeof entitiesPayload
+    unsafePayload.entities[0]!.id = "character:../hero"
+    await expect(runEntities(unsafePayload, unsafeEntity.tsian, signal)).rejects.toMatchObject({ code: "OPENING_ENTITY_ID_INVALID" })
+    expect(unsafeEntity.writes).toEqual([])
 
-    const missingTarget = makeRuntime()
-    const missingPayload = payload()
-    ;(missingPayload.runtime as { protagonistRef: { ref: string } }).protagonistRef.ref = "character:missing"
-    await expect(runOpening(missingPayload, missingTarget.tsian, signal)).rejects.toMatchObject({ code: "OPENING_REF_UNKNOWN" })
-    expect(missingTarget.writes).toEqual([])
+    const badGraph = makeRuntime()
+    await runEntities(entitiesPayload, badGraph.tsian, signal)
+    const entityWrites = badGraph.writes.slice()
+    const missingGraph = JSON.parse(JSON.stringify(graphPayload)) as typeof graphPayload
+    missingGraph.scenes[0]!.location.ref = "location:missing"
+    await expect(runGraph(missingGraph, badGraph.tsian, signal)).rejects.toMatchObject({ code: "OPENING_REF_UNKNOWN" })
+    expect(badGraph.writes).toEqual(entityWrites)
+    expect(badGraph.files.has("save/scenes/opening.json")).toBe(false)
 
-    const unsafeId = makeRuntime()
-    const unsafePayload = payload()
-    ;(unsafePayload.entities as Array<{ id: string }>)[0]!.id = "character:../hero"
-    await expect(runOpening(unsafePayload, unsafeId.tsian, signal)).rejects.toMatchObject({ code: "OPENING_ENTITY_ID_INVALID" })
-    expect(unsafeId.writes).toEqual([])
+    const badState = makeRuntime()
+    await runEntities(entitiesPayload, badState.tsian, signal)
+    await runGraph(graphPayload, badState.tsian, signal)
+    const graphWrites = badState.writes.slice()
+    const missingState = JSON.parse(JSON.stringify(statePayload)) as typeof statePayload
+    missingState.runtime.activeSceneRefs[0]!.ref = "scene:missing"
+    await expect(runState(missingState, badState.tsian, signal)).rejects.toMatchObject({ code: "OPENING_REF_UNKNOWN" })
+    expect(badState.writes).toEqual(graphWrites)
+    expect(JSON.parse(badState.files.get("save/playthrough/setup-summary.json") ?? "null").summary).toBeNull()
 
-    const unprojectable = makeRuntime()
-    const invalidProjectionRules = Array.from({ length: 21 }, (_, index) => ({
-      id: `broken-${index}`,
-      match: `/${"a".repeat(600)}[/`,
-    }))
-    unprojectable.files.set("config/reply-projection.json", json({
-      schema: "tsian.reply-projection.v1",
-      rules: [
-        {
-          id: "choices",
-          match: "/\\[\\[选项\\]\\]([\\s\\S]*?)\\[\\[\\/选项\\]\\]/g",
-          text: "",
-          project: { choices: "$1|lines|stripList" },
-        },
-        ...invalidProjectionRules,
-      ],
-    }))
-    const unprojectablePayload = payload()
-    unprojectablePayload.openingReply = "晨光照进客栈。"
-    await expect(runOpening(unprojectablePayload, unprojectable.tsian, signal)).rejects.toMatchObject({
+    const badPublish = makeRuntime()
+    await stageModel(badPublish)
+    const stagedModel = new Map(Array.from(badPublish.files).filter(([path]) =>
+      path.startsWith("save/entities/")
+      || path.startsWith("save/scenes/")
+      || path.startsWith("save/relationships/")
+      || path === "save/playthrough/runtime.json"
+      || path === "save/playthrough/frontier.json"))
+    const writesBeforePublish = badPublish.writes.length
+    await expect(runPublish({ openingReply: "晨光照进客栈。" }, badPublish.tsian, signal)).rejects.toMatchObject({
       code: "OPENING_REPLY_PROJECTION_FAILED",
-      details: {
-        issues: expect.arrayContaining([
-          expect.objectContaining({ code: "choices.missing", path: "projections.choices" }),
-        ]),
-        projection: expect.objectContaining({
-          displayContent: "omitted",
-          choiceCount: null,
-          configPresent: true,
-          ruleCount: 22,
-          appliedRuleCount: 0,
-        }),
-        diagnostics: expect.arrayContaining([
-          expect.objectContaining({
-            scope: "rule",
-            code: "REPLY_PROJECTION_REGEX_INVALID",
-            path: "config/reply-projection.json",
-            ruleId: "broken-0",
-            ruleIndex: 1,
-          }),
-        ]),
-      },
+      details: { issues: expect.arrayContaining([expect.objectContaining({ code: "choices.missing" })]) },
     })
-    expect(unprojectable.project).toHaveBeenCalledOnce()
-    const unprojectableProjection = await unprojectable.project.mock.results[0]!.value
-    expect(unprojectableProjection.diagnostics).toHaveLength(20)
-    expect(unprojectableProjection.diagnostics[0]?.message).toHaveLength(500)
-    expect(JSON.stringify(unprojectableProjection.diagnostics)).not.toContain("晨光照进客栈")
-    expect(unprojectable.writes).toEqual([])
+    expect(badPublish.writes).toHaveLength(writesBeforePublish)
+    expect(badPublish.files.has("save/history/turns/turn-000000.json")).toBe(false)
+    for (const [path, content] of stagedModel) expect(badPublish.files.get(path)).toBe(content)
 
     const readUnavailable = makeRuntime(makeFiles(), { exposeRead: false })
-    await expect(runOpening(payload(), readUnavailable.tsian, signal)).rejects.toMatchObject({
-      code: "WORKSPACE_OPERATION_NOT_EXPOSED",
-    })
+    await expect(runEntities(entitiesPayload, readUnavailable.tsian, signal)).rejects.toMatchObject({ code: "WORKSPACE_OPERATION_NOT_EXPOSED" })
     expect(readUnavailable.writes).toEqual([])
 
-    const completeFiles = makeFiles()
-    completeFiles.set("save/playthrough/setup-summary.json", json({ status: "complete", summary: "完成", enteredPlay: false }))
-    const complete = makeRuntime(completeFiles)
-    await expect(runOpening(payload(), complete.tsian, signal)).resolves.toMatchObject({ status: "complete", alreadyComplete: true })
-    expect(complete.writes).toEqual([])
-
     const startedFiles = makeFiles()
-    startedFiles.set("save/playthrough/setup-summary.json", json({ status: "complete", summary: "完成", enteredPlay: false }))
+    startedFiles.set("save/playthrough/setup-summary.json", json({ status: "complete", summary: "完成", enteredPlay: true }))
     startedFiles.set("save/playthrough/runtime.json", json({ turn: 1, worldTime: "次日", weather: "晴", activeSceneRefs: [], extensions: {} }))
     const started = makeRuntime(startedFiles)
-    await expect(runOpening(payload(), started.tsian, signal)).rejects.toMatchObject({ code: "OPENING_PLAY_ALREADY_STARTED" })
+    await expect(runPublish({ openingReply }, started.tsian, signal)).rejects.toMatchObject({ code: "OPENING_PLAY_ALREADY_STARTED" })
     expect(started.writes).toEqual([])
+
+    const oldAtomicHandoff = { ...entitiesPayload, ...graphPayload, ...statePayload, openingReply }
+    const publishHandoff = { skill: "开局建模", script: "publish_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } }
+    const oldAtomicCharacters = JSON.stringify(oldAtomicHandoff).length
+    const publishCharacters = JSON.stringify(publishHandoff).length
+    expect(publishCharacters).toBeLessThan(oldAtomicCharacters * 0.25)
+    expect(Object.keys(publishHandoff.input)).toEqual([])
+    expect(JSON.stringify(publishHandoff)).not.toContain("entities")
+    expect(JSON.stringify(publishHandoff)).not.toContain("frontier")
   })
 })
 
