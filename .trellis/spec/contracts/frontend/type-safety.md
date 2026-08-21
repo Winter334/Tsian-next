@@ -438,11 +438,11 @@ await tsian.invokeAgent(agentId, input, {
 })
 ```
 
-## Scenario: Transcript-Backed invokeAgent Interview
+## Scenario: Transcript-Backed Staged Opening Setup
 
 ### 1. Scope / Trigger
 
-- Trigger: a packaged or remote play frontend uses persistent `invokeAgent` calls for a multi-round setup interview outside formal story turns.
+- Trigger: a packaged or remote play frontend uses persistent `invokeAgent` calls for an opening interview whose world model must survive later model/provider failures.
 
 ### 2. Signatures
 
@@ -460,9 +460,19 @@ type InterviewControl = {
   session: { id: string; slot: string }
   branch: "canon" | "original"
 }
+
+type OpeningUserMarker =
+  | `opening-interview:start:${string}`
+  | `opening-interview:answer\n${string}`
+  | `opening-interview:continue:${string}`
+
+commit_opening_entities({ entities })
+commit_opening_graph({ scenes, relationships })
+commit_opening_state({ runtime, frontier, summary })
+publish_opening({ openingReply: responseRef })
 ```
 
-A successful invocation transcript is the visible conversation archive. Optional Agent semantic notes are ordinary workspace files and are not frontend control state.
+A successful invocation transcript is the visible conversation archive. `[[开局继续]]` projects to `openingContinue` with empty visible text. `save/playthrough/opening-notes.md` is Agent-readable natural-language memory, not frontend state or a program-parsed receipt.
 
 ### 3. Contracts
 
@@ -473,10 +483,15 @@ A successful invocation transcript is the visible conversation archive. Optional
 - Transport failures keep the submitted input only in current-page memory for retry. A reload restores through the last successful transcript entry and may discard the failed draft.
 - If invocation resolves but local projection or navigation fails, reread the transcript before resending so an archived successful response is not duplicated.
 - Initialization order is completion signal -> valid control/transcript -> bootstrap retry -> fail-closed legacy-state error -> fresh setup. Test-stage legacy state is not migrated or deleted.
-- Hidden opening-choice markers are removed from final and streaming display. A single trailing unclosed `[[开局选项]]` block extends to end of response.
-- Formal model writes happen once through one transactional final action. It reads source/control itself and blocks malformed payloads, unsafe or duplicate write identities, started play, missing runtime targets, unusable frontier anchors, and an unprojectable first reply.
-- The final action derives target names, source chapter metadata, and stable anchor kind/order. Optional semantic content is normalized or retained instead of becoming a speculative hard failure.
-- When the setup summary already reports complete, the final action must still inspect `enteredPlay`, `runtime.turn`, and later turn files. It returns complete without rewriting only when all three show that formal play has not started.
+- Hidden opening-choice and continuation markers are removed from final and streaming display. A single trailing unclosed `[[开局选项]]` block extends to end of response.
+- Commit the opening model in dependency order: entities -> scenes/relationships -> runtime/frontier. Each successful phase updates normal `save/**` authority, updates natural-language notes, emits `[[开局继续]]`, and ends that persistent invocation. Do not run the next model phase in the same invocation.
+- A browser-script action is a savepoint transaction: script/output-validation failure rolls its writes back. The outer persistent invocation is the durability boundary: only its successful resolution commits workspace, notes, transcript, and context together.
+- Each phase validates all deterministic input/ref constraints before its first write. Validation stays intentionally shallow: safe identity/path, core required fields, direct refs, source range, and play-not-started. Do not add recursive open-schema validation, content hashes, owned-path receipts, or a second staging authority.
+- Same-page `openingContinue` may invoke the next phase automatically with a bounded loop. Refresh restores a visible continue/retry state but never initiates a model call without player action.
+- After state is durable, storyteller reads notes, runtime, active scenes/entities/relationships, and frontier from its visible workspace. The `agent_call` request carries only task, boundaries, and output format; it must not copy the model payload.
+- `publish_opening` accepts only storyteller `responseRef` through `inputRefs.openingReply`. It validates current authority/reply projection and atomically writes turn 0, player context, and `setup-summary.status = "complete"`; it never rewrites the world model.
+- Source timeline anchors may carry optional `summary` (1–3 objective sentences from actually read source). Agent injection includes nearby summaries. Timeline UI shows current/past summaries, folds future summaries behind an explicit spoiler button, and keeps expansion state local to the component.
+- When setup is already complete, publication still inspects `enteredPlay`, `runtime.turn`, and later turn files. It returns complete without rewriting only when formal play has not started.
 
 ### 4. Validation & Error Matrix
 
@@ -488,27 +503,38 @@ A successful invocation transcript is the visible conversation archive. Optional
 | Resolved invocation is already present in transcript | Restore it; do not resend |
 | Transcript sequence regresses, duplicates, or disagrees with `lastSequence` | Fail closed as invalid archive state |
 | Trailing opening-choice block lacks its closing marker | Extract choices through end and hide the block |
-| Runtime protagonist or active scene does not exist in the commit | Reject before any write |
-| First formal reply cannot project visible content and choices | Reject before any write |
-| Legacy incomplete or non-clean formal state exists | Stable new-save error and zero mutation |
+| Phase input has an unsafe/duplicate id or missing direct ref | Reject the phase before its first write; prior phases remain durable |
+| An action errors after staging writes | Roll back to the action savepoint |
+| A phase invocation/provider fails | Discard only that invocation; previously resolved phases remain durable |
+| Partial normal model has matching source/control, pending setup, notes, and recoverable runtime/frontier | Treat as staged opening progress, not legacy dirt |
+| Partial normal model lacks those recovery invariants | Fail closed as unknown legacy state |
+| Page receives `openingContinue` in the same session | Start one bounded next invocation after the current invocation resolves |
+| Page reloads with a trailing successful continuation | Show continue/retry UI; do not call the model automatically |
+| Runtime protagonist or active scene is absent during state/publish | Reject before publication writes |
+| First formal reply cannot project visible content and choices | Reject publish before any publication write |
+| Storyteller or publish fails | Retry finalize only; do not rebuild entities/graph/state |
 | Setup summary is complete; `enteredPlay !== true`, `runtime.turn <= 0`, and no turn after `turn-000000.json` exists | Return complete with zero writes |
 | `enteredPlay === true`, `runtime.turn > 0`, or a later turn file exists | Reject final action with `OPENING_PLAY_ALREADY_STARTED` |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: an explanatory response changes no semantic note; it is still archived and displayed.
-- Good: refresh rebuilds all successful exchanges and latest choices in transcript sequence order.
-- Base: bootstrap invocation rejects; the control remains usable for retry.
-- Bad: reject a successful response because an optional note is absent or unchanged.
-- Bad: persist failed-input retry bookkeeping across refresh.
-- Bad: sanitize only complete opening-choice blocks and expose a trailing unclosed block.
+- Good: entities resolve in invocation A; graph fails in invocation B; retry B reads durable entities and does not regenerate them.
+- Good: state resolves, storyteller fails, and retry runs only storyteller + `publish_opening` against normal workspace authority.
+- Good: refresh after a continuation shows “继续准备开局”; clicking retry sends `opening-interview:continue:<sessionId>`.
+- Base: an old source anchor has no `summary`; parser, injection, and Timeline retain the prior label/time behavior.
+- Bad: build entities/graph/state/storyteller in one invocation and assume action calls are durable before the turn resolves.
+- Bad: pass full entity/scene/runtime JSON in the storyteller brief or accept those fields in `publish_opening`.
+- Bad: parse `opening-notes.md` in frontend code or add receipt/hash files to decide progress.
 
 ### 6. Tests Required
 
-- Type-check and production-build the consuming card frontend.
-- Parser assertions: marker removal, partial marker prefixes, trailing unclosed choices, strict transcript sequencing, and source/session control validation.
-- Flow assertions: success needs no note update, rejection keeps same-page retry input, refresh restores only successful transcript entries, and completion-first initialization remains authoritative.
-- Final-action assertions: minimal success, unsafe/duplicate id, missing runtime target with zero writes, invalid reply projection with zero writes, started play, and already-complete zero-write behavior.
+- Run `npm run test:smoke:web`, `npm run build:web`, `npm run build:play-frontend`, and `npm run package:frontend`; parse changed JSON and syntax-check every referenced browser script/helper.
+- Parser/projection assertions: hidden continuation removal, real reply projection to `openingContinue`, trailing unclosed choices, strict transcript sequencing, and source/session control validation.
+- Phase assertions: success chain, per-phase validation failure with zero phase writes, durable prior-phase recovery, identical-input no-op, downstream path lock, play-started rejection, and already-complete behavior.
+- Finalize assertions: storyteller/publish retry does not rebuild the model; publish schema contains only `openingReply`; invalid reply projection causes zero publication writes.
+- Recovery assertions: partial staged state is accepted only with matching source/control + pending setup + notes; refresh never auto-invokes; same-page continuation is bounded.
+- Summary assertions: old anchor compatibility, nearby summary injection, current/past visible, future spoiler-folded, local expansion.
+- Quantitatively assert the new storyteller handoff and publish input are smaller than the old all-model payload and contain no entity/scene/runtime copies.
 - Package verification: generated frontend entry exists, manifest sizes match sources, and ZIP entries match source bytes.
 
 ### 7. Wrong vs Correct
@@ -516,20 +542,25 @@ A successful invocation transcript is the visible conversation archive. Optional
 #### Wrong
 
 ```ts
-const result = await tsian.invokeAgent(agentId, answer, { persist: true })
-if (!semanticNoteChangedThisTurn()) throw new Error("response not confirmed")
+await tsian.invokeAgent("world-architect", answer, { persist: true })
+// Same invocation then writes entities, graph, state, calls storyteller,
+// and submits all model data again in one final action.
 ```
 
 #### Correct
 
 ```ts
-const result = await tsian.invokeAgent(agentId, encodeAnswer(answer), {
+const result = await tsian.invokeAgent("world-architect", phaseInput, {
   invocationId,
   contextSlot: control.session.slot,
   persist: true,
   transcript: { mode: "full", audience: "player" },
 })
-show(parseDisplayableAssistant(result.response))
+
+if (parseOpeningAssistant(result.response).openingContinue) {
+  // Only after this invocation resolved and committed its phase.
+  await invokeOpening(control, openingContinueMarker(control.session.id))
+}
 ```
 
 
