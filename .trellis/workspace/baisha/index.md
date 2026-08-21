@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 200
-- **Last Active**: 2026-08-20
+- **Total Sessions**: 201
+- **Last Active**: 2026-08-21
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~1136 | Active |
+| `journal-4.md` | ~1158 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 201 | 2026-08-21 | 分阶段开局建模与原著时间线摘要 | `1e10e23c`, `eb779c64` | `master` |
 | 200 | 2026-08-20 | Fix Gemini streamed tool calls and diagnostics | `c81739f2` | `master` |
 | 199 | 2026-08-18 | 文本工具协议纠错与当前轮结果引用 | `7f34a234` | `master` |
 | 198 | 2026-08-17 | Text Tool Protocol retry hardening | `76b40a9` | `master` |

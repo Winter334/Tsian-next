@@ -1134,3 +1134,25 @@ Fixed Gemini native streaming tool-call classification when providers return fun
 ### Status
 
 [OK] **Completed**
+
+
+## Session 201: 分阶段开局建模与原著时间线摘要
+
+**Date**: 2026-08-21
+**Task**: 分阶段开局建模与原著时间线摘要
+**Branch**: `master`
+
+### Summary
+
+定位开局提交失败为工具调用组装与 inputRefs 缺失；将开局模型拆为 entities、graph、state 三个持久 invocation，storyteller 从 workspace 读取并由 publish 单独发布正文；增加刷新恢复、轻量自然语言 notes、source anchor summary 与未来节点剧透折叠，并完成 smoke、类型检查、构建及前端打包验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1e10e23c` | (see git log) |
+| `eb779c64` | (see git log) |
+
+### Status
+
+[OK] **Completed**
