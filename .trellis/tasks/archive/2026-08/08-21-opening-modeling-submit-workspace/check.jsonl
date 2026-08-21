@@ -1,0 +1,10 @@
+{"file":".trellis/tasks/08-21-opening-modeling-submit-workspace/prd.md","reason":"Check every acceptance criterion, especially partial-stage recovery, publish gating, and quantitative context reduction."}
+{"file":".trellis/tasks/08-21-opening-modeling-submit-workspace/design.md","reason":"Verify implementation matches stage ownership, minimum validation, idempotence, continuation, recovery, and rollback design without adding receipts or hashes."}
+{"file":".trellis/tasks/08-21-opening-modeling-submit-workspace/research/failure-diagnosis.md","reason":"Confirm the fix addresses the observed missing-arguments, missing-inputRefs, and protocol-retry failure rather than an assumed provider limit."}
+{"file":".trellis/tasks/08-21-opening-modeling-submit-workspace/research/source-outline-options.md","reason":"Check that any outline implementation reuses frontier consumers, stays spoiler-safe, and does not create duplicate outline authority."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Audit transcript, invokeAgent, setup completion, and workspace read contracts across frontend and runtime."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Apply required build, regression, async, and verification standards for platform-web changes."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check duplicate invocation guards, restore behavior, and no automatic model call on reload."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Check for duplicate authority, orphan artifacts, unconsumed fields, and over-broad capability placement."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Require text-layer checks for stale atomic action and copied-brief instructions."}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Review Agent-facing workflow completeness and terminology visibility."}
