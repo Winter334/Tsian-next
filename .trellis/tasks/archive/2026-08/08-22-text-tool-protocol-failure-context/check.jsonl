@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/08-22-text-tool-protocol-failure-context/prd.md","reason":"Check every observable failure-context and cleanup acceptance criterion."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Verify strict protocol, retry budgets, latest-only correction context, execution reports, and persistence boundaries remain aligned."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Apply platform-web test, build, diff, and scope-control quality gates."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Confirm rejected AI text stays untrusted and cannot bypass strict parsing or execution gates."}
