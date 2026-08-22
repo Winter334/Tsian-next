@@ -1156,3 +1156,24 @@ Fixed Gemini native streaming tool-call classification when providers return fun
 ### Status
 
 [OK] **Completed**
+
+
+## Session 202: 文本工具协议失败上下文恢复
+
+**Date**: 2026-08-22
+**Task**: 文本工具协议失败上下文恢复
+**Branch**: `master`
+
+### Summary
+
+文本工具协议解析失败后，下一次纠错调用会临时看到最近一次原始 assistant 响应和真实 parser 错误；连续失败只保留最新组合，合法调用后清理，且不进入会话历史、Tool Memory、UI timeline 或 workspace。扩展既有 Assistant Runtime smoke，Web smoke 11/11、build:web 与 diff check 通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b940ddc8` | (see git log) |
+
+### Status
+
+[OK] **Completed**
