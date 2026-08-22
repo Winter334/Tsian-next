@@ -1562,6 +1562,7 @@ async function callAgentModelWithWorkspaceTools(
   // 声明它只为与 native loop 的 return 结构对称(避免类型分叉).
   let lastRoundUsage: { input?: number; output?: number; total?: number } | undefined
   const protocolErrorCountsByCode = new Map<string, number>()
+  let protocolRejectedAssistantMessage: AiChatMessage | undefined
   let protocolCorrectionMessage: AiChatMessage | undefined
 
   for (let round = 0; ; round += 1) {
@@ -1787,33 +1788,33 @@ async function callAgentModelWithWorkspaceTools(
       }
       protocolErrorCountsByCode.set(parseResult.error.code, previousErrorCount + 1)
       const retryRemaining = TEXT_TOOL_PROTOCOL_MAX_RETRIES - previousErrorCount
+      const rejectedAssistantMessage: AiChatMessage = {
+        role: "assistant",
+        content: response,
+      }
       const correctionMessage: AiChatMessage = {
         role: "user",
         content: formatTextToolProtocolError(parseResult.error, retryRemaining),
       }
-      const previousCorrectionIndex = protocolCorrectionMessage
-        ? nextMessages.lastIndexOf(protocolCorrectionMessage)
-        : -1
-      nextMessages = previousCorrectionIndex >= 0
-        ? [
-            ...nextMessages.slice(0, previousCorrectionIndex),
-            correctionMessage,
-            ...nextMessages.slice(previousCorrectionIndex + 1),
-          ]
-        : [...nextMessages, correctionMessage]
+      if (protocolRejectedAssistantMessage || protocolCorrectionMessage) {
+        nextMessages = nextMessages.filter((message) => (
+          message !== protocolRejectedAssistantMessage
+          && message !== protocolCorrectionMessage
+        ))
+      }
+      nextMessages = [...nextMessages, rejectedAssistantMessage, correctionMessage]
+      protocolRejectedAssistantMessage = rejectedAssistantMessage
       protocolCorrectionMessage = correctionMessage
       continue
     }
 
     protocolErrorCountsByCode.clear()
-    if (protocolCorrectionMessage) {
-      const correctionIndex = nextMessages.lastIndexOf(protocolCorrectionMessage)
-      if (correctionIndex >= 0) {
-        nextMessages = [
-          ...nextMessages.slice(0, correctionIndex),
-          ...nextMessages.slice(correctionIndex + 1),
-        ]
-      }
+    if (protocolRejectedAssistantMessage || protocolCorrectionMessage) {
+      nextMessages = nextMessages.filter((message) => (
+        message !== protocolRejectedAssistantMessage
+        && message !== protocolCorrectionMessage
+      ))
+      protocolRejectedAssistantMessage = undefined
       protocolCorrectionMessage = undefined
     }
 

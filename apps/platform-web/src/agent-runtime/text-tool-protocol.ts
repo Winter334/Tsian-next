@@ -410,28 +410,6 @@ function textToolProtocolCorrectionAction(code: string): string {
   }
 }
 
-function textToolProtocolCorrectionReason(code: string): string {
-  switch (code) {
-    case "TEXT_TOOL_PROTOCOL_INVALID_JSON":
-      return "The executable block requires one complete strict JSON array."
-    case "TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG":
-      return "New tool requests use the executable tool-call block."
-    case "TEXT_TOOL_PROTOCOL_BLOCK_UNCLOSED":
-      return `The executable block is missing the literal closing tag ${TEXT_TOOL_CALLS_CLOSE_TAG}.`
-    case "TEXT_TOOL_PROTOCOL_MULTIPLE_BLOCKS":
-      return "A tool-call round uses exactly one matched executable block."
-    case "TEXT_TOOL_PROTOCOL_CALLS_NOT_ARRAY":
-    case "TEXT_TOOL_PROTOCOL_CALLS_EMPTY":
-      return "The executable block contains a non-empty JSON array."
-    case "TEXT_TOOL_PROTOCOL_CALL_INVALID":
-    case "TEXT_TOOL_PROTOCOL_TOOL_NAME_REQUIRED":
-    case "TEXT_TOOL_PROTOCOL_ARGUMENTS_INVALID":
-      return "Every call contains a non-empty name and an arguments object."
-    default:
-      return "The response requires the executable tool-call format."
-  }
-}
-
 export function formatTextToolProtocolError(
   error: RuntimeWorkspaceToolError,
   retryRemaining: number,
@@ -440,7 +418,7 @@ export function formatTextToolProtocolError(
     "Text Tool Protocol correction:",
     `<${TEXT_TOOL_PROTOCOL_ERROR_TAG}>${JSON.stringify({
       code: error.code,
-      message: textToolProtocolCorrectionReason(error.code),
+      message: error.message,
       retryRemaining,
     })}</${TEXT_TOOL_PROTOCOL_ERROR_TAG}>`,
     "The previous response was not executed.",

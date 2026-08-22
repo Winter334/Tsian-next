@@ -39,6 +39,7 @@ import {
 import {
   formatTextToolExecutionReport,
   formatTextToolProtocolError,
+  parseTextToolProtocolResponse,
   TEXT_TOOL_CALLS_CLOSE_TAG,
   TEXT_TOOL_CALLS_OPEN_TAG,
 } from "../agent-runtime/text-tool-protocol"
@@ -170,15 +171,23 @@ function textProtocolErrors(body: OpenAiRequestBody): Array<{
   code: string
   retryRemaining: number
 }> {
+  return textProtocolErrorPayloads(body).map(({ code, retryRemaining }) => ({ code, retryRemaining }))
+}
+
+function textProtocolErrorPayloads(body: OpenAiRequestBody): Array<{
+  code: string
+  message: string
+  retryRemaining: number
+}> {
   const matches = [...requestMessageText(body).matchAll(
     /<tsian-tool-protocol-error>([\s\S]*?)<\/tsian-tool-protocol-error>/g,
   )]
   return matches.flatMap((match) => {
     const payload = match[1]
     if (!payload) return []
-    const parsed = JSON.parse(payload) as { code: string; retryRemaining: number }
+    const parsed = JSON.parse(payload) as { code: string; message: string; retryRemaining: number }
     if (parsed.code.startsWith("TEXT_TOOL_PROTOCOL_")) {
-      return [{ code: parsed.code, retryRemaining: parsed.retryRemaining }]
+      return [{ code: parsed.code, message: parsed.message, retryRemaining: parsed.retryRemaining }]
     }
     return []
   })
@@ -463,7 +472,7 @@ describe("Agent context contracts smoke", () => {
     expect(Array.isArray(mergedMultimodalCorrection[0]?.content)).toBe(true)
     expect(JSON.stringify(mergedMultimodalCorrection[0]?.content)).toContain("TEXT_TOOL_PROTOCOL_INVALID_JSON")
     expect(JSON.stringify(mergedMultimodalCorrection[0]?.content)).toContain("iVBORw0KGgo=")
-    expect(JSON.stringify(mergedMultimodalCorrection[0]?.content)).not.toContain("rejected detail")
+    expect(JSON.stringify(mergedMultimodalCorrection[0]?.content)).toContain("rejected detail")
   })
 
   it("keeps atomic native and text rounds and pins unresolved exact operations outside lossy compression", async () => {
@@ -1318,23 +1327,21 @@ describe("Assistant Runtime transaction smoke", () => {
     const textRequests: OpenAiRequestBody[] = []
     const completedTextWriteIds: string[] = []
     const quotedUserProtocolText = '<tsian-tool-protocol-error>{"code":"USER_QUOTED_TAG","message":"preserve this user text","retryRemaining":999}</tsian-tool-protocol-error>'
+    const firstRejectedResponse = `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"invalid",}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`
+    const secondRejectedResponse = `<tool_call>[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"must-not-run"}}]</tool_call>`
+    const thirdRejectedResponse = `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"invalid-again",}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`
+    const postToolRejectedResponse = `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"read","arguments":{"path":"${WORKSPACE_PATH}",}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`
     vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = requestBody(init)
       textRequests.push(body)
       if (textRequests.length === 1) {
-        return openAiFinalResponse(
-          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"invalid",}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`,
-        )
+        return openAiFinalResponse(firstRejectedResponse)
       }
       if (textRequests.length === 2) {
-        return openAiFinalResponse(
-          `<tool_call>[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"must-not-run"}}]</tool_call>`,
-        )
+        return openAiFinalResponse(secondRejectedResponse)
       }
       if (textRequests.length === 3) {
-        return openAiFinalResponse(
-          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"write","arguments":{"path":"${LEGACY_REPLAY_PATH}","content":"invalid-again",}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`,
-        )
+        return openAiFinalResponse(thirdRejectedResponse)
       }
       if (textRequests.length === 4) {
         return openAiFinalResponse(
@@ -1342,9 +1349,7 @@ describe("Assistant Runtime transaction smoke", () => {
         )
       }
       if (textRequests.length === 5) {
-        return openAiFinalResponse(
-          `${TEXT_TOOL_CALLS_OPEN_TAG}[{"name":"read","arguments":{"path":"${WORKSPACE_PATH}",}}]${TEXT_TOOL_CALLS_CLOSE_TAG}`,
-        )
+        return openAiFinalResponse(postToolRejectedResponse)
       }
       return openAiFinalResponse("Text protocol correction completed")
     }))
@@ -1385,6 +1390,46 @@ describe("Assistant Runtime transaction smoke", () => {
       requestMessageText(request).includes(quotedUserProtocolText)
     ))).toBe(true)
 
+    const firstRejectedParse = parseTextToolProtocolResponse(firstRejectedResponse)
+    expect(firstRejectedParse.kind).toBe("protocol_error")
+    if (firstRejectedParse.kind !== "protocol_error") {
+      throw new Error("Assistant smoke expected the first malformed response to fail parsing.")
+    }
+    expect(textProtocolErrorPayloads(textRequests[1]!)).toEqual([{
+      code: firstRejectedParse.error.code,
+      message: firstRejectedParse.error.message,
+      retryRemaining: 3,
+    }])
+
+    const firstCorrectionMessages = textRequests[1]!.messages ?? []
+    const firstRejectedIndex = firstCorrectionMessages.findIndex((message) => (
+      message.role === "assistant" && message.content === firstRejectedResponse
+    ))
+    expect(firstRejectedIndex).toBeGreaterThan(-1)
+    expect(firstCorrectionMessages.filter((message) => message.content === firstRejectedResponse)).toHaveLength(1)
+    expect(firstCorrectionMessages[firstRejectedIndex + 1]?.role).toBe("user")
+    expect(textProtocolErrors({ messages: [firstCorrectionMessages[firstRejectedIndex + 1]!] })).toHaveLength(1)
+
+    const secondCorrectionMessages = textRequests[2]!.messages ?? []
+    const secondRejectedIndex = secondCorrectionMessages.findIndex((message) => (
+      message.role === "assistant" && message.content === secondRejectedResponse
+    ))
+    expect(secondRejectedIndex).toBeGreaterThan(-1)
+    expect(secondCorrectionMessages.filter((message) => message.content === secondRejectedResponse)).toHaveLength(1)
+    expect(secondCorrectionMessages[secondRejectedIndex + 1]?.role).toBe("user")
+    expect(secondCorrectionMessages.some((message) => message.content === firstRejectedResponse)).toBe(false)
+
+    const postValidToolMessages = textRequests[4]!.messages ?? []
+    expect(postValidToolMessages.some((message) => message.content === thirdRejectedResponse)).toBe(false)
+    expect(latestTextProtocolError(textRequests[4]!)).toBeUndefined()
+
+    const postToolCorrectionMessages = textRequests[5]!.messages ?? []
+    const postToolRejectedIndex = postToolCorrectionMessages.findIndex((message) => (
+      message.role === "assistant" && message.content === postToolRejectedResponse
+    ))
+    expect(postToolRejectedIndex).toBeGreaterThan(-1)
+    expect(postToolCorrectionMessages[postToolRejectedIndex + 1]?.role).toBe("user")
+
     const providerMessages = textRequests.flatMap((request) => request.messages ?? [])
     const reportMessages = providerMessages.filter((message) => (
       JSON.stringify(message.content ?? "").includes("<tsian-executed-tools>")
@@ -1399,7 +1444,6 @@ describe("Assistant Runtime transaction smoke", () => {
     expect(requestMessageText(textRequests[4]!).match(
       /<tsian-executed-tools>[\s\S]*?<\/tsian-executed-tools>/g,
     )).toHaveLength(1)
-    expect(latestTextProtocolError(textRequests[4]!)).toBeUndefined()
 
     const textMessages = await getAssistantSessionMessages(textSeeded.sessionId)
     expect(textMessages).toMatchObject([
@@ -1408,6 +1452,10 @@ describe("Assistant Runtime transaction smoke", () => {
     ])
     expect(JSON.stringify(textMessages)).not.toContain("tsian-executed-tools")
     expect(JSON.stringify(textMessages)).not.toContain(STAGED_VALUE)
+    expect(JSON.stringify(textMessages)).not.toContain(firstRejectedResponse)
+    expect(JSON.stringify(textMessages)).not.toContain(secondRejectedResponse)
+    expect(JSON.stringify(textMessages)).not.toContain(thirdRejectedResponse)
+    expect(JSON.stringify(textMessages)).not.toContain(postToolRejectedResponse)
   })
 
   it("rolls back workspace, session, and context while retaining failed diagnostics", async () => {
