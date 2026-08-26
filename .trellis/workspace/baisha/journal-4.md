@@ -1177,3 +1177,24 @@ Fixed Gemini native streaming tool-call classification when providers return fun
 ### Status
 
 [OK] **Completed**
+
+
+## Session 203: Storyteller 原作文风学习与卡内容写入
+
+**Date**: 2026-08-26
+**Task**: Storyteller 原作文风学习与卡内容写入
+**Branch**: `master`
+
+### Summary
+
+新增默认关闭的原作文风自举模块；Storyteller 开放 workspace_write 并提升到 level 2；正式回合与旁路调用支持 card-content 直写及同回合读取；补充 smoke、存储规范和卡打包验证。Focused Vitest 11/11、build:web、卡重打包均通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `863d6327` | (see git log) |
+
+### Status
+
+[OK] **Completed**
