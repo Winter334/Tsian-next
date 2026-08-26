@@ -17,7 +17,9 @@ Use these specs when changing `apps/platform-web/src/**`.
 
 ## Required Checks
 
-- Run `npm run build:web` for any platform-web change.
+- Follow the project-wide [Validation Scope And Evidence Guide](../../guides/validation-strategy.md) before choosing commands.
+- Run `npm run build:web` when executable platform-web source or configuration can affect type-checking, bundling, or runtime behavior.
+- For prose-only docs/comments or non-executable metadata, use diff/reference checks instead of a build unless a parser, generator, or runtime loader consumes the changed text.
 - Run `npm run build:contracts` when imported contract shapes change.
 
 ## Source References

@@ -29,6 +29,7 @@ These guides help you **ask the right questions before coding**.
 | [AIRP 数据与能力设计原则](./airp-data-capability-design-principles.md) | 泛用方法论：能力供给分级、归属决策、skill 封装判据、数据权威、分片、产物落点、写入策略、文档分层、字段消费者验证 | 涉及 agent/skill/tool 能力设计、schema 字段设计、写入策略、数据权威与派生、聚合层、文档分层、审查过度设计时 |
 | [提示词自包含与口吻指南](./prompt-self-contained-and-tone.md) | 写 Skill / AGENT.md / 工具 description 时避免两类错误：开发侧因果解释污染；默认 Agent 知道本上下文之外的概念 | 写或改 AI-facing 提示词、引用跨 Skill 概念、发现 Agent 行为偏差疑似来自提示词时 |
 | [玩家可见产品文案指南](./player-facing-product-copy.md) | 避免把开发决策、实现机制和内部流程写进产品 UI，只保留用户当前理解与行动所需的信息 | 新增或修改页面标题、说明、按钮、选项、加载/错误/确认等玩家可见文案时 |
+| [Validation Scope And Evidence Guide](./validation-strategy.md) | 按实际风险选择最小充分验证，区分质量判断与机械执行构建/测试 | 任何改动完成前，尤其是文档、提示词、配置、局部代码或跨层改动需要决定验证范围时 |
 
 ---
 
@@ -111,6 +112,16 @@ These guides help you **ask the right questions before coding**.
 - [ ] 同一页面的说明和禁用按钮重复描述页面布局或操作方式
 
 → Read [玩家可见产品文案指南](./player-facing-product-copy.md)
+
+### When to Think About Validation Scope
+
+- [ ] 你准备运行构建、类型检查或测试，但还没有说明它能发现什么失败
+- [ ] 改动仅涉及 README、文档、注释、提示词或 spec
+- [ ] 定向检查已经覆盖改动，却在考虑是否机械追加全仓验证
+- [ ] 工作流要求 quality check，但实际改动没有可执行行为
+- [ ] 你需要区分“完整审查改动范围”和“运行所有可用命令”
+
+→ Read [Validation Scope And Evidence Guide](./validation-strategy.md)
 
 ---
 

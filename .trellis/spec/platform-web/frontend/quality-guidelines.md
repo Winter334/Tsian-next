@@ -4,7 +4,9 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
 
 ## Required Checks
 
-- Run `npm run build:web` after any change under `apps/platform-web`.
+- Choose checks using the project-wide [Validation Scope And Evidence Guide](../../guides/validation-strategy.md); each command must cover a plausible failure introduced by the diff.
+- Run `npm run build:web` after executable source or configuration changes under `apps/platform-web` that can affect type-checking, bundling, or runtime behavior.
+- Do not run `build:web` for prose-only docs/comments or non-executable metadata unless the changed text is consumed by a parser, generator, or runtime loader.
 - Run `npm run build:contracts` if a change imports or modifies contract shapes.
 - **`build:web` passing does NOT mean the frontend-build runtime loop works.** The esbuild-wasm build engine (`src/frontend-build/`) has three runtime-only traps that `vue-tsc` + `vite build` cannot catch — they only surface when a real build runs in the browser:
   - **esbuild plugin objects may only carry `name` + `setup`.** Attaching extra fields (e.g. a `result` handle for post-build reads) throws `Invalid option on plugin "<name>": "<field>"` at runtime. A TS intersection type (`Plugin & { result }`) lies to tsc but esbuild rejects it. Return extra data as a sibling on a wrapper object (`{ plugin, result }`), not on the Plugin itself. See `cdn-external-plugin.ts`.
