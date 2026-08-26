@@ -549,3 +549,70 @@ This preserves the Agent-facing chapter concept without exposing storage interna
 - `apps/platform-web/src/storage/blobs.ts`
 - `apps/platform-web/src/storage/saves.ts`
 - `apps/platform-web/src/storage/workspace.ts`
+
+## Scenario: Runtime Game Agent Card-Content Direct Write
+
+### 1. Scope / Trigger
+
+- Trigger: a runtime game Agent needs to overwrite editable card workspace text during a player turn or `invokeAgent` side call.
+- Current use case: Storyteller self-replaces `agents/storyteller/modules/文风/原作文风.md` after source-style extraction.
+
+### 2. Signatures
+
+- Workspace mutation request: `{ operation: "write", scope: "card-content", path, content }`.
+- Host persistence helper: `writeCardContentFileForActiveCard({ path, content?, data? }): Promise<WorkspaceFile>`.
+- Agent configuration: `platformTools.enabled` contains `workspace_write`; `workspaceAccess.level >= 2` for card-content writes.
+
+### 3. Contracts
+
+- `card-content` writes persist through the active card's per-file content table, not the save-runtime transaction.
+- `runtime-turn.ts` and `ai-invocation.ts` must both route accepted card-content writes through `writeCardContentFileForActiveCard`.
+- The returned `WorkspaceFile` is upserted into the current staged workspace snapshot so later reads in the same invocation observe the new content.
+- Save-runtime writes and checkpoint behavior remain unchanged.
+
+### 4. Validation & Error Matrix
+
+- Agent level `< 2` writing `card-content` -> `WORKSPACE_EDIT_ACCESS_DENIED` before host persistence.
+- Agent level `>= 2` with `workspace_write` writing `card-content` -> direct card-file persistence.
+- Missing active card -> existing active-card error from `writeCardContentFileForActiveCard`.
+- Failed later save-runtime work does not roll back an already persisted card-content write; this is accepted for low-risk editable card text.
+
+### 5. Good/Base/Bad Cases
+
+- Good: level-2 Storyteller writes the fixed style module, then reads it in the same invocation and sees the replacement.
+- Base: level-1 runtime Agent continues to write `save-runtime` but cannot write card content.
+- Bad: host adapter routes `card-content` into `RuntimeWorkspaceTransaction`, which rejects the scope and leaves the card table unchanged.
+- Bad: direct persistence succeeds but staged workspace is not updated, so a same-invocation read returns stale content.
+
+### 6. Tests Required
+
+- Integration smoke test covers player `sendMessage` and side `invokeAgent` card-content writes.
+- Assert persisted card-file content after each path.
+- Assert same-invocation read observes the newly written content.
+- Assert a level-1 Agent receives `WORKSPACE_EDIT_ACCESS_DENIED` and the card file remains unchanged.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+if (writeInput.scope !== "save-runtime") {
+  throw new Error("Runtime Agent turns can only stage save-runtime workspace writes.")
+}
+return workspaceTransaction.write({ path: writeInput.path, content: writeInput.content })
+```
+
+This rejects the valid card-content mutation after permission checks.
+
+#### Correct
+
+```ts
+if (writeInput.scope === "card-content") {
+  return writeCardContentFileForActiveCard(writeInput).then((file) => {
+    syncDirectFileIntoStaged(workspaceTransaction.workspaceFiles, file)
+    return file
+  })
+}
+```
+
+This preserves the card-content persistence boundary and same-invocation read consistency.

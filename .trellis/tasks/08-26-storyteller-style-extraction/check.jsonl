@@ -1,0 +1,3 @@
+{"file":".trellis/spec/guides/validation-strategy.md","reason":"按跨卡内容持久化与运行时宿主边界选择针对性 smoke、构建和打包验证。"}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"复核学习提示是否自包含、无开发侧解释且输出约束明确。"}
+{"file":".trellis/tasks/08-26-storyteller-style-extraction/research/runtime-card-content-write.md","reason":"按已确认的权限、持久化、同回合可见性和打包边界复核实现。"}

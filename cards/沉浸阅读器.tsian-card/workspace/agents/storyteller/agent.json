@@ -34,12 +34,13 @@
   },
   "platformTools": {
     "enabled": [
-      "workspace_read"
+      "workspace_read",
+      "workspace_write"
     ],
     "disabled": []
   },
   "workspaceAccess": {
-    "level": 1
+    "level": 2
   },
   "entryMode": "persistent",
   "system": true

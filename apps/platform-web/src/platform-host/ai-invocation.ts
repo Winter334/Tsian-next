@@ -53,6 +53,7 @@ import {
   isRecord,
   listEffectiveWorkspaceFilesForActiveSave,
   resolveAgentModelConfig,
+  writeCardContentFileForActiveCard,
 } from "./internal"
 import { finishReasonToKind } from "./runtime-events"
 import { cleanupScenesInTransaction } from "./scene-cleanup"
@@ -62,6 +63,17 @@ import { projectAssistantReply } from "./reply-projection"
  *  key = `${agentId}:${slot ?? "default"}`，value = 当前正在执行的 Promise。
  *  不同 agent 或不同 slot 可真并行。条目在执行完成后自动清理。 */
 const invokeAgentQueue = new Map<string, Promise<unknown>>()
+
+function syncDirectFileIntoStaged(stagedFiles: WorkspaceFile[], file: WorkspaceFile): void {
+  const existingIndex = stagedFiles.findIndex((candidate) => candidate.path === file.path)
+  if (existingIndex >= 0) {
+    stagedFiles[existingIndex] = file
+    return
+  }
+
+  stagedFiles.push(file)
+  stagedFiles.sort((left, right) => left.path.localeCompare(right.path))
+}
 
 function createInvocationId(): string {
   if (typeof globalThis.crypto?.randomUUID === "function") {
@@ -365,6 +377,16 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
                   path: writeInput.path,
                   content: writeInput.content,
                   ...(writeInput.data ? { data: writeInput.data } : {}),
+                })
+              }
+              if (writeInput.scope === "card-content") {
+                return writeCardContentFileForActiveCard({
+                  path: writeInput.path,
+                  content: writeInput.content,
+                  ...(writeInput.data ? { data: writeInput.data } : {}),
+                }).then((file) => {
+                  syncDirectFileIntoStaged(workspaceTransaction!.workspaceFiles, file)
+                  return file
                 })
               }
               if (writeInput.scope !== "save-runtime") {

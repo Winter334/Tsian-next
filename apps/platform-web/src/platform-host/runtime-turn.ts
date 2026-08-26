@@ -4,6 +4,7 @@ import type {
   PlayFrontendBridge,
   TurnStats,
   TurnTimelineItem,
+  WorkspaceFile,
 } from "@tsian/contracts"
 import { createGameRuntimeEnvironment, runAgentRuntimeTurn } from "../agent-runtime"
 import { resolveTokenBudget } from "../agent-runtime/context-lifecycle"
@@ -49,6 +50,7 @@ import {
   listEffectiveWorkspaceFilesForActiveSave,
   normalizeMessageContent,
   resolveAgentModelConfig,
+  writeCardContentFileForActiveCard,
 } from "./internal"
 import { resolvePlayerTurnAgentIdForSave } from "./runtime-entrypoints"
 import { finishReasonToKind } from "./runtime-events"
@@ -59,6 +61,17 @@ type SendMessageInput = Parameters<PlayFrontendBridge["interaction"]["sendMessag
 type SendMessageResult = Awaited<ReturnType<PlayFrontendBridge["interaction"]["sendMessage"]>>
 
 let previousTurnController: AbortController | null = null
+
+function syncDirectFileIntoStaged(stagedFiles: WorkspaceFile[], file: WorkspaceFile): void {
+  const existingIndex = stagedFiles.findIndex((candidate) => candidate.path === file.path)
+  if (existingIndex >= 0) {
+    stagedFiles[existingIndex] = file
+    return
+  }
+
+  stagedFiles.push(file)
+  stagedFiles.sort((left, right) => left.path.localeCompare(right.path))
+}
 
 export async function sendMessage(input: SendMessageInput): Promise<SendMessageResult> {
   const content = normalizeMessageContent(input.content)
@@ -209,6 +222,16 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
                 path: writeInput.path,
                 content: writeInput.content,
                 ...(writeInput.data ? { data: writeInput.data } : {}),
+              })
+            }
+            if (writeInput.scope === "card-content") {
+              return writeCardContentFileForActiveCard({
+                path: writeInput.path,
+                content: writeInput.content,
+                ...(writeInput.data ? { data: writeInput.data } : {}),
+              }).then((file) => {
+                syncDirectFileIntoStaged(activeWorkspaceTransaction.workspaceFiles, file)
+                return file
               })
             }
             if (writeInput.scope !== "save-runtime") {

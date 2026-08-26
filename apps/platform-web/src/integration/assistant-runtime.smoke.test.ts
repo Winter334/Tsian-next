@@ -59,6 +59,7 @@ import { markPlatformHostReady } from "../platform-host/host-state"
 import { toBrowserScriptReplyProjection } from "../platform-host/browser-skill-script-executor"
 import { invokeAgent } from "../platform-host/ai-invocation"
 import { runAssistantChat } from "../platform-host/assistant-chat"
+import { sendMessage } from "../platform-host/runtime-turn"
 import {
   WORLD_ARCHITECT_AGENT_FILES,
   WORLD_ARCHITECT_SKILL_FILES,
@@ -72,6 +73,7 @@ import {
   loadLocalAssistantFiles,
   putLocalGameCard,
   queryDiagnosticRecords,
+  readLocalGameCardContentFile,
   readWorkspaceFileForSave,
   saveAssistantSessionMessages,
   saveLocalAssistantFiles,
@@ -103,8 +105,11 @@ const LEGACY_REPLAY_PATH = "save/legacy-replay-must-not-run.txt"
 const WORKSPACE_BASELINE = "before"
 const STAGED_VALUE = "same-turn-staged-value"
 const SIDE_AGENT_ID = "world-architect"
+const PLAYER_AGENT_ID = "storyteller"
 const SIDE_CONTEXT_SLOT = "assistant-smoke-side"
 const BACKGROUND_CONTEXT_SLOT = "assistant-smoke-background"
+const CARD_STYLE_PATH = `agents/${PLAYER_AGENT_ID}/modules/文风/原作文风.md`
+const CARD_STYLE_BASELINE = "initial-style-learning-prompt"
 
 interface OpenAiRequestBody {
   messages?: Array<{
@@ -251,6 +256,7 @@ async function seedRuntime(input: {
     name: "Assistant Runtime Smoke",
     version: "1.0.0",
     summary: "Cross-layer Assistant transaction fixture",
+    runtime: { entrypoints: { playerTurn: PLAYER_AGENT_ID } },
   }
   const card = await putLocalGameCard({
     manifest,
@@ -273,6 +279,28 @@ async function seedRuntime(input: {
       {
         path: `agents/${SIDE_AGENT_ID}/AGENT.md`,
         content: "# Smoke side Agent\n\nFollow the current request and use available workspace tools.\n",
+      },
+      {
+        path: `agents/${PLAYER_AGENT_ID}/agent.json`,
+        content: JSON.stringify({
+          id: PLAYER_AGENT_ID,
+          title: "Smoke player Agent",
+          summary: "Player-turn card-content writer fixture",
+          contacts: [],
+          contextPaths: [],
+          skills: { enabled: [], disabled: [] },
+          tools: { enabled: [], disabled: [] },
+          platformTools: { enabled: ["workspace_read", "workspace_write"], disabled: [] },
+          workspaceAccess: { level: 2 },
+        }, null, 2),
+      },
+      {
+        path: `agents/${PLAYER_AGENT_ID}/AGENT.md`,
+        content: "# Smoke player Agent\n\nFollow the current request and use available workspace tools.\n",
+      },
+      {
+        path: CARD_STYLE_PATH,
+        content: CARD_STYLE_BASELINE,
       },
     ],
   })
@@ -865,8 +893,15 @@ describe("Agent context contracts smoke", () => {
     ])
     const publishAction = openingActions.actions.find(action => action.name === "publish_opening")
     expect(Object.keys(publishAction?.inputSchema?.properties ?? {})).toEqual(["openingReply"])
-    const storytellerConfig = JSON.parse(cardStorytellerAgent) as { platformTools?: { enabled?: string[] } }
+    const storytellerConfig = JSON.parse(cardStorytellerAgent) as {
+      enabledModules?: string[]
+      platformTools?: { enabled?: string[] }
+      workspaceAccess?: { level?: number }
+    }
+    expect(storytellerConfig.enabledModules).not.toContain("原作文风")
     expect(storytellerConfig.platformTools?.enabled).toContain("workspace_read")
+    expect(storytellerConfig.platformTools?.enabled).toContain("workspace_write")
+    expect(storytellerConfig.workspaceAccess?.level).toBe(2)
     const currentSchema = DEFAULT_SAVE_RUNTIME_FILES.find((file) => file.path === "save/schema/current.md")?.content ?? ""
     expect(currentSchema.length).toBeLessThan(1_000)
     expect(currentSchema).toContain("save-specific")
@@ -1189,6 +1224,85 @@ describe("Agent context contracts smoke", () => {
 })
 
 describe("Assistant Runtime transaction smoke", () => {
+  it("keeps level 1 game Agents from writing card content", async () => {
+    await seedRuntime({ contextMarker: "card-content-permission-baseline" })
+    const requests: OpenAiRequestBody[] = []
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = requestBody(init)
+      requests.push(body)
+      if (requests.length === 1) {
+        return openAiToolResponse("denied-write", "write", {
+          path: CARD_STYLE_PATH,
+          content: "must-not-persist",
+        })
+      }
+      if (requests.length === 2) {
+        expect(toolObservation(body, "denied-write")).toContain("WORKSPACE_EDIT_ACCESS_DENIED")
+        return openAiFinalResponse("Card write was denied")
+      }
+      throw new Error(`Unexpected provider request ${requests.length}`)
+    }))
+
+    await expect(invokeAgent({
+      agentId: SIDE_AGENT_ID,
+      input: "Try to replace the Storyteller style module.",
+    })).resolves.toMatchObject({ response: "Card write was denied" })
+    expect((await readLocalGameCardContentFile(CARD_ID, CARD_STYLE_PATH))?.content)
+      .toBe(CARD_STYLE_BASELINE)
+    expect(requests).toHaveLength(2)
+  })
+
+  it("persists card-content writes and exposes them to same-call reads in both game Agent paths", async () => {
+    await seedRuntime({ contextMarker: "card-content-write-baseline" })
+    const requests: OpenAiRequestBody[] = []
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = requestBody(init)
+      requests.push(body)
+      if (requests.length === 1) {
+        return openAiToolResponse("turn-write", "write", {
+          path: CARD_STYLE_PATH,
+          content: "runtime-turn-style",
+        })
+      }
+      if (requests.length === 2) {
+        expect(toolObservation(body, "turn-write")).toContain(CARD_STYLE_PATH)
+        return openAiToolResponse("turn-read", "read", { path: CARD_STYLE_PATH })
+      }
+      if (requests.length === 3) {
+        expect(toolObservation(body, "turn-read")).toContain("runtime-turn-style")
+        return openAiFinalResponse("Runtime turn card write completed")
+      }
+      if (requests.length === 4) {
+        return openAiToolResponse("invoke-write", "write", {
+          path: CARD_STYLE_PATH,
+          content: "invocation-style",
+        })
+      }
+      if (requests.length === 5) {
+        expect(toolObservation(body, "invoke-write")).toContain(CARD_STYLE_PATH)
+        return openAiToolResponse("invoke-read", "read", { path: CARD_STYLE_PATH })
+      }
+      if (requests.length === 6) {
+        expect(toolObservation(body, "invoke-read")).toContain("invocation-style")
+        return openAiFinalResponse("Side invocation card write completed")
+      }
+      throw new Error(`Unexpected provider request ${requests.length}`)
+    }))
+
+    await expect(sendMessage({ content: "Replace the style module and read it back." }))
+      .resolves.toMatchObject({ assistant: { content: "Runtime turn card write completed" } })
+    expect((await readLocalGameCardContentFile(CARD_ID, CARD_STYLE_PATH))?.content)
+      .toBe("runtime-turn-style")
+
+    await expect(invokeAgent({
+      agentId: PLAYER_AGENT_ID,
+      input: "Replace the style module again and read it back.",
+    })).resolves.toMatchObject({ response: "Side invocation card write completed" })
+    expect((await readLocalGameCardContentFile(CARD_ID, CARD_STYLE_PATH))?.content)
+      .toBe("invocation-style")
+    expect(requests).toHaveLength(6)
+  })
+
   it("commits staged Tool work, conversation/context, and sanitized diagnostics", async () => {
     const seeded = await seedRuntime({ contextMarker: "success-context-baseline" })
     const requests: OpenAiRequestBody[] = []
