@@ -79,7 +79,6 @@ function closeTrait(): void {
 
 <style scoped>
 .stage-highlights {
-  position: relative;
   overflow-y: auto;
   scrollbar-width: none;
   display: grid;
