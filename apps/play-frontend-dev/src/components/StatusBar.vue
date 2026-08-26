@@ -386,9 +386,8 @@ function restoreMobileFocus(event: Event): void {
   background:
     radial-gradient(circle at 45% 12%, rgba(181, 137, 61, 0.12), transparent 34%),
     radial-gradient(circle at 15% 52%, rgba(155, 58, 46, 0.08), transparent 36%),
-    linear-gradient(180deg, rgba(18, 10, 8, 0.88), rgba(7, 4, 5, 0.82)),
-    rgba(10, 5, 6, 0.78);
-  backdrop-filter: blur(12px);
+    linear-gradient(180deg, rgba(18, 10, 8, 0.94), rgba(7, 4, 5, 0.9)),
+    rgba(10, 5, 6, 0.9);
   box-shadow:
     inset -1px 0 0 rgba(232, 169, 72, 0.06),
     18px 0 48px rgba(0, 0, 0, 0.28);
