@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 203
+- **Total Sessions**: 204
 - **Last Active**: 2026-08-26
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~1200 | Active |
+| `journal-4.md` | ~1239 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 204 | 2026-08-26 | 收尾 Agent Tool Observation 契约治理 | `4c2af185`, `95608c41`, `ee3c12a2`, `48316a3b` | `master` |
 | 203 | 2026-08-26 | Storyteller 原作文风学习与卡内容写入 | `863d6327` | `master` |
 | 202 | 2026-08-22 | 文本工具协议失败上下文恢复 | `b940ddc8` | `master` |
 | 201 | 2026-08-21 | 分阶段开局建模与原著时间线摘要 | `1e10e23c`, `eb779c64` | `master` |

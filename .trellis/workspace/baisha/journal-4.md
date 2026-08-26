@@ -1198,3 +1198,42 @@ Fixed Gemini native streaming tool-call classification when providers return fun
 ### Status
 
 [OK] **Completed**
+
+
+## Session 204: 收尾 Agent Tool Observation 契约治理
+
+**Date**: 2026-08-26
+**Task**: 收尾 Agent Tool Observation 契约治理
+**Branch**: `master`
+
+### Summary
+
+完成 Agent Tool Observation 契约治理收尾并归档。严格 observation acceptance gate、workspace producer-owned 分页/限制、use_skill 直接交付、协议与 memory/UI 边界、staged workspace 同 turn 一致性已实现并通过复测。定向与全仓测试、Web 构建和 diff 检查通过；部署新前端包后的旧生产请求关联复测仍待环境更新后执行。
+
+### Main Changes
+
+- 归档 Agent Tool Observation 契约治理任务
+- 记录 strict observation gate、workspace delivery、Skill 和 staged workspace coherence 的完成状态
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c2af185` | (see git log) |
+| `95608c41` | (see git log) |
+| `ee3c12a2` | (see git log) |
+| `48316a3b` | (see git log) |
+
+### Testing
+
+- [OK] 上下文与任务清单校验通过
+- [OK] 最近一次全仓 npm test：122/122 files、905/905 tests passed
+- [OK] npm run build:web 通过；git diff --check 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 部署更新后的前端包后，复测旧生产请求中的 Tool call/result 关联
