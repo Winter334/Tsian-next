@@ -1,15 +1,6 @@
-{"file":".trellis/tasks/07-21-inline-story-image-generation/prd.md","reason":"父任务冻结旁路不锁 Composer、最多三图自然并行、重生成/restore/failure 语义和本子任务边界。"}
-{"file":".trellis/tasks/07-21-inline-story-image-generation/design.md","reason":"父任务定义平台/存档/卡语义/UI 四层所有权、正式回合增量提交和 generated-media checkpoint patch 方向。"}
-{"file":"packages/contracts/src/runtime.ts","reason":"Consistency integration must understand the optional serializable InvokeAgentRequest.generatedMediaSourceGuard boundary without moving guard algorithms or sourceGuard into storage metadata."}
-{"file":"packages/play-bridge/src/tsian-api.ts","reason":"Verify the UI option is forwarded and remains optional for ordinary invokeAgent callers."}
-{"file":"apps/platform-web/src/bridge/remote-iframe-bridge.ts","reason":"Verify malformed required guards are rejected rather than silently downgraded before consistency code can run."}
-{"file":"apps/platform-web/src/platform-host/ai-invocation.ts","reason":"Verify requiredSourceGuard closure is the guarded handoff authority and mismatch produces zero Provider/write/source-registration calls."}
-{"file":".trellis/tasks/07-21-platform-image-generation/design.md","reason":"sibling 提供唯一 shared identity helper 与 `{identityKey,assetPath,blob,sourceGuard}` host handoff；本任务负责 source-registration 和最终 exact-source storage metadata。"}
-{"file":".trellis/tasks/07-21-platform-image-generation/prd.md","reason":"Sibling freezes optional Tool guard, authoritative required invoke option, shared-helper target binding, ordinary compatibility, and authority-validated guarded handoff consumed by source registration."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Dexie 表归属、thin checkpoint manifest、append-only logs、restore prune、current-turn-auto、hash 事务边界与 GC 的权威规范。"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"严格 TypeScript、runtime boundary normalization、invokeAgent slot/persist/queue、formal turn/runtime trace 与 shared contract 规则。"}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Dexie multi-table transaction、Runtime Workspace authority、checkpoint/bridge state 和正式/旁路 runtime host 语义。"}
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"仅在真实跨包契约变化时更新 exports/consumers并运行 build:contracts，避免把内部 commit metadata 提升为共享契约。"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"映射 Tool/host source validation、transaction staging、storage CAS、checkpoint/restore 与前端 completed 的跨层责任。"}
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"按 revision/CAS、formal commit、guarded media、restore lifecycle 和 GC 的自然 seam 组织实现，避免继续堆叠 saves/checkpoints 职责。"}
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"约束 authority/derived 数据、真实字段消费者、稳定平台能力归属，并禁止无消费者 audit/job 数据。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Coordinate host source binding with storage transaction and frontend completion."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Keep source authority generic and avoid card schema leakage into storage."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Checkpoint manifests, restore, invokeAgent commits, prune and Blob GC contracts."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Workspace transactions, volume routing and persisted state update rules."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Strict target/source boundary and host mutation routing."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Evidence for existing explicit side-channel commits and stale formal full-replace behavior."}

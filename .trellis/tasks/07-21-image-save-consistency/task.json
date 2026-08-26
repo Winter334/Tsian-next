@@ -2,7 +2,7 @@
   "id": "image-save-consistency",
   "name": "image-save-consistency",
   "title": "异步图片存档一致性",
-  "description": "保证旁路并发生图、正式剧情推进、重生成与checkpoint回溯之间的数据一致性。",
+  "description": "通过正式回合增量合并、Host来源绑定、branch epoch、checkpoint history覆盖与Blob GC，保证并发生图、剧情推进、重生成和回溯一致性。",
   "status": "planning",
   "dev_type": null,
   "scope": "apps/platform-web storage/runtime + packages/contracts if required",

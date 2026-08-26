@@ -2,7 +2,7 @@
   "id": "card-illustration-agent-protocol",
   "name": "card-illustration-agent-protocol",
   "title": "卡内插图Agent与输出协议",
-  "description": "定义storyteller内嵌插图协议、Reply Projection、卡级入口与负责完整生图的image-director Agent。",
+  "description": "定义每回合1至3个（通常1个）内嵌插图简报、Reply Projection、卡级入口与支持参考图的image-director Agent。",
   "status": "planning",
   "dev_type": null,
   "scope": "cards/沉浸阅读器.tsian-card workspace + game-card entrypoint contracts",

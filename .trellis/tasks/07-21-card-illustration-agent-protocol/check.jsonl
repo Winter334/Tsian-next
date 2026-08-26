@@ -1,13 +1,8 @@
-{"file":"apps/platform-web/src/storage/game-card-packages.ts","reason":"Verify final package exporter and protocol workspace manifest agree on actual ZIP entry bytes for ASCII/Chinese/emoji text and binary entries."}
-{"file":"packages/contracts/src/runtime.ts","reason":"Verify the optional serialized generatedMediaSourceGuard has the closed shared identity shape and does not move runtime hashing/path algorithms into contracts."}
-{"file":"packages/play-bridge/src/tsian-api.ts","reason":"Verify the UI option is forwarded unchanged and remains additive/optional for ordinary invokeAgent consumers."}
-{"file":"apps/platform-web/src/bridge/remote-iframe-bridge.ts","reason":"Verify strict option normalization fails malformed authority rather than silently dropping it into an ordinary invocation."}
-{"file":"apps/platform-web/src/platform-host/ai-invocation.ts","reason":"Verify requiredSourceGuard closure is authoritative, no agentId/purpose routing exists, mismatches are pre-Provider zero-write failures, and legal handoff uses closure data."}
-{"file":".trellis/tasks/07-21-inline-story-image-generation/prd.md","reason":"逐项核对本子任务没有越过父任务边界，并满足双通道 guard、host authority、失败隔离、Tool、资产与 UI 契约。"}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"检查 illustration projection 使用 content 清理、display 原位保留、illustrations[] 原始字符串追加且 opening/formal turn 一致。"}
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"检查 imageGeneration 与 generate_image 共享契约的可选性、公开导出和所有消费包构建。"}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"检查 entrypoint 经 normalizer/host/play bridge 传播、Agent registry/Tool 权限和 invokeAgent 输入输出类型边界。"}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"检查实际卡 package manifest、card/save 数据归属以及 source guard/checkpoint 依赖没有被卡侧越权实现。"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"执行跨层数据流、失败路径、兼容性、manifest path/size 和兄弟任务集成复核。"}
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"确认 generate_image 只被显式授权给 image-director，最新 scene/entity 是权威且没有无消费者快照/字段。"}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"检查新增 Agent/Skill Prompt 无隐藏上下文依赖、开发者因果口吻或 Provider-specific 泄漏。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify marker, projection, entrypoint, Agent, Tool and Host target consumers agree end to end."}
+{"file":".trellis/spec/guides/validation-strategy.md","reason":"Check malformed protocol, Tool visibility, compatibility and packaged behavior with proportional evidence."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Audit authority ownership and explicit high-cost Tool permission."}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Review all Agent-facing copies of the brief contract for completeness and drift."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Verify shared frontend-facing contracts and package integration quality."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Verify optional entrypoint compatibility, closed normalization and consumer builds."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Check the validator, entrypoint and invoke inputs remain strict and non-coercing."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Ensure obsolete caller authority, configuration UI and packaging work did not return."}

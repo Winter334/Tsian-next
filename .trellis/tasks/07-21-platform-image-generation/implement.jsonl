@@ -1,12 +1,9 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web ownership, required build gates, and metadata-only runtime trace contract."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Settings screen ownership, Vue component conventions, object URL lifecycle, and persistence boundaries."}
-{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Keeps Provider/model side effects in host/runtime modules rather than hidden UI composables."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Platform-local secret handling, Dexie/cache state, Agent Runtime host paths, and transaction routing contracts."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Platform-local secret projection/write-delete protection, ordinary Blob transaction model, and guarded host handoff to the consistency-owned source-registration/exact-source storage seam."}
-{"file":"packages/contracts/src/runtime.ts","reason":"Add AgentPlatformToolName and the serializable optional InvokeAgentRequest.generatedMediaSourceGuard shape without runtime algorithms."}
-{"file":"packages/play-bridge/src/tsian-api.ts","reason":"Add InvokeAgentOptions.generatedMediaSourceGuard and forward it into the existing interaction.invokeAgent RPC request."}
-{"file":"apps/platform-web/src/bridge/remote-iframe-bridge.ts","reason":"Strict-normalize/reject malformed generatedMediaSourceGuard so it cannot silently become an unguarded invocation."}
-{"file":"apps/platform-web/src/platform-host/ai-invocation.ts","reason":"Capture normalized invoke guard as the authoritative requiredSourceGuard closure for generate_image without agentId/purpose routing."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Cross-layer data-flow review for Settings, adapter, Agent Runtime, host transaction, and storage."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse existing platform config, Tool enablement, host runner, Blob, and trace seams without duplicate helpers."}
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Place image configuration, adapter, runtime dispatch, host binding, and Settings UI in their owning modules."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Reuse the platform-meta workspace volume for the unified desktop environment file."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse existing local config storage, Tool registration and Provider request utilities without copying embedding design."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Remove target identity concepts from Tool schema and Agent-facing descriptions."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Agent Runtime, bridge, config and platform host implementation requirements."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Platform-meta lifecycle and checkpoint exclusion rules for .tsian/local files."}
+{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"Sanitize Provider and Tool diagnostics."}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Author shared Tool and invoke target contracts."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Consume target contracts in play-bridge and platform-web."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Current Provider, RAG, Tool and config evidence for the refreshed scope."}

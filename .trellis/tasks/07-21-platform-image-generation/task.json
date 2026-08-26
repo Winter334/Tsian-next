@@ -2,7 +2,7 @@
   "id": "platform-image-generation",
   "name": "platform-image-generation",
   "title": "平台图像生成能力",
-  "description": "新增单一OpenAI-compatible图像生成配置、测试生成、host-owned generate_image平台Tool、文生图/无mask图生图适配与图片资产输出。",
+  "description": "新增统一desktop.env、直接切换RAG配置，并实现host-owned generate_image Tool、文生图/参考图图生图适配与target-only调用契约。",
   "status": "planning",
   "dev_type": null,
   "scope": "apps/platform-web + packages/contracts + packages/play-bridge",

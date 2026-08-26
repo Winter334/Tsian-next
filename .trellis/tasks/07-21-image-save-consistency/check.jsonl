@@ -1,14 +1,6 @@
-{"file":"packages/contracts/src/runtime.ts","reason":"Verify optional generatedMediaSourceGuard stays a shared invoke wire contract while storage metadata remains exact-source and guard-free."}
-{"file":"packages/play-bridge/src/tsian-api.ts","reason":"Verify optional guard forwarding preserves ordinary invokeAgent callers and sends authority independently from Agent input."}
-{"file":"apps/platform-web/src/bridge/remote-iframe-bridge.ts","reason":"Verify malformed required authority is rejected before consistency seams and cannot silently become an ordinary invocation."}
-{"file":"apps/platform-web/src/platform-host/ai-invocation.ts","reason":"Verify only validated required closure or legal no-option self-guard can create guarded handoff metadata; required mismatches make zero Provider/write/source-registration calls."}
-{"file":".trellis/tasks/07-21-inline-story-image-generation/prd.md","reason":"逐项核对 side-channel authority、并行、Composer 可用、checkpoint rollback、重生成失败保留旧图和无 job/queue 越界。"}
-{"file":".trellis/tasks/07-21-platform-image-generation/prd.md","reason":"验证 optional sourceGuard、shared-helper guarded target binding、unguarded 普通提交、guarded host handoff 与 sibling 所有权未被破坏。"}
-{"file":".trellis/tasks/07-21-platform-image-generation/design.md","reason":"复核唯一 shared identity helper 与 guarded host handoff，确认本任务 source-registration 转换成不含 sourceGuard 的 exact-source storage metadata。"}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"检查 thin manifest、append-only turn/trace、restore prune、retention/protected checkpoint、transaction ordering 与 Blob GC 合规。"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"审查 fail-loud 冲突、显式跨层数据流、代码复用、scope 纪律与完整验证证据。"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"检查 contextSlot 单次 canonicalization、invokeAgent queue/path identity、completed ordering、runtime boundary 和 shared type 影响。"}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"检查 multi-table Dexie atomicity、current workspace authority、restore/host 调用入口和 bridge/runtime 行为。"}
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"若 contracts 改变则核对可选性、公开导出、生产者消费者和 build:contracts；无必要时确认内部类型未泄漏。"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"沿 source guard→host validation→exact revision→storage CAS→checkpoint patch→restore/completed 验证成功、失败和竞态路径。"}
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"确认 storage 无卡业务、无重复 authority、无未消费审计字段/持久化 job，并正确区分稳定平台规则与卡可变语义。"}
+{"file":".trellis/spec/guides/validation-strategy.md","reason":"Select concurrency and persistence evidence proportional to risk."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audit source-to-workspace-to-checkpoint round trips."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Check checkpoint coverage, restore, pruning and GC correctness."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Review platform implementation quality."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check exact-source CAS and mutation boundary validation."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Ensure already-delivered generic invocation and diagnostics work were not duplicated."}

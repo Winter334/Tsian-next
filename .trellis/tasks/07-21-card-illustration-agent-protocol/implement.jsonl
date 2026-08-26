@@ -1,14 +1,8 @@
-{"file":"apps/platform-web/src/storage/game-card-packages.ts","reason":"Protocol workspace manifest size is actual UTF-8/binary ZIP entry bytes; UI/repack sibling must correct exporter content.length before final package validation."}
-{"file":"packages/contracts/src/runtime.ts","reason":"InvokeAgentRequest must add optional generic generatedMediaSourceGuard wire data so the UI can send host authority independently from Agent input."}
-{"file":"packages/play-bridge/src/tsian-api.ts","reason":"InvokeAgentOptions must expose and explicitly forward the same optional generatedMediaSourceGuard while preserving old callers."}
-{"file":"apps/platform-web/src/bridge/remote-iframe-bridge.ts","reason":"Remote invokeAgent normalization must strictly reject malformed, extra-field, or noncanonical required guards instead of dropping authority."}
-{"file":"apps/platform-web/src/platform-host/ai-invocation.ts","reason":"Invoke host captures normalized requiredSourceGuard closure, binds the runner without agentId/purpose routing, and prevents required failures from reaching Provider or any write path."}
-{"file":".trellis/tasks/07-21-inline-story-image-generation/prd.md","reason":"父任务冻结正文插图的双通道 guard、host authority closure、失败隔离、四个子任务边界和最终集成验收。"}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Reply Projection 的 content/displayContent/projections 三通道、append 语义、开局共用投影和 fail-soft 行为的权威规范。"}
-{"file":".trellis/spec/contracts/backend/directory-structure.md","reason":"共享 Game Card、Agent Runtime 与 bridge 契约的模块归属和跨包放置约束。"}
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"共享契约可选字段、生产者消费者同步与 contracts/platform 构建要求。"}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"GameCard manifest/entrypoint、Agent registry、invokeAgent 和 play bridge 的共享类型与前端消费边界。"}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"卡内容与 save runtime/checkpoint 的数据归属、有效 workspace 叠加和媒体一致性依赖。"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"指导 entrypoint、卡包 manifest、host bridge、Agent 权限和 UI 消费端的端到端传播设计。"}
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"约束高成本 Tool 显式授权、卡级可变语义归属、权威数据与真实消费者设计。"}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"保证 storyteller、world-architect Skill 与 image-director SOP 自包含且只写 Agent 可执行指令。"}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Update storyteller, opening delegation and image-director prompts as self-contained executable contracts."}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Keep Agent instructions complete, direct and independent of hidden TypeScript behavior."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Place card semantics in the card while keeping Host persistence authority outside Agent input."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse Reply Projection, entrypoints, Agent registry and existing package workflow."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Follow content, displayContent and projections persistence semantics for opening and formal turns."}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Author the optional entrypoint and shared runtime validator in the correct contract boundary."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Expose card-consumable entrypoint and validator contracts to play-bridge/frontend consumers."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Use current opening, packaging and runtime evidence rather than July assumptions."}
