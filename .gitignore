@@ -17,6 +17,7 @@ Thumbs.db
 .claude/
 .codex/
 .omc/
+.trellis/
 .zcode/
 
 # 本地构建与打包产物
