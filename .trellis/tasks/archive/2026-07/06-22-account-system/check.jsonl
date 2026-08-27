@@ -1,4 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Required platform-web validation and forbidden patterns after frontend auth/API changes."}
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Contract build/export checks for new User type."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Quality review should trace login/me/logout data flow and error handling across backend, contract, client, and UI."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Auth login state must follow platform-web ref/computed lifecycle expectations and reload recovery semantics."}

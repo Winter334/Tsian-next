@@ -1,5 +1,0 @@
-{"file":".trellis/tasks/08-09-opening-guide-role-choice-polish/research/current-screen-evidence.md","reason":"Defines the approved plain-system copy, current immediate-click behavior, visual direction, and narrow task scope."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Provides the existing Vue interaction, retro-focus, responsive, and restrained visual conventions reused by the game-card frontend."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Provides repository quality and scope-control rules for frontend changes."}
-{"file":".trellis/tasks/archive/2026-08/08-08-interview-driven-opening-modeling/research/design-resolution.md","reason":"Confirms apps/play-frontend-dev/src as the source authority and excludes platform templates and exported card frontend remnants."}
-{"file":".trellis/spec/guides/player-facing-product-copy.md","reason":"Defines the user-audience boundary, mechanism exceptions, checklist, and approved wrong/correct patterns for player-facing UI copy."}

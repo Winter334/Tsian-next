@@ -13,9 +13,14 @@ Thumbs.db
 .ace-tool/
 
 # AI / 工作环境配置（个人环境，不入库）
+.agents/
 .claude/
+.codex/
 .omc/
-.zcode/plans/
+.zcode/
+
+# 本地构建与打包产物
+tmp/
 
 # OpenSpec change 工作流过程产物
 openspec/changes/*/.debug-context.md

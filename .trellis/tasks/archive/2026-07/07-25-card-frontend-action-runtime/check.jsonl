@@ -1,7 +1,0 @@
-{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "核查 SDK/remote payload 使用共享严格契约"}
-{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "核查 actor 权限、桥边界、错误归一和 Agent 零可见"}
-{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "核查测试、fail-loud 和 build:web 门禁"}
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "核查原子 CAS、无关并发保留、no-checkpoint 和事件顺序"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核查 fixed directory 到 SDK/host/storage/event 的端到端一致性"}
-{"file": ".trellis/spec/guides/data-fileification-principle.md", "reason": "核查未为可配置 Action 引入隐藏 DB 状态"}
-{"file": ".trellis/tasks/07-25-card-frontend-action-runtime/research/runtime.md", "reason": "核查已识别 schema、read-set、CSP 和权限混淆风险均被覆盖"}

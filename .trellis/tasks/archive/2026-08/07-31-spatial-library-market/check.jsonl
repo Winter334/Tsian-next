@@ -1,8 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Confirms required platform-web build and ownership checks."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Checks functional parity, route chrome boundaries, close guards, keyboard behavior, and mounted-state preservation."}
-{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Checks controller side-effect boundaries and timer/subscription cleanup."}
-{"file":".trellis/tasks/07-31-spatial-library-market/research/current-library-market-evidence.md","reason":"Checks current registry, state/event, close-guard, and media evidence without truncated context."}
-{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"Checks projected input, Source-local overlays, native controls, reduced motion, and image privacy behavior."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Checks test, type, build, cleanup, and forbidden-pattern requirements."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Audits for copied mutation/storage/event logic between the two presentations."}
-{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/research/current-architecture-and-api.md","reason":"Checks the first-slice and shared media policy against parent evidence."}

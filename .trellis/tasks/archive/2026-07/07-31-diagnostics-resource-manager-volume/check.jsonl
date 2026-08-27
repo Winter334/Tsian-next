@@ -1,7 +1,0 @@
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Verify additive shared contract changes and consuming builds."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Final platform-web build, consistency, and scope review."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Review standard readonly resource-manager/editor interactions and directory copy semantics."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Review actor isolation, workspace result normalization, and cross-layer contract flow."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Review volume routing, mutation direction, copy atomicity, and persistence boundaries."}
-{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"Review diagnostics single authority, lazy projection, retention, and legacy exclusions."}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Review desktop-assistant documentation tone and self-contained task instructions."}

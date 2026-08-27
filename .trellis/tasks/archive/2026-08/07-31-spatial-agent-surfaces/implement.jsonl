@@ -1,8 +1,0 @@
-{"file":".trellis/tasks/07-31-spatial-agent-surfaces/research/current-assistant-and-spatial-boundaries.md","reason":"Current ask_user mismatch, RetroOS/game process renderers, displayName gap and Spatial registration evidence."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Tool displayName/status/UI presentation propagation contract and required consumer tests."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Agent Tool permissions, ask_user single-input rendering model, Assistant timeline persistence and closed UiToolPresentation boundary."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Desktop Assistant streaming/session/scroll lifecycle and ordered timeline model."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Route-view decomposition, reusable component boundaries and render-tree preservation constraints."}
-{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Controller/composable ownership and lifecycle cleanup requirements during dual-presentation extraction."}
-{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"Spatial source DOM, projection input, app presentation and no-RetroOS-embedding contracts."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"RetroOS and Spatial must reuse domain/controller behavior without duplicating storage/runtime logic."}

@@ -1,8 +1,0 @@
-{"file":".trellis/tasks/07-31-spatial-system-surfaces/research/current-system-surfaces.md","reason":"Current registry gaps, settings/auth/announcement/diagnostic ownership, shared seams and Spatial integration constraints."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Route-view decomposition, dual-presentation boundaries and stable mounted render-tree requirements."}
-{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Controller/composable ownership, lifecycle and cleanup conventions for shared orchestration extraction."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Shared reactive state, persistence and async operation rules across RetroOS and Spatial presentations."}
-{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"Spatial Source DOM, projected input, media, presentation and no-RetroOS-embedding contracts."}
-{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"Unified diagnostic schema, redaction, retention, query, bundle and subscription contracts."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Prevent duplicated config, auth, announcement and diagnostic business logic across two shells."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace config and diagnostic data through controllers, bridges, storage, both presentations and global surfaces."}

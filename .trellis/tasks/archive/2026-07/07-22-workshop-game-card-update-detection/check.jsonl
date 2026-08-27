@@ -1,8 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Check required npm build commands for platform-web changes."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Verify desktop badge, My Apps card badge, and route-view interactions follow existing UI conventions."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check event/state refresh behavior and ensure mutations emit/refresh through platform-host boundaries."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check package import/update boundaries and avoid redefining cross-package payloads."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Check Dexie schema/name bump and Service Worker DB-name sync."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review data flow and failure handling across API, storage, state, and UI."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Search for missed duplicated install/update logic before completion."}
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Verify new update detection logic is not piled into unrelated files."}

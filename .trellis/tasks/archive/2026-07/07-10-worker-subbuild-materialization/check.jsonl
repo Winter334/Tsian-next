@@ -1,7 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Required platform-web checks and ownership boundaries for review."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Review browser-runtime esbuild behavior, suffix invariants, write-back/stale cleanup, and layered validation evidence."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Review strict TypeScript, packaged frontend SW/DB contracts, and runtime-boundary diagnostics."}
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Check worker-build module boundaries and avoid mixed responsibilities in existing plugins."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check new VFS/output helpers against existing resolver and materialization patterns."}
-{"file":".trellis/tasks/archive/2026-07/07-10-import-meta-glob-vfs/research/validation.md","reason":"Review against known dynamic chunk/metafile/import.meta.glob behavior and parent handoff expectations."}
-{"file":".trellis/tasks/archive/2026-07/07-10-sass-less-vfs-adapters/research/validation.md","reason":"Review validation scope does not incorrectly claim the parent final browser loop."}

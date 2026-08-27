@@ -1,5 +1,0 @@
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"内置 Workspace 模板、默认种子、版本与 build:web 质量约定。"}
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"装备权威/派生、字段消费者与 Agent/平台能力归属。"}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"收敛 Stage Manager 和 Schema 提示词，避免残留错误执行概念。"}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"正式卡 Skill 必须自包含装备维护判据并避免开发侧因果说明。"}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用现有正式卡 generic-edit 流程，避免复制旧 Agent 架构。"}

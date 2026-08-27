@@ -1,6 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Check required platform-web validation commands were run or reported."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Review Settings UI copy, component state, and no excessive player-facing diagnostics."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check provider config remains local, model-test UI does not persist probe results, and fetch errors stay clear."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check provider JSON responses are treated as unknown and normalized defensively."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Quality gate for platform-web build and no opportunistic scope expansion."}
-{"file":".trellis/tasks/07-17-model-tool-probe-gemini-fetch/research.md","reason":"Verify Gemini model-list shape, filtering, and tool probe decisions match task research."}

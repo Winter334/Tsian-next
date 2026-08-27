@@ -1,9 +1,0 @@
-{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "前端 workspace 数据消费与类型安全约定；本任务新增 container/item 强类型、parseContainer/parseItem、useEntity 读取容器/物品需遵守。"}
-{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "platform-web 侧 Vue 组件规范；新增 InventoryGrid/ItemIcon/ItemDetailModal/InventoryBreadcrumb 需遵守。"}
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "platform-web storage 层约定；本任务在 workspace-templates 中新增 container/item entity schema 需遵守。"}
-{"file": ".trellis/tasks/07-04-containers-inventory-item-details/prd.md", "reason": "本任务 PRD：D1–D9 决策、R1–R18 需求、AC 是实施的权威来源。"}
-{"file": ".trellis/tasks/07-04-containers-inventory-item-details/design.md", "reason": "本任务 design：container/item schema、组件架构、数据流、错误降级、已知取舍。"}
-{"file": ".trellis/tasks/07-04-containers-inventory-item-details/implement.md", "reason": "本任务 implement：9 步有序执行清单、验证命令、rollback 点。"}
-{"file": ".trellis/tasks/archive/2026-07/07-04-present-characters-character-cards/prd.md", "reason": "角色卡任务 PRD（已归档）：InventoryPane 占位入口与角色卡背包 tab 上下文。"}
-{"file": ".trellis/tasks/archive/2026-07/07-05-runtime-scene-character-schema-ui-align/prd.md", "reason": "schema 对齐任务 PRD（已归档）：character entity 权威结构与新字段添加位置。"}
-{"file": ".trellis/tasks/07-03-play-frontend-status-bar/prd.md", "reason": "父任务 principle：runtime as current context index / scene ref-only / 权威归属 / 渲染控制字段语义提示。"}

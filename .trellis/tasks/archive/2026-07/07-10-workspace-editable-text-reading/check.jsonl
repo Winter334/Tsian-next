@@ -1,8 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Verify platform-web required checks and layer ownership."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Review fail-loud behavior, scope control, and runtime validation limits."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check workspace text/binary and Agent tool contracts."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Check editor/media routing and binary safety."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check frontend package MIME round-trip requirements."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Verify no Dexie schema or migration regression."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check that classifiers have one source of truth."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review all storage and consumer paths for consistency."}

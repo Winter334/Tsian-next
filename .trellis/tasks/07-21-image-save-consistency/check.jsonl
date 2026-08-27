@@ -1,6 +1,0 @@
-{"file":".trellis/spec/guides/validation-strategy.md","reason":"Select concurrency and persistence evidence proportional to risk."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audit source-to-workspace-to-checkpoint round trips."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Check checkpoint coverage, restore, pruning and GC correctness."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Review platform implementation quality."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check exact-source CAS and mutation boundary validation."}
-{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Ensure already-delivered generic invocation and diagnostics work were not duplicated."}

@@ -1,9 +1,0 @@
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audit settled turn through projection target, Agent invocation, durable path and restore round trips."}
-{"file":".trellis/spec/guides/validation-strategy.md","reason":"Select parser, state race, accessibility and packaged-browser evidence proportional to risk."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Verify source build, runtime behavior, package output and frontend quality gates."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Review focus, touch, responsive layout, dialog and Object URL cleanup."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check live/history/opening identity, independent card state and restore invalidation."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Verify the UI only probes durable workspace assets and does not duplicate Host checkpoint authority."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Check entrypoint, projection, target and workspace read boundaries stay strict."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Ensure both frontend sources share task-owned logic without whole-tree overwrite or duplicate identity algorithms."}
-{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Ensure obsolete caller authority, configuration UI and packaging work remain excluded."}

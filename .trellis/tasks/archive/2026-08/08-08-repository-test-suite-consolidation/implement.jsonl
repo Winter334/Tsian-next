@@ -1,3 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Defines current build gates and test-maintenance policy that the implementation must reconcile with the approved smoke-only strategy."}
-{"file":".trellis/tasks/08-08-repository-test-suite-consolidation/research/minimal-smoke-suite.md","reason":"Authoritative repository inventory, retained transaction boundaries, deletion groups, scripts, and accepted risks."}
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Keeps shared-contract and consuming-package build obligations visible while the root build gate is expanded."}

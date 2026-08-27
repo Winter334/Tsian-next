@@ -1,9 +1,0 @@
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check end-to-end data flow across card frontend, context protocol, Agent action transaction, save runtime, and package output."}
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Check temporary progress authority, minimal formal closure, real consumers, and high-consequence write safety."}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Check active prompts and schemas for residual old-stage concepts or unnecessary internal noise."}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Check the merged Skill and protocol instructions are self-contained and model-actionable."}
-{"file":".trellis/spec/contracts/frontend/index.md","reason":"Check invokeAgent, injection, dynamic context slot, and workspace bridge usage against current contracts."}
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Route review to applicable state/component/quality rules while keeping injected context under size limits."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Check Vue boundaries, async states, and absence of internal protocol leakage in player UI."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Check required validation and compliance with the repository test policy."}
-{"file":".trellis/tasks/08-08-interview-driven-opening-modeling/research/design-resolution.md","reason":"Check each historical blocker remains closed and the development-frontend/card-workspace source split is respected."}

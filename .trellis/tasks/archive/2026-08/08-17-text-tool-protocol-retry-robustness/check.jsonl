@@ -1,4 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"verify required platform-web checks and source ownership"}
-{"file":".trellis/tasks/08-17-text-tool-protocol-retry-robustness/research.md","reason":"verify executable/non-executable boundaries, compression parity, retry exhaustion, rollback, and test anchors"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"verify positive-only AI-facing protocol text and unchanged native/message-cache behavior"}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"audit that removed negative examples and old history concepts leave no AI-facing residue"}

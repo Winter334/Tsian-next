@@ -1,5 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"confirms required platform-web checks"}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"review grouped Studio UI, Workspace explorer/editor routing, and player-facing UI conventions"}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"verify local refs/computed/watch and platform API mutation boundaries"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"verify build requirement and avoid incidental scope expansion"}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"check reuse of existing workspace listing and route navigation patterns"}

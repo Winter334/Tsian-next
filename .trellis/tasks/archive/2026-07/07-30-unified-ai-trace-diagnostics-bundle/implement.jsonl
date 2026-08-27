@@ -1,4 +1,0 @@
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"父任务横跨 AI 调用、存储、桥接、UI 与 workspace，需要统一边界契约。"}
-{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/storage-contract.md","reason":"提供本任务所需的聚焦 Dexie、保留、虚拟投影和迁移例外契约，避免大规格文件被截断。"}
-{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"诊断数据需要 IndexedDB 权威存储与 Agent 可读虚拟文件投影并存。"}
-{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/code-evidence.md","reason":"提供当前三套 Trace、AI Debug、监视器和 workspace 快照的代码证据。"}

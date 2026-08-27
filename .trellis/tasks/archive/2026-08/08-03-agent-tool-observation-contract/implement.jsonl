@@ -1,9 +1,0 @@
-{"file":".trellis/tasks/08-03-agent-tool-observation-contract/research/findings.md","reason":"Tool 结果路径、截断点、分页能力、兼容风险与最小改动面的仓库证据。"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Agent Tool、UI presentation、Environment 隔离、native/text 协议与共享 contract 的现行约束。"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"platform-web Tool 结果治理、测试和持久化隔离质量要求。"}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Skill 直接交付通道与 staged Workspace 写后读一致性的现行状态契约。"}
-{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"diagnostics 专用 Tool 的 bounded list/search/read 与分页边界。"}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Workspace/Tool shared types 的消费者兼容约束。"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"producer、runtime、provider、memory、UI 跨层数据流与单点校验原则。"}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Desktop 与 runtime Agent 复用同一交付基础设施、避免双实现。"}
-{"file":".trellis/tasks/08-03-agent-tool-observation-contract/research/production-retest-foundations.md","reason":"2026-08-07 生产复测中 use_skill 通道与 custom Tool staged Workspace 可见性证据。"}

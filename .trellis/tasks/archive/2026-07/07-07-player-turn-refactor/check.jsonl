@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "验证 roll_dice 场景 spec 已更新：modifier 类型、大成功/大失败、表达式求值约束"}
-{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "检查 researcher Skill/AGENT.md 中 semantic_search 概念零残留；检查新增方法论是否通过 would-it-happen-anyway 测试"}
-{"file": ".trellis/spec/guides/airp-data-capability-design-principles.md", "reason": "验证三个查询 Tool 和文风学习 Skill 符合原则 3 和原则 9"}

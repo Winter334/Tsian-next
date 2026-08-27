@@ -1,4 +1,0 @@
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Verify seam-based split quality and absence of god-file anti-patterns."}
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Verify required platform-web checks were run."}
-{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Verify final module locations and index/barrel boundaries."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Verify build success and quality constraints."}

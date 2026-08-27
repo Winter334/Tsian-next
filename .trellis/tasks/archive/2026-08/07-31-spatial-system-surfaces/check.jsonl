@@ -1,8 +1,0 @@
-{"file":".trellis/tasks/07-31-spatial-system-surfaces/prd.md","reason":"Verify every system-surface requirement, acceptance criterion, no-migration boundary and release-gate exclusion."}
-{"file":".trellis/tasks/07-31-spatial-system-surfaces/design.md","reason":"Verify controller boundaries, independent Spatial presentations, config writes and lifecycle cleanup match the design."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Check route/component decomposition, keyboard semantics and RetroOS compatibility."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check drafts, subscriptions, async requests, persistence and minimize/restore state retention."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Run focused tests, builds, full regressions and forbidden-pattern checks."}
-{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"Check projected controls, Source capture, media fallback, stable mounted windows and Spatial visual boundaries."}
-{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"Check diagnostic query, redaction, export, retention and cleanup behavior remained authoritative."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify end-to-end config/auth/announcement/diagnostic flows and no duplicated business state."}

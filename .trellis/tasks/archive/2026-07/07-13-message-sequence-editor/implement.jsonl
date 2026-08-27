@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "StudioView 和 agent 配置 UI 在 platform-web/frontend"}
-{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guides：跨层一致性、代码复用"}
-{"file": ".trellis/tasks/07-13-message-sequence-declaration/design.md", "reason": "消息序列声明机制技术设计：position 值集、骨架顺序、数据流"}

@@ -1,7 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Verify runtime permission, tool protocol, budget and presentation contracts."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Verify Assistant and Play live/history UI behavior after projection changes."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Verify bounded model observations and shared search implementation."}
-{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"Verify diagnostics remain authoritative, owner-only and absent from ordinary Agent search."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Verify all shared contract consumers and bridge payloads remain coherent."}
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Audit platform versus Skill/Tool ownership and reject unused persistence fields."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review every projection boundary and data consumer end to end."}

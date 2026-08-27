@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "验证 prompt 改动无禁令残留（grep prompt 文本，只出现正面脚本调用指令，不出现否定句）；遵循正面引导原则"}
-{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "检查类型改动 + 校验函数 + UnderstandingReady 展示一致性，无残留旧字段消费"}
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "检查新增脚本文件 + Skill tsian-actions 声明不破坏模板布局与 storage 表接口约定"}

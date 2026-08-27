@@ -1,7 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web settings/config/runtime-host changes require frontend spec and required checks"}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"SettingsView and settings dialogs must preserve RetroOS/terminal UI patterns and FloatingWindow conventions"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"provider config normalization and runtime request payloads are typed/untrusted boundaries"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"AI runtime provider config, debug/cache usage, required build checks, and local replay contracts"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"schema change spans config storage, settings UI, runtime adapters, debug/test behavior"}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"reuse existing provider adapter and dialog/form patterns while changing schema"}
-{"file":".trellis/tasks/07-02-model-config-ui-redesign/research/provider-model-parameter-notes.md","reason":"researched provider-specific parameter fields for Gemini and Claude plus schema decisions"}

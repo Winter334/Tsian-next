@@ -1,3 +1,0 @@
-{"file":".trellis/spec/guides/validation-strategy.md","reason":"Defines proportionate verification for deterministic tool behavior versus AI behavior."}
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Quality checks for the JavaScript tool contract changes."}
-{"file":".trellis/tasks/08-27-stage-manager-maintenance-hardening/prd.md","reason":"Acceptance criteria and scope boundary for final verification."}

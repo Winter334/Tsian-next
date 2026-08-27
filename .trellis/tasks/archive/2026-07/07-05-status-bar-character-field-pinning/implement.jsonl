@@ -1,9 +1,0 @@
-{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "PinButton / StatusBarPinned 组件规范"}
-{"file": ".trellis/spec/platform-web/frontend/hook-guidelines.md", "reason": "useStatusBarPins 遵循模块级单例 + localStorage watch 规范（参考 useStatusBarCollapsed）"}
-{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "PinTarget/PinValue 判别联合 + readPinValue 纯函数类型安全"}
-{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "钉选状态是模块级单例的前端偏好，需符合状态管理规范"}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用 useEntity/useStatusBarCollapsed 模式，共享 PinButton 组件"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "lib/composables/UI 三层拆分"}
-{"file": ".trellis/tasks/07-05-status-bar-character-field-pinning/design.md", "reason": "本任务设计"}
-{"file": ".trellis/tasks/07-05-status-bar-character-field-pinning/implement.md", "reason": "本任务实施清单"}
-{"file": ".trellis/tasks/07-05-status-bar-character-field-pinning/prd.md", "reason": "本任务 PRD"}

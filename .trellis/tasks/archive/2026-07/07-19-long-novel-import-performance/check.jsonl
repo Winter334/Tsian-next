@@ -1,5 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "Platform runtime template/storage changes require storage checks and build:web validation."}
-{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "Setup wizard UI and platform packaged frontend build behavior need frontend quality checks."}
-{"file": ".trellis/spec/contracts/frontend/index.md", "reason": "Check whether shared contracts stayed untouched; if edited, run contracts and consumer builds."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Final review must trace new source index from import through preview, opening scripts, frontier, and formal-play saves."}

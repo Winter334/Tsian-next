@@ -1,9 +1,0 @@
-{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "共享桥协议、JSON 边界、远程 SDK 与消费方类型安全契约"}
-{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "platform-web、Agent Runtime、platform-host 和 bridge 边界及必跑构建"}
-{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "运行时边界归一、Workspace actor 权限、browser-script 与远程 bridge 约定"}
-{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "fail-loud、构建和跨层实现质量要求"}
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "Dexie transaction、Runtime Workspace、checkpoint 和 no-checkpoint commit 约束"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "contracts 到 SDK、host、storage、iframe 的跨层数据流审查"}
-{"file": ".trellis/spec/guides/data-fileification-principle.md", "reason": "Frontend Action 作为卡内文件资源且不引入隐藏配置状态"}
-{"file": ".trellis/spec/guides/module-structure-guide.md", "reason": "新增 registry、executor、validator 和 commit helper 的职责拆分"}
-{"file": ".trellis/tasks/07-25-card-frontend-action-runtime/research/runtime.md", "reason": "现有执行、事务、验证、安全缺口与技术选择"}

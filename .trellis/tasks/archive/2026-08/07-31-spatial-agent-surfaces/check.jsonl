@@ -1,8 +1,0 @@
-{"file":".trellis/tasks/07-31-spatial-agent-surfaces/prd.md","reason":"Check every baseline and Spatial acceptance criterion, sequencing gate and explicit out-of-scope boundary."}
-{"file":".trellis/tasks/07-31-spatial-agent-surfaces/design.md","reason":"Check normalized ask data flow, ordered process model, controller extraction and independent Spatial presentations."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Verify displayName/status propagation, identity/state separation and no generated Tool sentences."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Verify ask single-input surface, presentation-only persistence and raw Tool data isolation."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Verify streaming, abort, background sessions, scroll restoration and ordered timeline retention."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Check focused tests, full builds, storage isolation and regression quality gate."}
-{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"Check projected-input behavior, stable mounted DOM, Spatial visual boundary and release gate."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace ask/tool data from schema through runtime, events, controllers, both UIs and persistence."}

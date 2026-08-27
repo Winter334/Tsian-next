@@ -1,5 +1,0 @@
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Defines capability ownership, hard-boundary Tool guidance, entity authority, and write strategy for AIRP data."}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Applies to update_entity description and Agent/Skill guidance; keeps AI-facing instructions self-contained and action-oriented."}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Guides concise Tool exposure and positive redirects without unnecessary AI-facing restrictions or concepts."}
-{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Confirms entity data remains workspace-file authority and the Tool should wrap existing workspace primitives rather than add hidden state."}
-{"file":"docs/reference/tool-vs-skill.md","reason":"Documents current user Tool manifest, browser_script, discovery, and Agent-local/shared Tool conventions."}

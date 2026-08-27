@@ -1,4 +1,0 @@
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"集成检查必须验证权威数据从采集到 UI、导出和 Agent 投影完整流动。"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"最终检查覆盖 Vue、bridge、runtime-host 与构建质量要求。"}
-{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/storage-contract.md","reason":"验证 Dexie 增量 schema 对卡片/存档的保留，以及旧诊断完全不兼容读取。"}
-{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/code-evidence.md","reason":"用于反向核对旧 writer/query 是否全部退出主路径。"}

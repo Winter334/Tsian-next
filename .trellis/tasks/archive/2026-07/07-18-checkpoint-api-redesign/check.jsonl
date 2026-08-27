@@ -1,8 +1,0 @@
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Quality check must verify checkpoint storage invariants: thin manifest, append-only log exclusion, restore pruning, pruning+GC."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Quality check guidance for platform-web changes and build expectations."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Review bridge/action payload normalization and runtime boundary type guards."}
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Contracts build and export review for shared type changes."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Consumer-side contract validation for SDK and frontend usage."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check cross-layer consistency across contracts, SDK, host actions, storage helpers, and frontend call sites."}
-{"file":".trellis/tasks/07-18-checkpoint-api-redesign/prd.md","reason":"Acceptance criteria and product decisions for final compliance check."}
-{"file":".trellis/tasks/07-18-checkpoint-api-redesign/design.md","reason":"Technical design and compatibility expectations for final review."}

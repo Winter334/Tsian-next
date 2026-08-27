@@ -1,9 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "核对平台边界与必跑构建"}
-{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "核对 Play/bridge/Dexie/事件生命周期一致性"}
-{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "核对工具 schema、normalize 与错误边界"}
-{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "核对构建、fail-loud、禁止模式与跨层合同"}
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "核对 baseline 保护、restore、prune 与 GC"}
-{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "核对旧 inspector 概念在 AI-facing 文本中零残留"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核对 bridge activity 到 finish reload 的完整数据流"}
-{"file": ".trellis/tasks/07-10-visible-play-iframe-inspection/research/current-implementation.md", "reason": "审查实现是否覆盖已确认的旧链删除、生命周期和风险点"}

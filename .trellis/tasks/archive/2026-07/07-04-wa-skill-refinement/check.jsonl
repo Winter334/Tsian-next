@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "验证 prompt/Skill/AGENT.md 改动无禁令残留，遵循正面引导原则"}
-{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "检查 use_skill observation 改动不破坏 Skill 注入机制约定（当轮返回 vs 下一轮注入）"}
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "检查合并脚本 + 新增 Skill + commit_mode 注册不破坏模板布局与 storage 表接口约定"}

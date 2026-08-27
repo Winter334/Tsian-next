@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/guides/agent-skill-design-principles.md", "reason": "本任务核心是 Agent 职责重分配 + agent_call 编排 + Skill 指令设计；原则 2（前端不硬编码 agent 名/编排）、数据权威、能力供给分级直接指导 D1 落盘责任决策"}
-{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "useSetupState 流式接入涉及响应式状态（playSetupStreamingText + invocationId 过滤），需遵守前端状态管理约定"}
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "workspace-templates.ts 改 Agent contacts/AGENT.md/Skill，涉及默认卡模板与 storage 层布局约定"}

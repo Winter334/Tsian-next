@@ -1,3 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"检查每错误代码预算、A/B 交替终止、成功清零与纠错消息替换。"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"检查协议重试没有混入 network retry，并遵守现有 smoke 门。"}
-{"file":".trellis/tasks/archive/2026-08/08-17-text-tool-protocol-retry-robustness/design.md","reason":"防止回归唯一执行标签、严格 JSON 与非执行历史拒绝。"}

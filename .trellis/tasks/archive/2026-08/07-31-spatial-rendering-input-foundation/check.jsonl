@@ -1,9 +1,0 @@
-{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/prd.md","reason":"Verify inherited user-visible behavior and no partial production exposure."}
-{"file":".trellis/tasks/07-31-spatial-rendering-input-foundation/research/foundation-evidence.md","reason":"Check implementation against chosen API, hit-plane, native-control, scheduler, and verification contracts."}
-{"file":".trellis/tasks/07-31-spatial-rendering-input-foundation/research/official-repo-audit.md","reason":"Verify official WebGL2/RGBA8 usage, paint/removal handling, and honest boundaries around nonlinear synthetic input."}
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Verify package scope and build requirements."}
-{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Check placement and dependency direction."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Check focus, mounted source state, accessibility, and UI behavior."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Apply the platform-web quality gate and fail-loud rules."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Find copied event/resource/math logic and unjustified abstractions."}
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Review module seams and prevent renderer/lab god files."}

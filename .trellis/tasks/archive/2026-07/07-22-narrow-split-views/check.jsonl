@@ -1,4 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"平台前端规范索引与必需构建检查。"}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"核对三处窄屏布局符合现有路由和交互约定。"}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"核对助手抽屉没有破坏会话与流式状态。"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"执行 platform-web 质量门禁与范围检查。"}

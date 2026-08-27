@@ -1,5 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"Spatial Source、projected input、modal/select、动画与视觉系统契约。"}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Vue presentation 与共享 controller 边界。"}
-{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Play/save per-instance controller 生命周期约束。"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Global host、Canvas Source、业务 composable 与 Play runtime 跨层数据流。"}
-{"file":".trellis/tasks/07-31-spatial-play-global-surfaces/research/current-play-global-surfaces-evidence.md","reason":"当前 global host、Confirm、Play 与 Spatial Source 架构证据。"}

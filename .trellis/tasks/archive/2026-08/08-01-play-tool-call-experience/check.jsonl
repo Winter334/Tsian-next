@@ -1,5 +1,0 @@
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Review additive contract safety, exports, and required consumer builds."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Review live/history/remote compatibility and frontend fallback behavior."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Review platform runtime/bridge changes and mandatory build evidence."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Review stable UI layout, component boundaries, accessibility, and terminology."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify the display field and status semantics remain consistent across every consumer."}

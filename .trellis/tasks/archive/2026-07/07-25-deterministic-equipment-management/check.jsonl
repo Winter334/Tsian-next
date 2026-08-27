@@ -1,9 +1,0 @@
-{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "核查 Action 输入输出、错误和 mutation 消费没有本地重定义漂移"}
-{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "核查桌面/移动、Dialog focus、键盘和辅助技术行为"}
-{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "核查 preview/commit 竞态、成功刷新和卸载清理"}
-{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "核查构建、类型与错误处理质量"}
-{"file": ".trellis/spec/guides/airp-data-capability-design-principles.md", "reason": "核查 schema 每个字段消费者、applied 主从关系和能力归属"}
-{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "核查旧 slot/mod/operator 在 AI-facing 表面零残留"}
-{"file": ".trellis/spec/guides/prompt-self-contained-and-tone.md", "reason": "核查装备 Skill 单独加载即可执行且无开发者口吻"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核查内部模板、正式卡、两个 core、前端和 manifest 同步"}
-{"file": ".trellis/tasks/07-25-deterministic-equipment-management/research/equipment.md", "reason": "核查舍入、数量、stale/corrupt、顺序与打包风险"}

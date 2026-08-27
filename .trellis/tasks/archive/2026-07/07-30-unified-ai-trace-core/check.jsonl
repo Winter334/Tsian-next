@@ -1,3 +1,0 @@
-{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/storage-contract.md","reason":"检查 DB schema、并发写入、清理、既有卡片/存档保留与旧诊断无兼容读取。"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"检查 runtime-host、Vue 全局错误入口和 build/type safety。"}
-{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/code-evidence.md","reason":"反向搜索旧 AI Debug 和 Runtime Trace writer、parser 与 query 残留。"}

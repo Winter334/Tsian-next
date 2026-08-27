@@ -1,6 +1,0 @@
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"装备数据从 workspace 原始 JSON 经解析、组件 props 到角色舞台与物品详情的边界设计。"}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用现有角色、容器、Dialog 与滚动模式，避免为桌面和移动复制业务实现。"}
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"角色舞台、容器导航、物品详情和全局壳层需要按职责拆分，避免继续扩大混合组件。"}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"参考项目 Vue 组件、PlayFrontendBridge、可见焦点与移动布局约定；本轮虽不修改 platform-web，开发前端仍须遵守 bridge 边界。"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"指导 workspace 原始 JSON 的运行时归一、可选装备字段与局部非法数据容错。"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"沿用项目前端禁止项和构建、diff 质量要求。"}

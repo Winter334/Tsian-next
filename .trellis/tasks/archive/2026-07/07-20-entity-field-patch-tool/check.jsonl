@@ -1,5 +1,0 @@
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Verify Tool boundaries, entity authority, write semantics, and avoidance of over-engineered duplicate data."}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Review Tool/Agent/Skill text for self-contained operational wording and no developer-side rationale leakage."}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Review AI-facing visibility and restrictions for minimal, intentional surface area."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check shared Tool reuse across Agents and manifest/config consistency after multi-file changes."}
-{"file":"docs/reference/tool-vs-skill.md","reason":"Verify tool.json shape, browser_script conventions, discovery paths, and Agent enablement behavior."}

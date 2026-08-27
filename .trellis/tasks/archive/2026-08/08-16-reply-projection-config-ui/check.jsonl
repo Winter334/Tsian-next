@@ -1,4 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Requires build:web, smoke-only verification policy and manual UI/Spatial review without new controller/component test files."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Review desktop application chrome, read-only behavior, keyboard accessibility, close guards and responsive dual-shell parity."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review card-content file round-trip, event/concurrency boundaries and shared-controller versus shell responsibilities."}
-{"file":".trellis/tasks/archive/2026-07/07-15-agent-reply-regex-projection/prd.md","reason":"Verify the UI preserves every accepted v1 field and does not reintroduce gameplay-specific or runtime-scope semantics."}

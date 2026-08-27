@@ -1,6 +1,0 @@
-{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "验证 Runtime 类型与 parseRuntime 的错误分级/降级策略是否符合契约。"}
-{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "验证 platform-web 侧代码风格与质量约束。"}
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "验证默认模板与开局脚本改动符合 storage 层通用约定。"}
-{"file": ".trellis/tasks/07-05-runtime-scene-character-schema-ui-align/prd.md", "reason": "对照 Acceptance Criteria 与 Requirements 逐条检查。"}
-{"file": ".trellis/tasks/07-05-runtime-scene-character-schema-ui-align/design.md", "reason": "对照设计中的字段清单、删字段清单、状态栏对齐、rollout 策略进行核对。"}
-{"file": ".trellis/tasks/07-05-runtime-scene-character-schema-ui-align/implement.md", "reason": "逐 Step 核对执行清单是否完成，特别是 grep 反向检查旧字段。"}

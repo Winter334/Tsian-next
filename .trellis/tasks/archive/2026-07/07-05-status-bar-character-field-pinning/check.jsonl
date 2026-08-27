@@ -1,7 +1,0 @@
-{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "check 前端质量（build/lint 要求）"}
-{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "check 新增类型是否无 any / 判别联合正确"}
-{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "check PinButton / StatusBarPinned 组件规范"}
-{"file": ".trellis/spec/platform-web/frontend/hook-guidelines.md", "reason": "check useStatusBarPins 模块单例 + localStorage 副作用"}
-{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "check 前端偏好 state 是否符合规范"}
-{"file": ".trellis/tasks/07-05-status-bar-character-field-pinning/design.md", "reason": "check 与设计决策一致"}
-{"file": ".trellis/tasks/07-05-status-bar-character-field-pinning/prd.md", "reason": "check AC 是否满足"}

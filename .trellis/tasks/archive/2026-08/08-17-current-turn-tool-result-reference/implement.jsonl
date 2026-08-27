@@ -1,6 +1,0 @@
-{"file":".trellis/tasks/08-03-agent-tool-observation-contract/research/agent-tool-observation-contract.md","reason":"Tool result 到 accepted observation、memory、UI 与 Provider 的完整数据流。"}
-{"file":".trellis/tasks/08-03-agent-tool-observation-contract/design.md","reason":"producer-owned accepted observation、非持久化 artifact 延期与 UI 隔离设计。"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Agent call、run_script、session state、action schema、savepoint 和 observation 契约。"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"跨层复用、smoke-only 验证和测试保留价值门。"}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"新增 inputRefs 与 Skill 指引时保持模型表面简洁、正向且无实现噪音。"}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"开局建模 Skill 的引用交接必须自包含并明确完成/失败路径。"}

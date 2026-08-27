@@ -1,4 +1,0 @@
-{"file":".trellis/tasks/08-22-text-tool-protocol-failure-context/prd.md","reason":"Authoritative scope, lifecycle, persistence boundaries, and acceptance criteria for the fix."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Owns the Text Tool Protocol message/cache contract, latest-correction lifecycle, and non-persistence rules."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"AI responses are untrusted runtime-boundary strings and must remain strictly parsed before execution."}
-{"file":".trellis/tasks/archive/2026-08/08-17-text-tool-protocol-recovery-and-result-ref/design.md","reason":"Historical design for error-scoped retry state, latest-correction replacement, and successful-round cleanup."}

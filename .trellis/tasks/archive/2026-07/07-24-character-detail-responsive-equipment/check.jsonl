@@ -1,6 +1,0 @@
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对装备字段从原始数据到最终展示没有丢失、误解释或重复归一。"}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查桌面/移动、抽屉/模态与容器读取是否出现不必要的重复实现。"}
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"检查新增组件职责清晰，CharacterCard、InventoryPane 与全局壳层没有演变为 god component。"}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"核对 PlayFrontendBridge 边界、Vue 组件语义、键盘焦点和响应式交互。"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"检查装备/容器解析、unknown 边界、缺失引用与错误数据降级。"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"执行构建、禁止 any、错误处理、范围与最终 diff 检查。"}

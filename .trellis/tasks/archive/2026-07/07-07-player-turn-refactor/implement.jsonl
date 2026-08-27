@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "roll_dice 场景的 Signatures/Contracts/Validation 需更新——移除'不添加表达式求值'约束，新增大成功/大失败和表达式 modifier 说明"}
-{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "researcher Skill 重写移除 semantic_search 概念需零残留；storyteller AGENT.md 新增裁定方法论需通过 would-it-happen-anyway 测试"}
-{"file": ".trellis/spec/guides/airp-data-capability-design-principles.md", "reason": "新增三个查询 Tool 和文风学习 Skill 需对照原则 3（往返次数判据）和原则 9（字段消费者）验证"}

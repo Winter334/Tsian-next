@@ -1,6 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Required platform-web frontend spec index and build requirement."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Defines platform-host mutation event boundary, save/card state contracts, and effective card-content behavior."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Guides player-facing Vue UI copy and existing UI primitive usage."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Defines Dexie storage constraints, save/card linkage, and no-schema-change rules."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Feature spans storage, platform-host, launcher UI, and market UI."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Feature adds small helpers and should follow existing confirm/event/storage patterns."}

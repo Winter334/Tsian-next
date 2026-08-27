@@ -1,4 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"Spatial engine, source-DOM, projected-input, shell, application presentation, reduced-motion, resource and production-isolation contracts."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"RetroOS coexistence, route/window ownership, mounted-state and focus/accessibility invariants that release integration must preserve."}
-{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/research/current-architecture-and-api.md","reason":"Parent evidence for shell selection, HTML-in-Canvas constraints, input projection and application adaptation boundaries."}
-{"file":".trellis/tasks/07-31-spatial-release-integration/research/release-baseline.md","reason":"Current completed prerequisites, concrete release blockers, automated baseline and the approved concise-guidance decision."}

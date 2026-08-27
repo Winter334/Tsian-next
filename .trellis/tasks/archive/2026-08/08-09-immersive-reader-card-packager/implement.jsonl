@@ -1,6 +1,0 @@
-{"file":".trellis/tasks/08-09-immersive-reader-card-packager/research/platform-card-packaging-chain.md","reason":"Evidence for the current exporter bug, real browser build/write-back/export chain, source authorities, overlap, and safe architecture."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Defines Game Card authoring source ownership, package:frontend versus package:card, generated-manifest boundaries, and whole-card validation requirements."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Defines game-card package/import/export, packaged frontend, path safety, no-save, and browser runtime contracts."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Defines allowed test inventory, real-browser verification, source-package build quality, and required platform checks."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Prevents duplicating browser lifecycle, media-type, path, inventory, and packaging algorithms."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Guides the Node CLI → browser IndexedDB → platform build/export → ZIP verifier data flow and boundary validation."}

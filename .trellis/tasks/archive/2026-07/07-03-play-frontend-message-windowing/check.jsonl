@@ -1,7 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Required checks and frontend spec index for review."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Review Vue component/UI consistency and bridge boundary compliance."}
-{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Review composable lifecycle, scroll listeners, timers, and subscriptions."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Review Vue state/watch behavior and play frontend turn-rendering contract preservation."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Required validation expectations and project quality constraints."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Confirm shared contract usage and no bridge payload widening or platform internals bypass."}
-{"file":".trellis/tasks/07-03-play-frontend-message-windowing/research/current-rendering.md","reason":"Review against researched current behavior and accepted UI/product decisions."}

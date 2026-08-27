@@ -1,4 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"实现 TimelineView/Header/Graph/Legend 时遵守 Vue <script setup>、局部状态、template 简洁与现有 UI 语言约束"}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"滚动容器、IntersectionObserver、自动定位与 reveal 状态使用 Vue ref/computed/watch 管理，避免引入全局 store 或不必要持久化"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"确认前端变更后的构建与质量检查要求；若触及 platform-web/contracts 需补跑对应检查"}
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"TimelineGraph 将承载布局、方向推导、SVG path 与滚动 reveal，若职责堆叠需按自然 seam 拆 helper"}

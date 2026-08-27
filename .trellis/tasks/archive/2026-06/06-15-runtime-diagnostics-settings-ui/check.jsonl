@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "Required platform-web frontend entrypoint and build checks."}
-{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "Quality gate and forbidden patterns for platform-web review."}
-{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Check runtime query and debug records are safely normalized before display."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Review bridge/debug boundary and cross-layer data flow."}

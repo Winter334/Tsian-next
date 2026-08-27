@@ -1,5 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web ownership boundaries and required validation commands"}
-{"file":".trellis/tasks/08-17-text-tool-protocol-retry-robustness/research.md","reason":"focused source evidence and relevant type-safety contracts without oversized spec truncation"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"AI-facing protocol prompt, message composition, cache, and regression quality contracts"}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"remove inducing negative examples and prefer positive correction guidance without residual prompt noise"}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"keep system and retry prompts self-contained, operational, and free of developer-side explanation"}

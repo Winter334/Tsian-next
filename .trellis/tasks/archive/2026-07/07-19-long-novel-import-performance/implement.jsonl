@@ -1,5 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Feature changes source import storage and runtime readers across frontend, workspace template scripts, and card mirrors."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Shared source reader and import builder should avoid duplicated path/shard logic across consumers."}
-{"file": ".trellis/spec/guides/airp-data-capability-design-principles.md", "reason": "Source corpus shard/index design affects AIRP workspace data authority, file layout, and agent-facing capabilities."}
-{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "Skill and prompt wording changes must avoid stale AI-facing path concepts such as sourceWindow.chapters[*].path."}

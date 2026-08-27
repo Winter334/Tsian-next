@@ -1,3 +1,0 @@
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Changing apps/platform-web/src/storage/workspace-templates.ts default workspace seed; storage spec defines quality bar and seed ownership."}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Updating tool.json descriptions/parameters that are AI-facing; ensure new guidance is necessary and no stale tieBreak/mode concepts are introduced."}
-{"file":"docs/reference/tool-vs-skill.md","reason":"Defines Tool vs Skill boundary and tsian.lib.random contract used by roll_dice."}

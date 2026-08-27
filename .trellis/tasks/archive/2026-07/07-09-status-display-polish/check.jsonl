@@ -1,6 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Frontend Vue component conventions and relevant build expectations for browser UI work"}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Vue component structure, UI rules, and play frontend bridge boundary guidance"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"TypeScript/SFC import and type-safety conventions"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Required quality checks and project quality rules"}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check consistency/reuse with existing detail modal and status display patterns"}
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Review component responsibility boundaries"}

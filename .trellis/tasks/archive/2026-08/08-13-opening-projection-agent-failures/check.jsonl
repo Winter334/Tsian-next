@@ -1,8 +1,0 @@
-{"file":".trellis/tasks/08-13-opening-projection-agent-failures/research/findings.md","reason":"逐项核对修复覆盖、模型执行异常与延后平台治理边界"}
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web 规范索引；检查时按 research 锚点读取 state-management 的 projection 契约"}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"复核 reply projection consumer fallback、opening turn 0 与真实 seam 覆盖"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"复核 smoke-only 约束、构建命令、回归与手工矩阵"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"复核 task compression pin 顺序、workspace 错误语义与 Tool round 原子性"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"复核真实 executor 与 smoke seam 没有再次分叉"}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"审查提示词限制是否由真实诱因支持且未制造多余概念"}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"审查 Skill 口吻、自包含性与开发侧解释污染"}

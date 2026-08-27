@@ -1,3 +1,0 @@
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Timeline block is AI-facing runtime text; keep semantics as direction/data rather than hard constraints or residual background-event concepts."}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"The injected block must be self-contained for storyteller and avoid developer-side framing or unexplained cross-skill concepts."}
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Task intentionally avoids new schema/state and uses existing timeline data with a real consumer."}

@@ -1,9 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Checks platform-web ownership and mandatory verification commands."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Audits Explorer .keep/clipboard/read-only parity and Editor/media/close-guard behavior."}
-{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Audits explicit controller commands, stale-request prevention, and exact cleanup."}
-{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"Checks Source-local projected input, texture generation safety, lifecycle, no flat overlay, and independent animated-media scheduling."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Checks focused tests, type-check, build, cleanup, and forbidden patterns."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Audits for copied platform mutations, validation, event subscriptions, close guards, or object URL ownership."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audits that video DOM, scheduler, GL texture, curved sub-surface, input, and cleanup remain one coherent path."}
-{"file":".trellis/tasks/07-31-spatial-workspace-surfaces/research/current-workspace-surfaces-evidence.md","reason":"Checks implementation against the inspected identities, existing workflows, engine limitations, and browser validation gaps."}
-{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/research/current-architecture-and-api.md","reason":"Checks this child against parent renderer/input/media boundaries and rollout sequence."}

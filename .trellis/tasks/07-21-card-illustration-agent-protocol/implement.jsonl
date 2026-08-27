@@ -1,8 +1,0 @@
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Update storyteller, opening delegation and image-director prompts as self-contained executable contracts."}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Keep Agent instructions complete, direct and independent of hidden TypeScript behavior."}
-{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Place card semantics in the card while keeping Host persistence authority outside Agent input."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse Reply Projection, entrypoints, Agent registry and existing package workflow."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Follow content, displayContent and projections persistence semantics for opening and formal turns."}
-{"file":".trellis/spec/contracts/backend/index.md","reason":"Author the optional entrypoint and shared runtime validator in the correct contract boundary."}
-{"file":".trellis/spec/contracts/frontend/index.md","reason":"Expose card-consumable entrypoint and validator contracts to play-bridge/frontend consumers."}
-{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Use current opening, packaging and runtime evidence rather than July assumptions."}

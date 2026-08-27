@@ -1,8 +1,0 @@
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Quality checker should verify platform-web required checks and layer scope."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Check Assistant config UI placement and interaction follows existing component conventions."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check local assistant knowledge update preserves merge/seed semantics and user settings."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Check build requirements and platform-web guardrails."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Check storage changes respect .tsian/local/assistant layout and do not alter Dexie schema unnecessarily."}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Check assistant-visible knowledge has no stale concept traces that would mislead agents."}
-{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Check the refresh mechanism preserves assistant knowledge as workspace-visible files."}
-{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Check code additions stay in focused modules and avoid expanding barrels with implementation."}

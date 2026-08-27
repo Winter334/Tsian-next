@@ -1,6 +1,0 @@
-{"file":".trellis/tasks/08-09-immersive-reader-card-packager/research/platform-card-packaging-chain.md","reason":"Check the implemented chain against repository evidence, known UTF-8 inventory defect, source authorities, and isolation requirements."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Check canonical source ownership, generated output boundaries, package command separation, and whole-card round-trip requirements."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check package schema, import/export, path/media/inventory, no-save, and packaged frontend contracts."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Check required builds, real-browser evidence, test policy, and no scope drift."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check no duplicate browser lifecycle or package/media/path algorithms were introduced."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check every Node/browser/storage/build/export/ZIP boundary and error path end to end."}

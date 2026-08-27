@@ -1,6 +1,0 @@
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查时重点验证云备份数据从本地存储→API→服务器→BlobStore→UI 往返格式一致。"}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"检查备份范围、.tsian/local 排除、checkpoint 不同步/不导出、Dexie schema 变更与 build:web 要求。"}
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"检查 Settings/Launcher/Account UI 是否符合 platform-web 规范并运行 build:web。"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"检查 API response/import zip/manifest 等 unknown 边界是否有运行时归一化，且玩家 UI 不泄漏工程术语。"}
-{"file":".trellis/spec/contracts/backend/index.md","reason":"检查新增 contract 模块导出和 build:contracts。"}
-{"file":".trellis/spec/contracts/frontend/index.md","reason":"检查 platform-web 对新增 contract types 的消费符合 contracts consumer 规则。"}

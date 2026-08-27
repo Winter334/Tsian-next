@@ -1,7 +1,0 @@
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Check contract changes with build:contracts and consuming build."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Verify frontend contract consumption remains type-safe after MarketPackage/API changes."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Run and evaluate platform-web build after UI/API client changes."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Review owner management UI, sidebar scope switch, and dialog against component conventions."}
-{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Review scope switching, pagination refresh, dirty metadata defaults, and mutation refresh behavior."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check end-to-end data flow across UI, contracts, HTTP, repository, DB, blob store, and tests."}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check upload/update validation, resource selection, and cover processing reuse rather than duplicated divergent logic."}

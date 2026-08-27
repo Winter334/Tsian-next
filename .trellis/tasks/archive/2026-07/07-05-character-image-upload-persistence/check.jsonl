@@ -1,8 +1,0 @@
-{"file":".trellis/tasks/07-05-character-image-upload-persistence/prd.md","reason":"Acceptance criteria for upload, default avatars, permissions, AIRP boundary, and builds."}
-{"file":".trellis/tasks/07-05-character-image-upload-persistence/design.md","reason":"Verify implementation matches approved storage, fallback, bridge, and object URL design."}
-{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Ensure contract changes are validated with build:contracts and consuming builds."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Check workspace read/write consumer behavior and bridge payload typing."}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check binary workspace contract, bridge serialization, and path/scope permissions."}
-{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Check object URL creation/revocation and Vue component conventions."}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Confirm required build:web and cross-layer bridge guardrails."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Confirm no Dexie schema changes and binary persistence/checkpoint assumptions hold."}

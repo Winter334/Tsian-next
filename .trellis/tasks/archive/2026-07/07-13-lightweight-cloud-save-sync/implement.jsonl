@@ -1,7 +1,0 @@
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"云备份跨 contracts、server API、Dexie storage、platform-host、Vue UI，实施前需要按跨层数据流和边界定义检查。"}
-{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"云备份新增本地存档元数据、平台配置和导入导出格式，需要区分玩家可管理数据与内部 bookkeeping。"}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"涉及 LocalSaveRecord、workspaceFiles、save runtime 路径边界、checkpoint 排除、Dexie schema 风险和 storage quality checks。"}
-{"file":".trellis/spec/platform-web/frontend/index.md","reason":"涉及 Settings、Account、Launcher Vue UI 和平台前端 required checks。"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"新增 cloud backup API 边界、save import/export runtime validation、player-facing package format，需要遵守 shared contracts 和 runtime boundary normalization。"}
-{"file":".trellis/spec/contracts/backend/index.md","reason":"新增 @tsian/contracts 类型模块，需遵守 contracts type-only 和 build 要求。"}
-{"file":".trellis/spec/contracts/frontend/index.md","reason":"platform-web 将消费新增 contract shapes，需遵守消费者类型边界。"}

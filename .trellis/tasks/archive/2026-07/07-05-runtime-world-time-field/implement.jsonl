@@ -1,3 +1,0 @@
-{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Adding a save-runtime field; confirms agent-visible workspace files are the right storage surface instead of hidden DB fields."}
-{"file":".trellis/spec/platform-web/storage/index.md","reason":"Changing default save runtime template and embedded workspace template text in apps/platform-web/src/storage/workspace-templates.ts; includes required build checks."}
-{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Play frontend runtime parsing contract: workspace.read error handling, parseRuntime fixed-field compatibility, and extension parsing boundaries."}

@@ -1,6 +1,0 @@
-{"file":".trellis/tasks/archive/2026-08/08-17-text-tool-protocol-retry-robustness/research.md","reason":"上一轮文本协议真实失败链、parser/runtime 锚点与既有 smoke 基础。"}
-{"file":".trellis/tasks/08-03-agent-tool-observation-contract/research/agent-tool-observation-contract.md","reason":"accepted observation、Tool memory、UI projection 与 artifact 延期边界。"}
-{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Text/native 工具协议、run_script、observation gate、事务和持久化契约。"}
-{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"smoke-only 验证、测试保留价值与 Agent Runtime 质量门。"}
-{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"协议与 Skill 提示应使用唯一正向格式，避免残留兼容概念诱导模型。"}
-{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"开局建模 Skill 的自包含动作、判据与错误恢复写法。"}
