@@ -1237,3 +1237,24 @@ Fixed Gemini native streaming tool-call classification when providers return fun
 ### Next Steps
 
 - 部署更新后的前端包后，复测旧生产请求中的 Tool call/result 关联
+
+
+## Session 205: 场记回合后维护稳定性优化
+
+**Date**: 2026-08-27
+**Task**: 场记回合后维护稳定性优化
+**Branch**: `master`
+
+### Summary
+
+优化卡内场记回合后维护流程：改为固定 Skill 步骤、按需读取参考资料、增加实体查询/读取工具，强化 json_edit 与 text_edit 的微批次和逐项结果契约，修正重试针对原回合，并以卡内打包源为验证边界。已提交 0a38b969，归档任务。保留两个无关脏文件未纳入。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0a38b969` | (see git log) |
+
+### Status
+
+[OK] **Completed**
