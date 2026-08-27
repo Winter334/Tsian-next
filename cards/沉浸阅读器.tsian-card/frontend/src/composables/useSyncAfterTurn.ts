@@ -21,6 +21,7 @@ let activeInvocationId: string | null = null
 let syncedTimer: ReturnType<typeof setTimeout> | null = null
 let invocationSubscribed = false
 let onSyncedCallback: (() => void | Promise<void>) | null = null
+let retryTurn: number | null = null
 
 /** 注册"同步完成"回调（状态栏数据源刷新等）。幂等，只保留最后一个。
  *  回调支持 async（返回 Promise）——handleSynced 会 await 它，确保 runtime 刷新
@@ -40,15 +41,17 @@ export async function triggerSyncAfterTurn(turn: number): Promise<void> {
   // sync-failed 需用户显式重试，不自动覆盖。
   if (syncPhase.value === "syncing" || syncPhase.value === "sync-failed") return
 
-  const input = `玩家回合 #${turn} 已完成，正文已落定。请按回合后维护标准流程执行：第一步调用 read_maintenance_context({ turn: ${turn}, includeTimeline: true }) 聚合事实；基于聚合上下文维护 runtime（含 worldTime/plotOrder）/entity/scene/relationship/memory/timeline 变动。只有聚合上下文缺失必要事实时，才进行有针对性的补充 workspace_read。`
+  retryTurn = turn
+  const input = `维护玩家回合 #${turn}。先调用 use_skill 加载“回合后维护”，再遵循其中的固定步骤；以该回合正文和当前 runtime 为起点完成本轮事实维护。`
   await runSyncInvocation(tsian, input, `sync-turn-${turn}-${Date.now().toString(36)}`, "post-turn-maintenance")
 }
 
 /** 用户点击"重试"：重新发起同步调用。 */
 export async function retrySyncAfterTurn(): Promise<void> {
   if (syncPhase.value !== "sync-failed") return
+  if (retryTurn === null) return
   const tsian = getTsianClient()
-  const input = "请重新按回合后维护标准流程维护上一回合：第一步调用 read_maintenance_context({ includeTimeline: true }) 聚合事实；基于聚合上下文维护 runtime（含 worldTime/plotOrder）/entity/scene/relationship/memory/timeline 变动。只有聚合上下文缺失必要事实时，才进行有针对性的补充 workspace_read。"
+  const input = `重新维护玩家回合 #${retryTurn}。先调用 use_skill 加载“回合后维护”，再遵循其中的固定步骤；从该回合正文和当前 runtime 开始，只修复尚未完成或需要修正的维护项。`
   await runSyncInvocation(tsian, input, `sync-retry-${Date.now().toString(36)}`, "post-turn-maintenance-retry")
 }
 
@@ -154,6 +157,7 @@ export function resetSyncPhase(): void {
     syncedTimer = null
   }
   activeInvocationId = null
+  retryTurn = null
   syncPhase.value = "idle"
 }
 

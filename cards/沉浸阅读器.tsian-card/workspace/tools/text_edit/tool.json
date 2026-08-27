@@ -1,14 +1,14 @@
 {
   "name": "text_edit",
   "title": "编辑文本行",
-  "description": "行级编辑 save/ 下 Markdown/文本文件。target 是 `save/...` 路径。支持 `create` 显式创建、`append` 追加行、`replace` 用 find 定位并替换整行、`remove` 用 find 定位并删除整行；也可用 `ops` 顺序执行多个同形操作。replace/remove 的 find 必须恰好命中一行，0 或多匹配都会失败。",
+  "description": "行级编辑 save/ 下 Markdown/文本文件。target 是 `save/...` 路径。支持 `create` 显式创建、`append` 追加行、`replace` 用 find 定位并替换整行、`remove` 用 find 定位并删除整行。多个 op 可各自指定 target，也可在外层提供一个 target 供子 op 继承；同一 target 先预演后一次写入。records.md 与 seeds.md 会额外校验行格式、序号、重复和状态迁移。",
   "parameters": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
       "target": {
         "type": "string",
-        "description": "单操作目标文本路径，必须是 save/...。"
+        "description": "单操作目标，或 ops 的共享文本路径，必须是 save/...。"
       },
       "create": {
         "type": "string",
@@ -39,7 +39,7 @@
       },
       "ops": {
         "type": "array",
-        "description": "多个操作，按顺序执行，遇错停止，不回滚已成功操作。每项字段同单操作。",
+        "description": "多个操作。每项可显式指定 target；外层指定 target 时，未指定 target 的子项会继承它。同一 target 中任一操作无效时，该 target 不写入；其他 target 继续。",
         "items": {
           "type": "object",
           "additionalProperties": false,

@@ -1,0 +1,71 @@
+{
+  "name": "read_entities",
+  "title": "读取实体与关系",
+  "description": "按明确实体 ref 读取完整实体或所选字段，可按出边、入边或双向关系受限展开关联实体。返回 entities、edges、missing、errors、unexpanded 与 truncated，明确区分不存在、读取失败和因深度/上限未展开。仅传入需要读取的 ref。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "refs": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1,
+        "maxItems": 20,
+        "description": "要读取的实体 ref 列表，如 `character:萧凌`。可直接使用 `query_entities` 的候选 ref。"
+      },
+      "fields": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1,
+        "maxItems": 30,
+        "description": "可选字段点路径，如 `brief`、`identity.realm`、`status`。省略时返回所选实体完整 JSON；只影响实体内容，不影响外层 ref/path。"
+      },
+      "relations": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": ["outgoing", "incoming", "both"],
+            "description": "关系展开方向。outgoing 读取主体分片，incoming 查找指向主体的角色关系边。"
+          },
+          "types": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "可选关系边 type 白名单。"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2,
+            "default": 0,
+            "description": "从显式 refs 向外展开的最大跳数；0 只读取指定实体。"
+          },
+          "maxEntities": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 12,
+            "description": "返回和尝试展开的实体总数上限，包含显式 refs。"
+          },
+          "maxEdges": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 240,
+            "default": 80,
+            "description": "返回关系边上限；达到上限时不会继续展开更多关系边。"
+          }
+        },
+        "description": "省略时不读取关系。设置 depth 大于 0 时 direction 缺省为 outgoing。"
+      }
+    },
+    "required": ["refs"]
+  },
+  "executor": {
+    "type": "browser_script",
+    "path": "run.js",
+    "timeoutMs": 12000
+  }
+}

@@ -5,18 +5,6 @@
   "contacts": [
     "world-architect"
   ],
-  "contextPaths": [
-    {
-      "path": "docs/novel-airp-schema-guide.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
-      "path": "save/schema/current.md",
-      "role": "user",
-      "position": "prelude"
-    }
-  ],
   "skills": {
     "enabled": [
       "agents/stage-manager/skills/回合后维护/SKILL.md",
@@ -27,8 +15,9 @@
   },
   "tools": {
     "enabled": [
-      "agents/stage-manager/tools/read_maintenance_context/tool.json",
       "agents/stage-manager/tools/commit_turn_recall/tool.json",
+      "agents/stage-manager/tools/query_entities/tool.json",
+      "agents/stage-manager/tools/read_entities/tool.json",
       "tools/json_edit/tool.json",
       "tools/text_edit/tool.json"
     ],

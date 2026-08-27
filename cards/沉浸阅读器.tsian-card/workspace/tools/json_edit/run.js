@@ -172,6 +172,10 @@ function resolveTarget(target) {
     : 'save/entities/' + ref.type + '/' + ref.localId + '.json';
   return { target: target, path: path, ref: ref.type + ':' + ref.localId, targetKind: ref.type === 'scene' ? 'scene' : 'entity' };
 }
+function sameTarget(left, right) {
+  if (left === right) return true;
+  return resolveTarget(left).path === resolveTarget(right).path;
+}
 function inferPathKind(path) {
   if (/^save\/entities\/[^/]+\/[^/]+\.json$/.test(path)) return 'entity';
   if (/^save\/scenes\/[^/]+\.json$/.test(path)) return 'scene';
@@ -217,20 +221,37 @@ function normalizeOps(input) {
   if (!isRecord(input)) fail('JSON_EDIT_INPUT_INVALID', 'input must be an object.', { input: input });
   if (hasOwn(input, 'ops')) {
     if (!Array.isArray(input.ops) || input.ops.length === 0) fail('JSON_EDIT_OPS_INVALID', 'ops must be a non-empty array.', { ops: input.ops });
-    const otherKeys = Object.keys(input).filter(function (key) { return key !== 'ops'; });
+    const otherKeys = Object.keys(input).filter(function (key) { return key !== 'ops' && key !== 'target'; });
     if (otherKeys.length > 0) fail('JSON_EDIT_OPS_INVALID', 'ops cannot be combined with single-operation fields.', { keys: otherKeys });
-    return input.ops;
+    const outerTarget = hasOwn(input, 'target') ? input.target : undefined;
+    return input.ops.map(function (op, index) {
+      if (!isRecord(op)) return op;
+      const child = Object.assign({}, op);
+      if (outerTarget !== undefined) {
+        if (hasOwn(child, 'target') && !sameTarget(child.target, outerTarget)) {
+          fail('JSON_EDIT_TARGET_CONFLICT', 'Child target conflicts with outer target.', { opIndex: index, target: child.target, outerTarget: outerTarget });
+        }
+        if (!hasOwn(child, 'target')) child.target = outerTarget;
+      }
+      return child;
+    });
   }
   return [input];
 }
 function validateOp(op, opIndex) {
   if (!isRecord(op)) fail('JSON_EDIT_OP_INVALID', 'Each op must be an object.', { opIndex: opIndex });
-  const allowed = new Set(['target', 'create', 'set', 'append', 'upsert', 'remove', 'unset']);
+  const allowed = new Set(['target', 'create', 'delete', 'set', 'append', 'upsert', 'remove', 'unset']);
   const keys = Object.keys(op);
   for (const key of keys) {
     if (!allowed.has(key)) fail('JSON_EDIT_OP_INVALID', 'Unknown op field.', { opIndex: opIndex, field: key });
   }
   if (!keys.some(function (key) { return key !== 'target'; })) fail('JSON_EDIT_OP_EMPTY', 'Operation must include at least one edit field.', { opIndex: opIndex });
+  if (hasOwn(op, 'delete')) {
+    if (op.delete !== true) fail('JSON_EDIT_DELETE_INVALID', 'delete must be true when present.', { opIndex: opIndex, value: op.delete });
+    if (keys.length !== 2 || !hasOwn(op, 'target')) {
+      fail('JSON_EDIT_DELETE_MIXED', 'delete must be the only edit action for its target.', { opIndex: opIndex });
+    }
+  }
 }
 function applySet(root, spec, changedPaths) {
   if (spec === undefined) return;
@@ -387,6 +408,49 @@ function applyEdits(base, op) {
 function isNotFound(error) {
   return error && (error.code === 'WORKSPACE_FILE_NOT_FOUND' || error.code === 'FILE_NOT_FOUND');
 }
+function isToolError(error) {
+  return !!(error && typeof error.code === 'string' && error.message);
+}
+function isOperationError(error) {
+  return isToolError(error) && (error.code.indexOf('JSON_EDIT_') === 0 || error.code === 'WORKSPACE_EXPECTED_CONTENT_MISMATCH');
+}
+function isRetryableError(error) {
+  if (!isToolError(error)) return false;
+  if (error.code === 'JSON_EDIT_JSON_INVALID' || error.code === 'JSON_EDIT_ROOT_INVALID') return false;
+  return error.code.indexOf('JSON_EDIT_') === 0
+    || error.code === 'WORKSPACE_EXPECTED_CONTENT_MISMATCH'
+    || error.code === 'WORKSPACE_FILE_NOT_FOUND'
+    || error.code === 'FILE_NOT_FOUND';
+}
+function errorResult(error, opIndex, target, path, status) {
+  const details = error && isRecord(error.details) ? error.details : {};
+  const result = {
+    opIndex: opIndex,
+    target: target,
+    path: path,
+    status: status || 'failed',
+    code: error && error.code || 'JSON_EDIT_OPERATION_FAILED',
+    message: error && error.message || 'json_edit operation failed.',
+    retryable: isRetryableError(error),
+  };
+  const hint = details.path || details.field || details.expected || details.keys;
+  if (hint !== undefined) result.correction = { focus: hint };
+  if (isRecord(details) && Object.keys(details).length) result.details = details;
+  return result;
+}
+function normalizationFailureResults(input, error) {
+  const rawOps = isRecord(input) && Array.isArray(input.ops) ? input.ops : [input];
+  const failedIndex = error && error.details && Number.isInteger(error.details.opIndex) ? error.details.opIndex : 0;
+  return rawOps.map(function (op, index) {
+    const target = isRecord(op) && op.target !== undefined ? op.target : isRecord(input) ? input.target : undefined;
+    if (index === failedIndex) return errorResult(error, index, target);
+    const skipped = errorResult(error, index, target, undefined, 'not_run');
+    skipped.code = 'JSON_EDIT_INPUT_REJECTED';
+    skipped.message = 'json_edit: operation was not run because the input shape is invalid.';
+    skipped.details = { failedOpIndex: failedIndex };
+    return skipped;
+  });
+}
 async function readExistingJson(tsian, path) {
   try {
     const file = await tsian.workspace.read({ scope: 'effective', path: path });
@@ -404,69 +468,264 @@ async function readExistingJson(tsian, path) {
     throw error;
   }
 }
-async function applyOneOp(op, opIndex, tsian, signal) {
-  validateOp(op, opIndex);
-  const resolved = resolveTarget(op.target);
-  throwIfAborted(signal);
-  const existing = await readExistingJson(tsian, resolved.path);
-  if (!existing && op.create === undefined) fail('JSON_EDIT_TARGET_NOT_FOUND', 'Target JSON file does not exist; pass create to create it.', { opIndex: opIndex, target: op.target, path: resolved.path });
-  if (existing && op.create !== undefined) fail('JSON_EDIT_CREATE_EXISTS', 'Target JSON file already exists; create is only for missing files.', { opIndex: opIndex, target: op.target, path: resolved.path });
-  let base;
-  if (existing) {
-    base = existing.json;
-  } else {
-    if (!isRecord(op.create)) fail('JSON_EDIT_CREATE_INVALID', 'create must be a JSON object.', { opIndex: opIndex, target: op.target });
-    validateJsonValue(op.create, ['create'], new Set());
-    base = cloneJson(op.create);
-  }
-  const applied = applyEdits(base, op);
-  validateAirpInvariants(resolved.path, applied.value);
-  const changed = !existing || !deepEqual(base, applied.value);
-  if (!changed) {
-    return {
-      opIndex: opIndex,
-      target: op.target,
-      path: resolved.path,
-      targetKind: resolved.targetKind,
-      changed: false,
-      changedPaths: [],
-      warnings: applied.warnings.length ? applied.warnings : undefined,
-    };
-  }
-  throwIfAborted(signal);
-  await tsian.workspace.write({
-    scope: 'save-runtime',
-    path: resolved.path,
-    content: JSON.stringify(applied.value, null, 2) + '\n',
-    mediaType: 'application/json',
-    expectedContent: existing ? existing.content : undefined,
-  });
+function operationResult(resolved, op, opIndex, applied, before, created) {
+  const changed = created || !deepEqual(before, applied.value);
   const result = {
     opIndex: opIndex,
     target: op.target,
     path: resolved.path,
     targetKind: resolved.targetKind,
-    changed: true,
-    changedPaths: applied.changedPaths,
+    status: changed ? 'applied' : 'noop',
+    code: changed ? 'JSON_EDIT_APPLIED' : 'JSON_EDIT_NOOP',
+    message: changed ? 'json_edit: operation applied.' : 'json_edit: operation made no change.',
+    retryable: false,
+    changed: changed,
+    changedPaths: changed ? applied.changedPaths : [],
   };
   if (applied.warnings.length) result.warnings = applied.warnings;
   return result;
 }
-async function jsonEdit(input, tsian, signal) {
-  const ops = normalizeOps(input);
-  const results = [];
-  for (let i = 0; i < ops.length; i++) {
+
+function markNotRun(results, group, resolved, reason) {
+  for (const entry of group) {
+    if (results[entry.index]) continue;
+    results[entry.index] = errorResult(reason, entry.index, entry.op.target, resolved && resolved.path, 'not_run');
+    results[entry.index].code = 'JSON_EDIT_TARGET_BATCH_ABORTED';
+    results[entry.index].message = 'json_edit: target batch was not committed because another operation failed.';
+    results[entry.index].retryable = isRetryableError(reason);
+    results[entry.index].details = { failedOpIndex: reason && reason.details && reason.details.opIndex };
+  }
+}
+
+function deleteResult(resolved, op, opIndex, deleted) {
+  return {
+    opIndex: opIndex,
+    target: op.target,
+    path: resolved.path,
+    targetKind: resolved.targetKind,
+    status: deleted ? 'applied' : 'noop',
+    code: deleted ? 'JSON_EDIT_DELETED' : 'JSON_EDIT_DELETE_NOOP',
+    message: deleted ? 'json_edit: entity deleted.' : 'json_edit: entity was already absent.',
+    retryable: false,
+    changed: deleted,
+    changedPaths: [],
+  };
+}
+
+async function applyDeleteTarget(entry, resolved, results, tsian, signal) {
+  const op = entry.op;
+  try {
+    validateOp(op, entry.index);
+    if (resolved.targetKind !== 'entity' || !resolved.ref) {
+      fail('JSON_EDIT_DELETE_TARGET_INVALID', 'delete is only supported for entity refs.', { opIndex: entry.index, target: op.target, path: resolved.path });
+    }
+  } catch (error) {
+    if (!isOperationError(error)) throw error;
+    results[entry.index] = errorResult(error, entry.index, op && op.target, resolved.path);
+    return;
+  }
+  throwIfAborted(signal);
+  let existing;
+  try {
+    existing = await readExistingJson(tsian, resolved.path);
+  } catch (error) {
+    if (!isOperationError(error)) throw error;
+    results[entry.index] = errorResult(error, entry.index, op.target, resolved.path);
+    return;
+  }
+  if (!existing) {
+    results[entry.index] = deleteResult(resolved, op, entry.index, false);
+    return;
+  }
+  try {
+    await tsian.workspace.delete({ scope: 'save-runtime', path: resolved.path });
+  } catch (error) {
+    if (isNotFound(error)) {
+      results[entry.index] = deleteResult(resolved, op, entry.index, false);
+      return;
+    }
+    if (!isOperationError(error)) throw error;
+    results[entry.index] = errorResult(error, entry.index, op.target, resolved.path);
+    return;
+  }
+  results[entry.index] = deleteResult(resolved, op, entry.index, true);
+}
+
+async function applyTargetGroup(group, results, tsian, signal) {
+  const first = group[0];
+  let resolved;
+  try {
+    resolved = resolveTarget(first.op.target);
+  } catch (error) {
+    if (!isToolError(error)) throw error;
+    results[first.index] = errorResult(error, first.index, first.op && first.op.target);
+    markNotRun(results, group.slice(1), null, error);
+    return;
+  }
+  const deleteEntry = group.find(function (entry) { return entry.op && hasOwn(entry.op, 'delete'); });
+  if (deleteEntry) {
+    if (group.length !== 1) {
+      const error = okError('JSON_EDIT_DELETE_MIXED', 'delete cannot be combined with other operations for the same target.', { opIndex: deleteEntry.index, target: deleteEntry.op.target });
+      results[deleteEntry.index] = errorResult(error, deleteEntry.index, deleteEntry.op.target, resolved.path);
+      markNotRun(results, group.filter(function (entry) { return entry.index !== deleteEntry.index; }), resolved, error);
+      return;
+    }
+    await applyDeleteTarget(deleteEntry, resolved, results, tsian, signal);
+    return;
+  }
+  throwIfAborted(signal);
+  let existing;
+  try {
+    existing = await readExistingJson(tsian, resolved.path);
+  } catch (error) {
+    if (!isOperationError(error)) throw error;
+    results[first.index] = errorResult(error, first.index, first.op.target, resolved.path);
+    markNotRun(results, group.slice(1), resolved, error);
+    return;
+  }
+  let base;
+  let created = false;
+  if (existing) {
+    base = existing.json;
+  } else {
+    const createOp = group.find(function (entry) { return entry.op && entry.op.create !== undefined; });
+    if (!createOp || createOp.index !== first.index) {
+      const error = okError('JSON_EDIT_TARGET_NOT_FOUND', 'Target JSON file does not exist; pass create to create it.', { path: resolved.path, opIndex: first.index, target: first.op.target });
+      results[first.index] = errorResult(error, first.index, first.op.target, resolved.path);
+      markNotRun(results, group.slice(1), resolved, error);
+      return;
+    }
+    if (!isRecord(createOp.op.create)) {
+      const error = okError('JSON_EDIT_CREATE_INVALID', 'create must be a JSON object.', { opIndex: createOp.index, target: createOp.op.target });
+      results[createOp.index] = errorResult(error, createOp.index, createOp.op.target, resolved.path);
+      markNotRun(results, group.filter(function (entry) { return entry.index !== createOp.index; }), resolved, error);
+      return;
+    }
     try {
-      results.push(await applyOneOp(ops[i], i, tsian, signal));
+      validateJsonValue(createOp.op.create, ['create'], new Set());
     } catch (error) {
-      if (error && typeof error.code === 'string' && error.message) {
-        return { status: results.length ? 'partial_failed' : 'failed', results: results, error: Object.assign({ opIndex: i }, error) };
+      if (!isOperationError(error)) throw error;
+      results[createOp.index] = errorResult(error, createOp.index, createOp.op.target, resolved.path);
+      markNotRun(results, group.filter(function (entry) { return entry.index !== createOp.index; }), resolved, error);
+      return;
+    }
+    base = cloneJson(createOp.op.create);
+    created = true;
+  }
+  let staged = cloneJson(base);
+  const pending = [];
+  for (const entry of group) {
+    const op = entry.op;
+    try {
+      validateOp(op, entry.index);
+      if (existing && op.create !== undefined) fail('JSON_EDIT_CREATE_EXISTS', 'Target JSON file already exists; create is only for missing files.', { opIndex: entry.index, target: op.target, path: resolved.path });
+      if (created && entry.index !== first.index && op.create !== undefined) fail('JSON_EDIT_CREATE_REPEATED', 'create may only appear in the first operation for a missing target.', { opIndex: entry.index, target: op.target, path: resolved.path });
+      const before = cloneJson(staged);
+      const applied = applyEdits(staged, op);
+      staged = applied.value;
+      pending.push({ entry: entry, result: operationResult(resolved, op, entry.index, applied, before, created && entry.index === first.index) });
+    } catch (error) {
+      if (!isOperationError(error)) throw error;
+      results[entry.index] = errorResult(error, entry.index, op && op.target, resolved.path);
+      const abortReason = Object.assign({}, error, { details: Object.assign({}, error.details || {}, { opIndex: entry.index }) });
+      for (const prior of pending) {
+        if (prior.result.status === 'noop') results[prior.entry.index] = prior.result;
+        else {
+          results[prior.entry.index] = errorResult(abortReason, prior.entry.index, prior.entry.op.target, resolved.path, 'not_run');
+          results[prior.entry.index].code = 'JSON_EDIT_TARGET_BATCH_ABORTED';
+          results[prior.entry.index].message = 'json_edit: target batch was not committed because another operation failed.';
+        }
       }
-      throw error;
+      markNotRun(results, group.filter(function (item) { return item.index !== entry.index && !results[item.index]; }), resolved, abortReason);
+      return;
     }
   }
-  const result = { status: 'ok', results: results };
-  tsian.trace('json_edit', { opCount: ops.length, changedCount: results.filter(function (item) { return item.changed; }).length });
+  try {
+    validateAirpInvariants(resolved.path, staged);
+  } catch (error) {
+    if (!isOperationError(error)) throw error;
+    const failed = group[group.length - 1];
+    results[failed.index] = errorResult(error, failed.index, failed.op.target, resolved.path);
+    markNotRun(results, group.filter(function (item) { return item.index !== failed.index; }), resolved, error);
+    return;
+  }
+  const changed = created || !deepEqual(base, staged);
+  if (!changed) {
+    for (const item of pending) {
+      item.result.status = 'noop';
+      item.result.code = 'JSON_EDIT_NOOP';
+      item.result.changed = false;
+      item.result.changedPaths = [];
+      item.result.message = 'json_edit: target returned to its original value.';
+    }
+  }
+  if (changed) {
+    throwIfAborted(signal);
+    try {
+      await tsian.workspace.write({
+        scope: 'save-runtime',
+        path: resolved.path,
+        content: JSON.stringify(staged, null, 2) + '\n',
+        mediaType: 'application/json',
+        expectedContent: existing ? existing.content : undefined,
+      });
+    } catch (error) {
+      if (!isOperationError(error)) throw error;
+      const failed = group[group.length - 1];
+      results[failed.index] = errorResult(error, failed.index, failed.op.target, resolved.path);
+      markNotRun(results, group.filter(function (item) { return item.index !== failed.index; }), resolved, error);
+      return;
+    }
+  }
+  for (const item of pending) results[item.entry.index] = item.result;
+}
+
+async function jsonEdit(input, tsian, signal) {
+  let ops;
+  try {
+    ops = normalizeOps(input);
+  } catch (error) {
+    if (!isOperationError(error)) throw error;
+    const results = normalizationFailureResults(input, error);
+    return { status: 'failed', results: results, errors: results, error: results.find(function (item) { return item.status === 'failed'; }) || results[0] };
+  }
+  const results = [];
+  const groups = [];
+  const byPath = new Map();
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    let key;
+    try {
+      if (!isRecord(op)) fail('JSON_EDIT_OP_INVALID', 'Each op must be an object.', { opIndex: i });
+      const resolved = resolveTarget(op.target);
+      key = resolved.path;
+    } catch (error) {
+      if (!isOperationError(error)) throw error;
+      results[i] = errorResult(error, i, op && op.target);
+      continue;
+    }
+    let group = byPath.get(key);
+    if (!group) {
+      group = [];
+      byPath.set(key, group);
+      groups.push(group);
+    }
+    group.push({ index: i, op: op });
+  }
+  for (const group of groups) await applyTargetGroup(group, results, tsian, signal);
+  for (let i = 0; i < ops.length; i++) {
+    if (!results[i]) results[i] = errorResult(okError('JSON_EDIT_NOT_RUN', 'Operation was not executed.', { opIndex: i }), i, ops[i] && ops[i].target, undefined, 'not_run');
+  }
+  const failures = results.filter(function (item) { return item.status === 'failed' || item.status === 'not_run'; });
+  const result = {
+    status: failures.length ? (results.some(function (item) { return item.status === 'applied' || item.status === 'noop'; }) ? 'partial_failed' : 'failed') : 'ok',
+    results: results,
+  };
+  if (failures.length) {
+    result.errors = failures;
+    result.error = failures.find(function (item) { return item.status === 'failed'; }) || failures[0];
+  }
+  tsian.trace('json_edit', { opCount: ops.length, changedCount: results.filter(function (item) { return item.status === 'applied'; }).length, failedCount: failures.length });
   return result;
 }
 return jsonEdit(input, tsian, signal);

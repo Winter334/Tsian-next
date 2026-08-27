@@ -1,0 +1,91 @@
+{
+  "name": "query_entities",
+  "title": "查询实体索引",
+  "description": "按 ref、实体类型、名称、别名、lifecycle、场景在场或角色关系筛选实体，返回有上限的紧凑候选索引与每项命中原因，不返回实体完整 JSON。至少提供一种筛选条件；`missing` 表示明确目标不存在，`status: no_match` 表示完整查询无匹配，`partial` 表示读取或数量边界使结果不完整。用返回的 ref 再调用 `read_entities`。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "refs": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1,
+        "maxItems": 50,
+        "description": "精确实体 ref 列表，如 `character:萧瑞`。"
+      },
+      "types": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1,
+        "maxItems": 20,
+        "description": "实体目录类型列表，如 `character`、`item`、`container`。"
+      },
+      "names": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1,
+        "maxItems": 20,
+        "description": "与实体 `name` 精确匹配的名称之一。"
+      },
+      "aliases": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1,
+        "maxItems": 20,
+        "description": "与实体 `aliases` 中某项精确匹配的别名之一。"
+      },
+      "lifecycle": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1,
+        "maxItems": 12,
+        "description": "实体 `lifecycle` 的允许值列表。"
+      },
+      "sceneRefs": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1,
+        "maxItems": 12,
+        "description": "只保留出现在任一指定 scene 的 `present[*].ref` 中的实体；每项为 `scene:<localId>`。"
+      },
+      "relationship": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "toRefs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "角色关系边的目标 ref；与 types 可组合。"
+          },
+          "types": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "角色关系边 `type` 的允许值。"
+          }
+        },
+        "description": "角色关系筛选。候选角色须至少有一条边满足给出的全部关系条件。"
+      },
+      "text": {
+        "type": "string",
+        "maxLength": 120,
+        "description": "有限文本筛选：在 ref、name、aliases 与 brief 中进行不区分大小写的包含匹配。"
+      },
+      "maxResults": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "default": 12,
+        "description": "返回候选上限；达到上限时 `truncated.results` 为 true。"
+      }
+    }
+  },
+  "executor": {
+    "type": "browser_script",
+    "path": "run.js",
+    "timeoutMs": 10000
+  }
+}

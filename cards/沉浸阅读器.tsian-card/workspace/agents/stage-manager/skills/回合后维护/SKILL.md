@@ -1,7 +1,7 @@
 ---
 name: 回合后维护
 title: 回合后维护
-description: 正式玩家回合落定后维护 runtime/entity（含装备投影）/scene/relationship/memory/extensions 已发生事实，映射 plotOrder，追加 player 锚点，并维护 activeSceneRefs 以触发过期 scene 清理。
+description: 正式玩家回合落定后，按固定步骤维护已发生事实、消费局部写入结果，并最后写入回合召回。
 triggers:
   - 正式玩家回合正文落定后的回合后维护
 appliesTo:
@@ -10,229 +10,47 @@ appliesTo:
 
 # 回合后维护
 
-在一个正式玩家回合落幕后，把已经发生的变化维护到存档。维护已发生事实，不创作新剧情。
+在一个正式玩家回合落幕后，把已发生的变化维护到存档。只维护有证据支持的事实，不创作、补全或预支剧情。
 
-## 标准流程
+## 固定流程
 
-1. 第一轮先调用 `read_maintenance_context({ turn: 目标回合号, includeTimeline: true })`，用它聚合本回合正文、runtime、active scenes、相关 entities/relationships、memory 文本、scene 清理候选和 timeline。
-2. 基于聚合上下文判断本回合已发生变化，维护 runtime/entity/scene/relationship/memory/timeline。普通属性变化不要直接写入角色 `attributes`；把变化整理为非装备基线增量，并调用 `装备管理.refresh`。穿戴、卸下或替换分别调用 `装备管理.equip` / `装备管理.unequip`。
-3. JSON 文件优先调用 `json_edit`；memory records、seeds 等行级文本优先调用 `text_edit`。装备管理脚本自行验证持有关系、数量、固定容量和数值边界，不要用通用编辑工具补写其投影。
-4. 每个正式玩家回合维护结束前，调用 `commit_turn_recall` 写入当前 turn 的 `meta.recall`。
+1. **读取本轮基础资料。** 用原生读取打开目标 `save/history/turns/turn-NNNNNN.json` 和 `save/playthrough/runtime.json`。本轮需要 `plotOrder`、player 锚点、memory 或当前场景时，再读取对应的 `save/playthrough/frontier.json`、`save/memory/records.md`、`save/memory/seeds.md` 或已知 scene 文件。
+2. **判定事实。** 将正文和已存档资料分为：已发生事件、当前明确状态、已表达意图、命令/预测/担忧/选项。只有已发生事件和当前明确状态可写入 history、status、scene、relationship、memory 或 timeline。意图只在已明确表达且会持续影响角色时写入 goals；不得把预期结果写成现状。
+3. **定位实体。** 对需维护的人物、场景、物品或关系，先用 `query_entities` 筛选候选，再用 `read_entities` 读取选中实体和所需字段。只有关系上下文会改变本轮判断时，才展开指定方向、关系类型和有限层数；不要读取整库或所有关系。
+4. **补齐必要上下文。** 已知路径直接用原生读取。字段、结构或 render 规则确实不确定时，才读取 `save/schema/current.md` 或 `docs/novel-airp-schema-reference.md` 的相关部分。需要变更 schema 时加载 `schema演进检查` 或 call 世界架构师。重要实体只有在已有明确角色或章节定位、且当前证据不足以完成必要维护时，才定向读取最小范围源文；不得借此批量阅读未读章节或预测后续剧情。
+5. **决定创建或更新。** 已有实体优先更新。缺失实体仅在会跨回合参与剧情、关系、目标、物品归属、场景状态或未来召回时，以最小事实创建；原创角色和原著角色适用同一规则。明显一次性、短暂退场且无后续价值的龙套不建实体。已知字段逐步补全，未知字段保持缺失。`attributes` 仅依据已知境界、稳定表现和主体事实派生，不能倒推出身份、境界、伤势、目标或其他主体事实。
+6. **写入核心目标。** runtime、entity、scene、relationship 和 timeline 的结构化修改使用 `json_edit`。同一目标相互依赖的修改放入一个目标微批次，独立目标分开提交；可用外层 `target` 与 `ops`，未指定 target 的子操作继承外层 target。确有必要移除实体时用独立的 `delete: true` 操作；它只适用于实体 ref，不能和同目标其他修改混用。穿戴、卸下、替换和属性投影刷新使用 `装备管理`，不手工覆盖 `equipment` 或以不明基线写入 `attributes`。
+7. **消费写入结果。** 对每个目标记录 `applied`、`noop`、`failed` 和 `not_run`。已应用或无变化的操作不重放；可修正的失败只重新读取该目标并修正一次。独立目标继续处理。核心目标完成后，用 `text_edit` 维护 records 与 seeds。
+8. **收尾。** 核心和 memory 写入结果已确认后，最后调用 `commit_turn_recall` 写本回合 `meta.recall`。最终摘要按维护域列出实际成功项；必要目标未完成时写“部分维护完成”，并列出目标与原因。
 
-## 回退流程
+## 维护边界
 
-只有当 `read_maintenance_context` 缺失必要事实、返回空正文、目标文件不存在且不能用 `create` 明确创建，或工具不支持目标格式时，才补充读取/写入具体目标文件。不枚举 `save/entities`、`save/scenes`、`save/relationships`，不直接读取底层源文本文件——未读源章节只由 frontier 推进流程读取。
+### runtime 与 timeline
 
-## 写入工具速用
+- `worldTime` 写正文明确的时间推进或场景时间；未知或无变化时保持原值或留空，不发明日历。
+- 需要维护 `plotOrder` 时，读取 frontier timeline，按正文已到达的 source 区间更新；细粒度时间变化不跨剧情节点时不改。
+- 仅当 source 结果可比较时，才建立带 `aligned`、`diverged` 或 `rejoined` 的 player 锚点。无法比较时只维护 `plotOrder`，不猜测 alignment。
+- 不判断 frontier 是否推进，不写 source 锚点。
 
-### json_edit
+### entity、scene 与 relationship
 
-`target` 用 ref 或路径。点路径用于 `set`/`append`/`upsert`/`remove`/`unset`。
+- `history` 只记录会持续影响态度、关系、目标、创伤、秘密、承诺、恩怨或重要物件绑定的经历；`status` 写当前临时状态；稳定能力写 `traits`。
+- scene 只保存当前或后台局面导航。`present` 只写实体 ref，`runtime.activeSceneRefs` 指向当前活跃 scene；需长期后台保留的 scene 标为 `background`。不直接删除 scene 文件。
+- relationship 只维护 `character:<localId>` 之间的人物关系。双向关系两边各写一条；单向认知、隐瞒或态度可只写主体侧。
+- 装备栏与属性投影由 `装备管理` 维护。普通属性变化传给 `装备管理.refresh` 的 `attributeChanges`，不直接修改投影值。
 
-```json
-{
-  "target": "save/playthrough/runtime.json",
-  "set": {
-    "turn": 3,
-    "worldTime": "大婚之日，巳时初",
-    "updatedAtTurn": 3,
-    "updatedBy": "stage-manager"
-  }
-}
-```
+### memory 与 recall
 
-```json
-{
-  "target": "character:萧澈",
-  "append": {
-    "history": [
-      { "event": "大婚之日，萧澈与夏倾月拜堂礼成。" }
-    ]
-  },
-  "upsert": {
-    "status": [
-      {
-        "match": { "id": "status:养心丹药效" },
-        "set": {
-          "name": "养心丹药效",
-          "description": "药效约剩一个时辰",
-          "polarity": "positive"
-        }
-      }
-    ]
-  }
-}
-```
+- records 每条一行：`- [序号] <recall|scene|npc_action> 关键词: 简短关键词; 摘要: 一句客观事实`。读取 records tail 后从下一个序号写起；只记将来召回有价值的客观事实，不复制正文。
+- seeds 每条一行：`- [伏笔描述] 状态: <planted|developing|resolved|abandoned>; 关联回合: N`。仅更新本轮有明确发展、解决或放弃证据的伏笔。
+- `commit_turn_recall` 的摘要必须非空；涉及实体只放对未来召回有价值的实体 ref，其他概念放标签。它只覆盖 `meta.recall`，不改 turn 正文。
 
-```json
-{
-  "target": "save/relationships/character-萧澈.json",
-  "upsert": {
-    "edges": [
-      {
-        "match": { "to": "character:夏倾月" },
-        "set": { "type": "夫妻", "since": 3, "note": "拜堂礼成，二人正式成婚" }
-      }
-    ]
-  }
-}
-```
+## 失败处理
 
-新建实体只写已确认的最小事实，不为了模板完整而填空字段：
+- 参数形状、精确定位、格式或版本冲突可修正时，先读取失败目标，再重试一次。
+- 事实不足、实体身份不能确认、当前 schema 无法表示，或同一目标第二次失败时，停止该目标并在最终摘要中说明。
+- 单个普通操作失败不应阻断其他独立目标。读取或写入的基础设施故障使当前调用无法继续时，立即中止并报告。
 
-```json
-{
-  "target": "character:夏冬灵",
-  "create": {
-    "id": "character:夏冬灵",
-    "name": "夏冬灵",
-    "brief": "夏倾月贴身侍女，比夏倾月大一岁，胆小怕生。"
-  }
-}
-```
+## 最终回复
 
-### text_edit
-
-```json
-{
-  "target": "save/memory/records.md",
-  "append": [
-    "- [8] recall 关键词: 拜堂礼成; 摘要: 萧澈与夏倾月拜堂礼成"
-  ]
-}
-```
-
-```json
-{
-  "target": "save/memory/seeds.md",
-  "replace": [
-    {
-      "find": "萧烈“好好看看她”的暗示",
-      "line": "- [萧烈“好好看看她”的暗示] 状态: developing; 关联回合: 3"
-    }
-  ]
-}
-```
-
-`replace`/`remove` 的 `find` 必须恰好命中一行；0 匹配或多匹配时先修正定位，不要假装已维护。
-
-## 维护对象
-
-### runtime（save/playthrough/runtime.json）
-
-- `worldTime`（字符串）：玩家感受的时间流逝感。按正文中时间推进或场景变化更新为简短叙事字符串（如 `黄昏`、`翌日清晨`、`赤明纪十二年三月初七，黄昏`）；未知或暂不展示时留空字符串，不发明完整日历系统。
-- `plotOrder`（数字）：剧情进度坐标。根据 frontier timeline 判断玩家当前剧情走到哪个 source 锚点之后，设 `runtime.plotOrder` 为该 source 锚点的 order。worldTime 与 plotOrder 独立维护。
-- `weather`：当前天气字符串，按正文更新。
-- `location`：当前地点 `{ ref, name } | null`。
-- `activeSceneRefs`：当前活跃场景指针数组，每项 `{ ref, name }`。
-- `protagonistRef`：主角指针 `{ ref, name } | null`。
-- `extensions`：新增/临时玩家可见字段。
-
-### plotOrder 映射方法
-
-1. 从 `read_maintenance_context` 返回的 timeline 筛选 `kind: "source"` 的锚点，按 order 排序。
-2. 根据正文中剧情推进，判断玩家当前走到了哪个 source 锚点之后。
-3. 设 `runtime.plotOrder` 为该 source 锚点的 order。
-4. 细粒度时间抖动（"第三天清晨→中午→黄昏"）不跨剧情节点时，plotOrder 不动。
-
-### entity（save/entities/）
-
-- entity 文件是实体权威。
-- `character.history` 只记录会长期影响角色态度、关系、目标、创伤、秘密、承诺、恩怨或重要物件绑定的经历；每条只写 `{ "event": "..." }`。
-- `status` 表示当前临时状态；稳定能力写 `traits`。
-- 新建实体只写本回合已确认事实。结构不确定时触发 schema 演进检查或 call 世界架构师。
-
-### 装备维护
-
-- `character.equipment` 是 `Record<string, Array<{ ref: string | null; applied?: Record<string, number> }>>`。key 是槽位类型，每个非空数组的现有长度是固定容量；精确空槽为 `{ "ref": null }`。
-- 装备 item 的 `equipment` 为 `{ slotType, add?, percent?, effects? }`。`add`/`percent` 是安全整数 map，`effects` 只用于叙事。
-- 穿戴或直接替换调用 `装备管理.equip`；卸下调用 `装备管理.unequip`。都传入目标 `slotType`、`slotIndex` 和当前精确 `expectedCurrentRef`。
-- 装备规则、持有关系或普通属性发生变化时调用 `装备管理.refresh`。普通属性增减汇总到 `attributeChanges`，它表示非装备基线的增量，不是最终属性覆写。
-- `refresh` 会撤销旧 `applied`、从同一基线按确定性规则重算，并清理结构合法但缺失、不可达、非装备或槽位类型不匹配的旧槽。数据损坏、未知属性、数量不足、共享容器或溢出会整体失败；修正输入数据后再重试。
-- 不使用 `json_edit` 直接修改角色 `attributes` 或 `equipment`，也不在回合后维护中自行计算贡献。
-
-### extensions.render
-
-`extensions` 的显式 `render` 只接受 schema 已知 preset（`text`、`number`、`progress`、`tag`、`tags`、`list`、`section`、`ref`、`cards`）。省略时可按普通文本处理；显式值未知时，在最终回复对应维护域记录警告并隐藏该字段，不把它静默改成 text 或其他 preset。
-
-### scene（save/scenes/）
-
-- scene 文件里 `present` 只写 `{ ref }` 指针，name/brief/state 回读实体权威。
-- scene 是当前/后台 playthrough 局面导航缓存，不是剧情历史或检索主索引。
-- 维护 `runtime.activeSceneRefs` 作为当前活跃场景指针；需要长期保留为后台导航的 scene 写 `status: "background"`。平台宿主会在维护结束后清理不在 `activeSceneRefs` 且非 background 的 scene；不要尝试用 `json_edit` / `text_edit` 直接删除文件。
-
-### relationship（save/relationships/）
-
-- 只维护 `character:<localId>` 之间的人物关系。
-- 双向角色关系两边各写一条；刻意单向的认知/隐瞒/单方面态度可只写主体侧。
-- 非角色关联不要写入 relationships。
-
-### memory / seeds
-
-records 每条一行：
-`- [序号] <recall|scene|npc_action> 关键词: 简短关键词; 摘要: 一句客观事实`
-
-- `recall`：玩家可回忆的前文事件
-- `scene`：当前场景的关键状态变化
-- `npc_action`：NPC 的自主行动
-
-只记客观事实，去修辞。不复制整段正文原文。序号根据 records tail 递增判断。
-
-seeds 每条一行：
-`- [伏笔描述] 状态: <planted|developing|resolved|abandoned>; 关联回合: N`
-
-### turn recall metadata（save/history/turns/turn-NNNNNN.json）
-
-- 每个正式玩家回合维护结束前，调用 `commit_turn_recall` 写入当前 turn 的 `meta.recall`。该工具只覆盖 `meta.recall`，不改正文 timeline。
-- `meta.recall.schema` 固定为 `沉浸阅读器.turn-recall.v1`。
-- `剧情坐标` 对应维护后的 `runtime.plotOrder`；能判断时填写数字，无法判断可省略。
-- `时间` 写当前世界/剧情时间可读文本，优先使用维护后的 `runtime.worldTime` 或本回合明确时间词。
-- `涉及实体` 只写未来召回最有价值的实体 ref；未知非实体概念放入 `标签`。
-- `事件类型` 只能取：`对话交流`、`玩家选择`、`冲突争执`、`关系变化`、`承诺亏欠`、`秘密揭露`、`发现线索`、`物品变化`、`状态变化`、`场景变化`、`战斗危险`、`计划目标`、`交易谈判`、`亲密暧昧`、`伏笔回收`。
-- `摘要` 写一句客观剧情摘要，必须非空。
-
-## timeline player 锚点
-
-- 在玩家视角发生显著事件时追加 player 锚点 `{ kind: "player", order, turn, time, label, alignment, sourceRef }`。
-- `order` = 玩家当前所在 source 区间的起始 source 锚点 order。同一 source 区间内的多个 player 锚点共享相同 order。
-- `alignment`：`diverged`（偏离原著，sourceRef=分叉自的 source order 或 null）、`rejoined`（从分支并回主干，sourceRef=并回的 source order）、`aligned`（经历 source 事件且结果相近，sourceRef=该 source order；可选，完美跟随时不建，source 锚点本身代表那段故事）。
-- 只在偏离、并回、或经历 source 事件但结果不同时建 player 锚点。
-
-## 最终回复格式
-
-最终回复按维护域汇总；无变化域可简写，但要说明无变化原因。
-
-推荐结构：
-
-```md
-回合后维护完成。本轮维护内容：
-
-**runtime.json**
-- ...
-
-**entities / equipment**
-- ...
-
-**relationships**
-- ...
-
-**scene**
-- ...
-
-**memory**
-- records.md：...
-- seeds.md：...
-
-**timeline**
-- ...
-
-**turn recall**
-- ...
-```
-
-## 不做
-
-- 不判断是否推进 frontier。
-- 不读未读章节（frontier 推进才读）。
-- 不写 source 锚点（world-architect 写）。
-- 不创作新剧情，只维护已发生事实。
+按实际有变化的维护域简要汇总，并说明 records、seeds 与 turn recall 的结果。全部必要目标完成才写“回合后维护完成”；否则写“回合后部分维护完成”，列出未完成目标和原因。

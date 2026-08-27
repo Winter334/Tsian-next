@@ -1,18 +1,23 @@
 {
   "name": "json_edit",
   "title": "编辑 JSON",
-  "description": "结构化编辑 save/ 下 JSON 文件。target 用 ref（如 `character:萧澈`、`scene:萧门大婚`）或路径（如 `save/playthrough/runtime.json`）。支持 `create` 显式创建、`set` 点路径设置、`append` 数组去重追加、`upsert` 数组项按 match 浅合并、`remove` 严格删除一个数组项、`unset` 删除字段；也可用 `ops` 顺序执行多个同形操作。返回 changedPaths 短摘要；预期错误返回短 error，不返回文件全文。",
+  "description": "结构化编辑 save/ 下 JSON 文件。target 用 ref（如 `character:萧澈`、`scene:萧门大婚`）或路径（如 `save/playthrough/runtime.json`）。支持 `create` 显式创建、`set` 点路径设置、`append` 数组去重追加、`upsert` 数组项按 match 浅合并、`remove` 严格删除一个数组项、`unset` 删除字段，以及仅对实体 ref 使用的 `delete: true`。多个 op 可各自指定 target，也可在外层提供一个 target 供子 op 继承；同一 target 先预演后一次写入。结果逐项标记 applied、noop、failed 或 not_run，不返回文件全文。",
   "parameters": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
       "target": {
         "type": "string",
-        "description": "单操作目标：`<type>:<localId>` ref 或 `save/...json` 路径。"
+        "description": "单操作目标，或 ops 的共享目标：`<type>:<localId>` ref 或 `save/...json` 路径。"
       },
       "create": {
         "type": "object",
         "description": "目标不存在时的初始 JSON 对象；目标已存在时传 create 会失败。"
+      },
+      "delete": {
+        "type": "boolean",
+        "const": true,
+        "description": "显式删除一个实体文件。只能用于实体 ref，且必须是该目标的唯一编辑动作；目标已不存在时返回 noop。"
       },
       "set": {
         "type": "object",
@@ -37,13 +42,14 @@
       },
       "ops": {
         "type": "array",
-        "description": "多个操作，按顺序执行，遇错停止，不回滚已成功操作。每项字段同单操作。",
+        "description": "多个操作。每项可显式指定 target；外层指定 target 时，未指定 target 的子项会继承它。同一 target 中任一操作无效时，该 target 不写入；其他 target 继续。",
         "items": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "target": { "type": "string" },
             "create": { "type": "object" },
+            "delete": { "type": "boolean", "const": true },
             "set": { "type": "object" },
             "append": { "type": "object" },
             "upsert": { "type": "object" },
