@@ -3,7 +3,6 @@ import {
   workspaceFileFilterForAgentBoundary,
 } from "./frontend-action-isolation"
 import type { AgentRuntimeEnvironment } from "./turn-types"
-import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
 
 type DesktopEnvironmentInput = Omit<AgentRuntimeEnvironment, "workspace" | "context"> & {
   workspace: Omit<AgentRuntimeEnvironment["workspace"], "trustBoundary">
@@ -12,29 +11,6 @@ type DesktopEnvironmentInput = Omit<AgentRuntimeEnvironment, "workspace" | "cont
 
 type GameEnvironmentInput = Omit<AgentRuntimeEnvironment, "workspace"> & {
   workspace: Omit<AgentRuntimeEnvironment["workspace"], "trustBoundary">
-}
-
-export function deriveDelegatedWorkspaceMutations(
-  mutations: WorkspaceOperationMutationAdapter | undefined,
-): WorkspaceOperationMutationAdapter | undefined {
-  if (!mutations) return undefined
-  return {
-    write(input) {
-      if (input.scope === "save-runtime") return mutations.write(input)
-      if (
-        input.scope === "platform-meta"
-        && input.path !== ".tsian/local"
-        && !input.path.startsWith(".tsian/local/")
-      ) {
-        return mutations.write(input)
-      }
-      throw new Error("Delegated runtime Agents can only write save-runtime or game platform-meta paths.")
-    },
-    delete(input) {
-      if (input.scope === "save-runtime") return mutations.delete(input)
-      throw new Error("Delegated runtime Agents can only delete save-runtime paths.")
-    },
-  }
 }
 
 export function createDesktopAssistantEnvironment(
@@ -84,7 +60,6 @@ export function deriveDelegatedEnvironment(
       trustBoundary: "runtime-game-agent",
       fileFilter: workspaceFileFilterForAgentBoundary("runtime-game-agent"),
       toolFilter: undefined,
-      mutations: deriveDelegatedWorkspaceMutations(environment.workspace.mutations),
     },
     context: {
       ...environment.context,

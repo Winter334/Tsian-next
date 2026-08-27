@@ -121,8 +121,6 @@ import {
   buildRuntimeMessages,
   contextInjectionsToMessages,
 } from "./orchestration/context-injections"
-import { deriveDelegatedWorkspaceMutations } from "./environment"
-
 // barrel re-export (public API — 8 types)
 export type {
   AgentRuntimeTurnInput,
@@ -900,7 +898,6 @@ function createAgentCallRunner(
       runInspectFrontend: undefined,
       runQueryDiagnostics: undefined,
       runTestSkillScript: undefined,
-      workspaceMutations: deriveDelegatedWorkspaceMutations(capabilities.workspaceMutations),
     }
 
     try {
