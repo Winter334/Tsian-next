@@ -1,4 +1,15 @@
 const SAVE_PREFIX = 'save/';
+// memory 文件的条目格式提示：校验失败时随错误返回，供调用方一次改对。
+const MEMORY_FORMAT_HINT = {
+  records: {
+    expectedFormat: '- [序号] <recall|scene|npc_action> 关键词: <简短关键词>; 摘要: <一句客观事实>',
+    example: '- [1] recall 关键词: 王有信饶命; 摘要: 萧凌饶王有信一命，令其带话给萧瑞。',
+  },
+  seeds: {
+    expectedFormat: '- [伏笔描述] 状态: <planted|developing|resolved|abandoned>; 关联回合: <整数>',
+    example: '- [王有信带话回萧瑞] 状态: planted; 关联回合: 1',
+  },
+};
 
 function isRecord(value) {
   return Object.prototype.toString.call(value) === '[object Object]';
@@ -121,6 +132,7 @@ function assertMemoryOperationLines(path, op) {
   if (!kind) return;
   const parser = kind === 'records' ? parseRecordLine : parseSeedLine;
   const invalidCode = kind === 'records' ? 'TEXT_EDIT_RECORD_FORMAT_INVALID' : 'TEXT_EDIT_SEED_FORMAT_INVALID';
+  const hint = MEMORY_FORMAT_HINT[kind];
   const sources = [];
   if (Array.isArray(op.append)) sources.push.apply(sources, op.append);
   if (Array.isArray(op.replace)) {
@@ -128,10 +140,18 @@ function assertMemoryOperationLines(path, op) {
   }
   for (let index = 0; index < sources.length; index += 1) {
     if (!parser(sources[index])) {
-      fail(invalidCode, path.split('/').pop() + ' edit lines must use the maintenance entry format.', { path: path, editLine: index + 1 });
+      fail(invalidCode, path.split('/').pop() + ' edit line ' + (index + 1) + ' does not match the required entry format.', {
+        path: path,
+        editLine: index + 1,
+        received: sources[index],
+        expectedFormat: hint.expectedFormat,
+        example: hint.example,
+      });
     }
   }
 }
+// 校验合并后的完整文件。只统计可解析的条目；文件既有的非法行跳过而不阻断本次写入，
+// 本次提交的行已由 assertMemoryOperationLines 严格校验。
 function validateMemoryLines(path, lines) {
   const kind = memoryKind(path);
   if (!kind) return;
@@ -141,7 +161,7 @@ function validateMemoryLines(path, lines) {
     for (let i = 0; i < lines.length; i++) {
       if (!isRecordEntryCandidate(lines[i])) continue;
       const parsed = parseRecordLine(lines[i]);
-      if (!parsed) fail('TEXT_EDIT_RECORD_FORMAT_INVALID', 'records.md record entries must use the record format.', { path: path, line: i + 1 });
+      if (!parsed) continue;
       const expected = previous === null ? 1 : previous + 1;
       if (parsed.index !== expected) fail('TEXT_EDIT_RECORD_SEQUENCE_INVALID', 'records.md indexes must increase by one from the current tail.', { path: path, line: i + 1, expected: expected, actual: parsed.index });
       if (fingerprints.has(parsed.fingerprint)) fail('TEXT_EDIT_RECORD_DUPLICATE', 'records.md already contains the same record.', { path: path, line: i + 1 });
@@ -154,7 +174,7 @@ function validateMemoryLines(path, lines) {
   for (let i = 0; i < lines.length; i++) {
     if (!isSeedEntryCandidate(lines[i])) continue;
     const parsed = parseSeedLine(lines[i]);
-    if (!parsed) fail('TEXT_EDIT_SEED_FORMAT_INVALID', 'seeds.md seed entries must use the seed format.', { path: path, line: i + 1 });
+    if (!parsed) continue;
     if (seen.has(parsed.label)) {
       const previous = seen.get(parsed.label);
       if (previous.status !== parsed.status || previous.turn !== parsed.turn) {
@@ -186,6 +206,30 @@ function validateSeedTransitions(beforeLines, afterLines, path) {
       fail('TEXT_EDIT_SEED_TRANSITION_INVALID', 'Seed status transition is not allowed.', { path: path, line: i + 1, label: parsed.label, from: previous, to: parsed.status });
     }
   }
+}
+// 采集 memory 文件的规模与脏行观测值，写入 trace。
+// entryCount / charCount / closedCount 供开发者判断是否触达分片阈值；skippedLines 暴露文件中的既有非法行。
+function collectMemoryStats(path, lines) {
+  const kind = memoryKind(path);
+  if (!kind) return null;
+  const parser = kind === 'records' ? parseRecordLine : parseSeedLine;
+  const isCandidate = kind === 'records' ? isRecordEntryCandidate : isSeedEntryCandidate;
+  let entryCount = 0;
+  let skippedLines = 0;
+  let closedCount = 0;
+  for (const line of lines) {
+    if (!isCandidate(line)) continue;
+    const parsed = parser(line);
+    if (!parsed) {
+      skippedLines += 1;
+      continue;
+    }
+    entryCount += 1;
+    if (kind === 'seeds' && (parsed.status === 'resolved' || parsed.status === 'abandoned')) closedCount += 1;
+  }
+  const stats = { path: path, kind: kind, entryCount: entryCount, charCount: joinLines(lines).length, skippedLines: skippedLines };
+  if (kind === 'seeds') stats.closedCount = closedCount;
+  return stats;
 }
 function findLine(lines, find, opIndex, action, index) {
   const matches = [];
@@ -289,7 +333,7 @@ function operationResult(op, opIndex, applied, before, created) {
     changedLines: changed ? applied.changedLines : [],
   };
 }
-async function applyTargetGroup(group, results, tsian, signal) {
+async function applyTargetGroup(group, results, tsian, signal, memoryStats) {
   const first = group[0];
   throwIfAborted(signal);
   let existing;
@@ -371,6 +415,8 @@ async function applyTargetGroup(group, results, tsian, signal) {
       return;
     }
   }
+  const stats = collectMemoryStats(first.op.target, splitLines(staged));
+  if (stats && Array.isArray(memoryStats)) memoryStats.push(stats);
   for (const item of pending) results[item.entry.index] = item.result;
 }
 async function textEdit(input, tsian, signal) {
@@ -384,6 +430,7 @@ async function textEdit(input, tsian, signal) {
   }
   const results = [];
   const groups = [];
+  const memoryStats = [];
   const byTarget = new Map();
   for (let i = 0; i < ops.length; i++) {
     const op = ops[i];
@@ -403,7 +450,7 @@ async function textEdit(input, tsian, signal) {
     }
     group.push({ index: i, op: op });
   }
-  for (const group of groups) await applyTargetGroup(group, results, tsian, signal);
+  for (const group of groups) await applyTargetGroup(group, results, tsian, signal, memoryStats);
   for (let i = 0; i < ops.length; i++) {
     if (!results[i]) results[i] = errorResult(okError('TEXT_EDIT_NOT_RUN', 'Operation was not executed.', { opIndex: i }), i, ops[i] && ops[i].target, 'not_run');
   }
@@ -416,7 +463,9 @@ async function textEdit(input, tsian, signal) {
     result.errors = failures;
     result.error = failures.find(function (item) { return item.status === 'failed'; }) || failures[0];
   }
-  tsian.trace('text_edit', { opCount: ops.length, changedCount: results.filter(function (item) { return item.status === 'applied'; }).length, failedCount: failures.length });
+  const traceDetail = { opCount: ops.length, changedCount: results.filter(function (item) { return item.status === 'applied'; }).length, failedCount: failures.length };
+  if (memoryStats.length) traceDetail.memory = memoryStats;
+  tsian.trace('text_edit', traceDetail);
   return result;
 }
 return textEdit(input, tsian, signal);

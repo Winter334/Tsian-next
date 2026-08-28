@@ -14,10 +14,10 @@ appliesTo:
 
 ## 固定流程
 
-1. **读取本轮基础资料。** 用原生读取打开目标 `save/history/turns/turn-NNNNNN.json` 和 `save/playthrough/runtime.json`。本轮需要 `plotOrder`、player 锚点、memory 或当前场景时，再读取对应的 `save/playthrough/frontier.json`、`save/memory/records.md`、`save/memory/seeds.md` 或已知 scene 文件。
+1. **读取本轮基础资料。** `workspace-map.md`、`save/schema/current.md`、`save/playthrough/runtime.json`、`save/memory/records.md` 与 `save/memory/seeds.md` 已随本次调用注入上下文，直接取用。另需用原生读取打开目标 `save/history/turns/turn-NNNNNN.json`（`NNNNNN` 为回合号补零至 6 位）。本轮涉及 `plotOrder`、player 锚点或当前场景时，再读取 `save/playthrough/frontier.json`，或按 `workspace-map.md` 的 ref → 路径规则从 `runtime.activeSceneRefs` 推出 scene 文件。
 2. **判定事实。** 将正文和已存档资料分为：已发生事件、当前明确状态、已表达意图、命令/预测/担忧/选项。只有已发生事件和当前明确状态可写入 history、status、scene、relationship、memory 或 timeline。意图只在已明确表达且会持续影响角色时写入 goals；不得把预期结果写成现状。
-3. **定位实体。** 对需维护的人物、场景、物品或关系，先用 `query_entities` 筛选候选，再用 `read_entities` 读取选中实体和所需字段。只有关系上下文会改变本轮判断时，才展开指定方向、关系类型和有限层数；不要读取整库或所有关系。
-4. **补齐必要上下文。** 已知路径直接用原生读取。字段、结构或 render 规则确实不确定时，才读取 `save/schema/current.md` 或 `docs/novel-airp-schema-reference.md` 的相关部分。需要变更 schema 时加载 `schema演进检查` 或 call 世界架构师。重要实体只有在已有明确角色或章节定位、且当前证据不足以完成必要维护时，才定向读取最小范围源文；不得借此批量阅读未读章节或预测后续剧情。
+3. **定位实体与场景。** 人物、物品、容器、地点等实体一律先用 `query_entities` 筛选候选，再用 `read_entities` 按 ref 读取所需字段——一次调用可覆盖多个实体和字段，不要逐个原生读取实体文件。角色关系优先用 `read_entities` 的 `relations` 参数展开指定方向、关系类型和有限层数。场景不在专用工具覆盖范围内：从 `runtime.activeSceneRefs` 取 ref，按 `workspace-map.md` 的规则推出 `save/scenes/<localId>.json` 后原生读取。`query_entities` 只扫描 `save/entities/`，不能查询场景或关系文件。专用工具报错或返回结果不足以判断时，才回退到原生读取对应文件，并在最终摘要中说明回退原因。不要读取整库或所有关系。
+4. **补齐必要上下文。** 实体与角色关系仍按第 3 步走专用工具；本步只处理 schema、源文等非实体资料，已知路径直接用原生读取。仅当 `current.md` 未覆盖的罕见字段、结构或 render 规则需要确认时，才查阅 `docs/novel-airp-schema-reference.md` 的相关部分。需要变更 schema 时加载 `schema演进检查` 或 call 世界架构师。重要实体只有在已有明确角色或章节定位、且当前证据不足以完成必要维护时，才定向读取最小范围源文；不得借此批量阅读未读章节或预测后续剧情。
 5. **决定创建或更新。** 已有实体优先更新。缺失实体仅在会跨回合参与剧情、关系、目标、物品归属、场景状态或未来召回时，以最小事实创建；原创角色和原著角色适用同一规则。明显一次性、短暂退场且无后续价值的龙套不建实体。已知字段逐步补全，未知字段保持缺失。`attributes` 仅依据已知境界、稳定表现和主体事实派生，不能倒推出身份、境界、伤势、目标或其他主体事实。
 6. **写入核心目标。** runtime、entity、scene、relationship 和 timeline 的结构化修改使用 `json_edit`。同一目标相互依赖的修改放入一个目标微批次，独立目标分开提交；可用外层 `target` 与 `ops`，未指定 target 的子操作继承外层 target。确有必要移除实体时用独立的 `delete: true` 操作；它只适用于实体 ref，不能和同目标其他修改混用。穿戴、卸下、替换和属性投影刷新使用 `装备管理`，不手工覆盖 `equipment` 或以不明基线写入 `attributes`。
 7. **消费写入结果。** 对每个目标记录 `applied`、`noop`、`failed` 和 `not_run`。已应用或无变化的操作不重放；可修正的失败只重新读取该目标并修正一次。独立目标继续处理。核心目标完成后，用 `text_edit` 维护 records 与 seeds。
@@ -41,9 +41,9 @@ appliesTo:
 
 ### memory 与 recall
 
-- records 每条一行：`- [序号] <recall|scene|npc_action> 关键词: 简短关键词; 摘要: 一句客观事实`。读取 records tail 后从下一个序号写起；只记将来召回有价值的客观事实，不复制正文。
-- seeds 每条一行：`- [伏笔描述] 状态: <planted|developing|resolved|abandoned>; 关联回合: N`。仅更新本轮有明确发展、解决或放弃证据的伏笔。
-- `commit_turn_recall` 的摘要必须非空；涉及实体只放对未来召回有价值的实体 ref，其他概念放标签。它只覆盖 `meta.recall`，不改 turn 正文。
+- records 每条一行：`- [序号] <recall|scene|npc_action> 关键词: 简短关键词; 摘要: 一句客观事实`。尖括号只标示可选值，写入时不带尖括号，例：`- [1] scene 关键词: 恶奴踹门; 摘要: 王有信带侍卫踹门闯入萧凌卧房。`。序号从注入的 records 末条依次递增；只记将来召回有价值的客观事实，不复制正文。
+- seeds 每条一行：`- [伏笔描述] 状态: <planted|developing|resolved|abandoned>; 关联回合: N`。同样不带尖括号，例：`- [王有信带话回萧瑞] 状态: planted; 关联回合: 1`。仅更新本轮有明确发展、解决或放弃证据的伏笔。
+- `commit_turn_recall` 的摘要必须非空；涉及实体只放对未来召回有价值的实体 ref，其他概念放标签。`事件类型`、`涉及实体`、`标签` 均为数组，枚举值与各字段上限见 `workspace-map.md`。它只覆盖 `meta.recall`，不改 turn 正文。
 
 ## 失败处理
 
