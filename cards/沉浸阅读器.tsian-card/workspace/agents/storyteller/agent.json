@@ -19,7 +19,11 @@
       "position": "framing"
     }
   ],
-  "enabledModules": ["第三人称", "禁用词表", "快捷回复", "杀超雄"],
+  "enabledModules": [
+    "快捷回复",
+    "第二人称",
+    "原作文风"
+  ],
   "skills": {
     "enabled": [
       "agents/storyteller/skills/掷骰/SKILL.md",

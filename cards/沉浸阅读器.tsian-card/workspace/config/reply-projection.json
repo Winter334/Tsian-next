@@ -3,7 +3,7 @@
   "rules": [
     {
       "id": "choices",
-      "match": "/\\[\\[选项\\]\\]([\\s\\S]*?)\\[\\[\\/选项\\]\\]/g",
+      "match": "/\\<选项\\>([\\s\\S]*?)\\<\\/选项\\>/g",
       "text": "",
       "project": {
         "choices": "$1|lines|stripList"
