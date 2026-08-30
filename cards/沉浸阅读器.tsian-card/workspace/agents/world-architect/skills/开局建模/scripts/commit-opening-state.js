@@ -50,11 +50,16 @@ async function commitOpeningState(input, tsian, signal) {
         summary: normalizeString(raw.summary, 'OPENING_TIMELINE_SUMMARY_REQUIRED', 'Timeline summary', 1000),
       };
     });
+    const entryAnchorIndex = Number.isSafeInteger(input.frontier.entryAnchorIndex)
+      && input.frontier.entryAnchorIndex >= 1
+      && input.frontier.entryAnchorIndex <= timeline.length
+      ? input.frontier.entryAnchorIndex
+      : 1;
     const runtimeFile = {
       ...input.runtime,
       turn: 0,
       worldTime: typeof input.runtime.worldTime === 'string' ? input.runtime.worldTime.trim().slice(0, 120) : '',
-      plotOrder: timeline[0].order,
+      plotOrder: timeline[entryAnchorIndex - 1].order,
       location: location,
       weather: typeof input.runtime.weather === 'string' ? input.runtime.weather.trim().slice(0, 120) : '',
       activeSceneRefs: activeSceneRefs,
@@ -75,6 +80,7 @@ async function commitOpeningState(input, tsian, signal) {
       updatedAt: new Date().toISOString(),
       updatedBy: 'world-architect',
     };
+    delete frontierFile.entryAnchorIndex;
     const summary = normalizeString(input.summary, 'OPENING_SETUP_SUMMARY_REQUIRED', 'summary', 2000);
     const pendingSummary = { status: 'pending', summary: summary };
 

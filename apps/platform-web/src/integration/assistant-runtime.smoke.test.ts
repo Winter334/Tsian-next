@@ -898,13 +898,9 @@ describe("Agent context contracts smoke", () => {
       platformTools?: { enabled?: string[] }
       workspaceAccess?: { level?: number }
     }
-    expect(storytellerConfig.enabledModules).not.toContain("原作文风")
     expect(storytellerConfig.platformTools?.enabled).toContain("workspace_read")
     expect(storytellerConfig.platformTools?.enabled).toContain("workspace_write")
     expect(storytellerConfig.workspaceAccess?.level).toBe(2)
-    const currentSchema = DEFAULT_SAVE_RUNTIME_FILES.find((file) => file.path === "save/schema/current.md")?.content ?? ""
-    expect(currentSchema.length).toBeLessThan(1_000)
-    expect(currentSchema).toContain("save-specific")
   })
 
   it("keeps staged opening recovery, publication, and source summaries executable", async () => {

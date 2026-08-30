@@ -210,7 +210,7 @@ onUnmounted(() => {
 
 /* ── 流式文本块：轻量渲染，不复用 NarrativeMessage ──
    NarrativeMessage 为落定消息设计（含选项块清洗、完整排版），
-   半截 [[选项]] 未闭合时排版会异常；流式用独立的轻量块。 */
+   半截 <选项> 未闭合时排版会异常；流式用独立的轻量块。 */
 .streaming-block {
   display: flex;
   align-items: flex-start;

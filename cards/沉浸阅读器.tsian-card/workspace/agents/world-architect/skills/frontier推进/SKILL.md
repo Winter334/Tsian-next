@@ -25,7 +25,7 @@ appliesTo:
 
 ## 抽取什么
 
-- 新登场角色（entity）：identity/appearance/attributes（按境界参照 schema guide 示例刻度尺填写），不抽 sourceRefs/origin。
+- 新登场角色（entity）：identity/appearance/attributes（按 `save/schema/current.md` 记录的档位与阶梯区间取值，方法见 `docs/属性刻度规范.md`），不抽 sourceRefs/origin。
 - 角色关系（relationship）：仅 character↔character，不抽地点/组织/物品关联。
 - schema 增量：仅在发现需要新字段/结构时写 pending patch。
 
