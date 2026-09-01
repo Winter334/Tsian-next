@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "本任务改 prompt 和 Skill 的 AI-facing 文本（脚本调用指令 + understanding-summary 格式），必须遵循正面引导原则、禁令 Would-It-Happen-Anyway 测试、改后 grep 验证零残留"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "OpeningUnderstandingSummary 类型 + isOpeningUnderstandingSummary 校验改动涉及前端状态管理约定"}
+{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "DEFAULT_WORKSPACE_FILES 新增脚本文件 + Skill tsian-actions 声明涉及 workspace 模板布局与 storage 表接口约定"}

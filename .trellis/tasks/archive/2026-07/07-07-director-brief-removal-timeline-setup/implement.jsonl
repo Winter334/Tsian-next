@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/07-06-agent-roster-progressive-refactor/design.md", "reason": "父任务架构设计文档——timeline 方案、导演移除理由、紧耦合原因的完整推理。B 的 design.md 只记录执行决策，架构 why 在此文档。"}
+{"file": ".trellis/tasks/07-06-agent-roster-progressive-refactor/prd.md", "reason": "父任务 PRD——Child Task Map B 的范围声明、跨子任务共识、设计原则（AGENT.md/SOUL.md/Skill 写作规范）。"}
+{"file": ".trellis/spec/guides/airp-data-capability-design-principles.md", "reason": "原则 9（每个字段必须有一个真实消费者）——B 移除 director-only visibility 枚举值的依据；Skill 正文写作规范。"}
+{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "移除 director/brief 概念时避免残留概念痕迹——检查 tool schema、prompt、description 中是否还有导演/brief 暗示。"}

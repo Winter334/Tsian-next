@@ -1,0 +1,2 @@
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Check that retained smoke/build/browser gates and the final admission policy are consistent with platform quality rules."}
+{"file":".trellis/tasks/08-08-repository-test-suite-consolidation/research/minimal-smoke-suite.md","reason":"Check exact final inventory, cross-layer authenticity, deletion completeness, script selection, and accepted coverage losses."}

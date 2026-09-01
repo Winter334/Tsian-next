@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Runtime tool/action, raw history, trace, workspace transaction, and future maintenance contracts belong in this spec."}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "The implementation will touch successful-turn persistence, Dexie transaction boundaries, and Runtime Workspace state."}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "Required build/check guidance and failure rollback expectations for interaction.sendMessage changes."}
+{"file": "docs/active/current-state-handoff.md", "reason": "Active project state lists Agent notes/session and timeline/current-summary maintenance as missing next work."}
+{"file": "docs/active/agent-framework-runtime-workspace-direction.md", "reason": "Authoritative direction for Runtime Workspace file conventions and next-step runtime foundation work."}
+{"file": ".trellis/tasks/archive/2026-06/06-13-runtime-side-effect-transactions/prd.md", "reason": "Previous child established staged transaction semantics this task must reuse."}
+{"file": ".trellis/tasks/archive/2026-06/06-13-runtime-workspace-writeback-mvp/prd.md", "reason": "Raw AIRP history writeback intentionally deferred semantic maintenance and defines the base history record."}
+{"file": ".trellis/tasks/archive/2026-06/06-13-agent-call-mvp/prd.md", "reason": "Memory Agent and agent_call context/history policy inform model-assisted maintenance scope."}

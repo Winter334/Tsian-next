@@ -1,0 +1,5 @@
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Check that completed splits follow seam-based module boundaries and avoid anti-patterns."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Check required platform-web validation commands and source references."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Check build, diff hygiene, and behavior preservation constraints."}
+{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Check final module placement and index/barrel boundaries."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Check default workspace seed and storage constraints after template splitting."}

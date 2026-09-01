@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/contracts/backend/directory-structure.md", "reason": "Verify shared bridge protocol types are placed/exported correctly."}
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "Verify remote/frontend consumers can rely on shared bridge contracts."}
+{"file": ".trellis/spec/platform-web/frontend/directory-structure.md", "reason": "Verify bridge adapter and route changes stay in the intended platform-web layers."}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Verify active save/card and immediate platform action semantics remain stable."}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Verify remote bridge method filtering, workspace path behavior, and AI debug exclusion."}
+{"file": "docs/active/airp-workflow-platform-direction.md", "reason": "Verify final docs preserve platform/frontend boundary decisions."}
+{"file": "docs/active/agent-framework-runtime-workspace-direction.md", "reason": "Verify workspace and diagnostics boundaries remain accurate."}

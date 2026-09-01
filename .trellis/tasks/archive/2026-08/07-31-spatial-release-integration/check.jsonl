@@ -1,0 +1,4 @@
+{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"Verify final registry, production isolation, input, accessibility, reduced-motion, performance and resource-lifecycle contracts."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Apply the platform-web build/test, fail-loud and consistency quality gate before release."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Check RetroOS parity, route/window identity, mounted state, focus visibility and cross-shell behavior."}
+{"file":".trellis/tasks/07-31-spatial-release-integration/research/release-baseline.md","reason":"Compare final state against the known release blockers and pre-change build/test baseline."}

@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "platform-web 前端 spec 入口，含 Required Checks（build:web / build:contracts）清单，check 阶段必跑。"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "预提交检查与禁用模式；校验 vue-tsc -b && vite build、text 模式回归无 forbidden pattern。"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "校验运行时边界规范化：toolCallMode 必填报错/丢弃、RuntimeChatMessage↔AiChatMessage 降级转换的类型安全。"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "Required Checks 含 build:contracts；验收要求 npm run build（含 contracts 包）通过，确认未越界改 AiChatMessage 契约。"}
+{"file": ".trellis/spec/guides/index.md", "reason": "共享思维指南入口，check 阶段用于触发跨层与复用复核。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "复核多层间数据流：callModel 签名 Promise<string>→Promise<ModelCallResult> 影响所有调用方，确保层间一致无遗漏。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复核 buildEnabledToolSchemas 是否复用现有 gating、toolCallMode 字段加入点无遗漏、无重复实现。"}

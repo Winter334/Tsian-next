@@ -1,0 +1,9 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web ownership boundaries and required validation commands."}
+{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Placement rules for new shell, engine, composables, views, and shared primitives."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"RetroOS shell invariants, route-view ownership, focus, narrow layout, and mounted-window state requirements."}
+{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/research/current-architecture-and-api.md","reason":"Concise evidence for shell/state structure, reuse seams, HTML-in-Canvas constraints, input projection, and first-slice rationale."}
+{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Composable boundaries and reusable controller/pure-helper extraction rules."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Map UI mode, registry, source DOM, GPU renderer, projected input, and presentation boundaries explicitly."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Prevent a new monolithic SpatialDesktopShell or graphics god module."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Share domain mutations/controllers without copying RetroOS behavior into spatial views."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Persist the user-configurable UI mode in the assistant-visible platform config file rather than hidden storage."}

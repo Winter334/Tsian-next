@@ -1,0 +1,7 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Verify platform-web scope and required build checks."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Check route/window ownership, mounted-state preservation, focus visibility, and desktop behavior."}
+{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/research/current-architecture-and-api.md","reason":"Audit the implementation against discovered shell/state/API constraints and reuse seams."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Apply platform-web quality gate and fail-loud project rules."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audit every source-DOM/render/input and registry/presentation boundary end to end."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Review responsibility seams and prevent god files during the large UI build."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Detect duplicated business logic or per-panel projection/media fallbacks."}

@@ -1,0 +1,6 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"verify platform-web required checks after settings/config/runtime changes"}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"check FloatingWindow UI consistency and preserved visual language"}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"check nested provider parameter normalization and request payload safety"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"check Agent Runtime provider adapter contracts and required build:web"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"review config storage → UI → runtime adapter data flow"}
+{"file":".trellis/tasks/07-02-model-config-ui-redesign/research/provider-model-parameter-notes.md","reason":"verify implementation matches researched provider parameter fields"}

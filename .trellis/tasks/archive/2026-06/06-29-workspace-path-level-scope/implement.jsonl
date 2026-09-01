@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "platform-web frontend 总入口：本任务改 apps/platform-web/src/agent-runtime + platform-host workspace-ops，必读目录结构与源引用约定"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "构建检查要求 build:web/build:contracts；含 workspace 操作相关质量约束，重构后必跑"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "WorkspaceScope/WorkspaceOperationRequest 跨层类型边界，结果类型改 fromScope/toScope + mutation adapter 加 ownerContext 需保证类型归一化"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "workspace 操作属运行时状态变更层，mutation adapter/ownerContext 推导需遵守 state 管理约定"}

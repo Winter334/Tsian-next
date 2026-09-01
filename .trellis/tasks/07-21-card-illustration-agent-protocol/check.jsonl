@@ -1,0 +1,8 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify marker, projection, entrypoint, Agent, Tool and Host target consumers agree end to end."}
+{"file":".trellis/spec/guides/validation-strategy.md","reason":"Check malformed protocol, Tool visibility, compatibility and packaged behavior with proportional evidence."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Audit authority ownership and explicit high-cost Tool permission."}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Review all Agent-facing copies of the brief contract for completeness and drift."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Verify shared frontend-facing contracts and package integration quality."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Verify optional entrypoint compatibility, closed normalization and consumer builds."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Check the validator, entrypoint and invoke inputs remain strict and non-coercing."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Ensure obsolete caller authority, configuration UI and packaging work did not return."}

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"verify required platform-web checks after provider/runtime changes"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"quality gate requires build:web and preserving Agent Runtime/debug/cache behavior"}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"check provider response parsing treats unknown API payloads safely"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"verify contracts build when debug provider-kind contract changes"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"check shared AiDebugRecord shape remains a narrow contract"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"review config/runtime/UI/debug cross-layer consistency"}
+{"file":".trellis/tasks/07-02-openai-responses-provider/research/openai-responses-api-notes.md","reason":"check implementation matches documented Responses protocol fields"}

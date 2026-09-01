@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/platform-web/frontend/directory-structure.md", "reason": "FloatingWindow/AssistantConfigPanel 新组件与 useDialogForm 扩展的归属目录决策"}
+{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "FloatingWindow.vue(可拖拽浮窗)与 AssistantConfigPanel.vue(4 区块卡片)的 Vue 组件写法规范"}
+{"file": ".trellis/spec/platform-web/frontend/hook-guidelines.md", "reason": "useDialogForm 扩展 openDialogWindow 槽位模式的组合式函数规范"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "命令式 saveLocalAssistantFiles 持久化 + 每次 toggle 后 getLocalAssistantConfig 重取响应式状态的模式"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "通过 bridge 调用 platform-host 新增 setter 的运行时边界类型规整"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用 StudioView 区块模式与 card agent setter 骨架,避免重复实现"}
+{"file": ".trellis/spec/guides/data-fileification-principle.md", "reason": "agent.json 是文件化配置,新增 setter 走 load→parse→mutate→save 文件持久化路径"}

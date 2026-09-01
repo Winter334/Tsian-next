@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "前端 workspace 数据消费与类型安全约定；本次改 Runtime interface + parseRuntime 的错误分级需要遵守。"}
+{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "platform-web storage 层（workspace-templates 所在层）通用约定；本次改默认模板与开局脚本需要遵守。"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "platform-web 侧类型约定；开局脚本 JS 字符串虽是 browser_script，但校验/归一逻辑与平台契约一致。"}
+{"file": ".trellis/tasks/07-05-runtime-scene-character-schema-ui-align/design.md", "reason": "本任务的技术设计：runtime/scene/character 新 schema 数据结构、状态栏对齐、迁移策略。"}
+{"file": ".trellis/tasks/07-05-runtime-scene-character-schema-ui-align/implement.md", "reason": "本任务的有序执行清单：模板 → 前端类型 → 状态栏 → 依赖 PRD → build。"}
+{"file": ".trellis/tasks/07-03-play-frontend-status-bar/prd.md", "reason": "父任务 PRD：runtime as current context index / scene ref-only / 权威归属等 principle 是本任务的语义源。"}

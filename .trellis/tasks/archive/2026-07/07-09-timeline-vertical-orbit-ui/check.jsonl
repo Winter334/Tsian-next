@@ -1,0 +1,4 @@
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"检查最终组件实现是否保持 <script setup lang=\"ts\">、局部状态清晰、template 不塞长逻辑、UI 改动不越界"}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"检查滚动自动定位只执行一次、手动滚动后不被拉回，Observer/rAF 生命周期清理正确"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"检查构建命令结果与是否意外触及 platform-web/contracts 所需额外验证"}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"检查 TimelineGraph/辅助 helper 是否职责清晰，没有把不相关逻辑堆成 god file"}

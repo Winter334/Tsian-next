@@ -1,0 +1,3 @@
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Quality gate expectations for platform-web UI/runtime changes."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Check cross-layer workflow preset contract behavior and required build coverage."}
+{"file":"docs/active/airp-workflow-platform-direction.md","reason":"Verify implementation remains aligned with the AIRP workflow platform direction and does not over-expand memory architecture."}

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Shared contract authoring boundaries and mandatory contract/consumer builds."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Optional-field compatibility and high-impact contract review rules."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Remote/play frontend contract consumption and additive bridge-field discipline."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web ownership, source references, and required build checks."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Vue component structure, stable fixed-format layout, and player-facing terminology conventions."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"The display name crosses runtime, persistence, bridge, SDK, and UI layers."}
+

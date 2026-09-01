@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "重写 Skill《游玩设定》正文和 buildPlaySetupPrompt 时需遵守 AI-facing 内容变更规则：移除 mode.json/玩法启用概念要零残留；新增访谈问题需通过 would-it-happen-anyway 测试"}
+{"file": ".trellis/spec/guides/airp-data-capability-design-principles.md", "reason": "新增 character.traits[] 字段需对照原则 9（每个字段必须有真实消费者）验证 description/effects 有明确消费链路；Skill action 归属需对照原则 2-3"}

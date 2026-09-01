@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "提交前禁用模式与质量检查:浮窗/区块组件、composable 扩展是否符合规范"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "bridge 调用与 AgentConfig 契约消费的类型安全核对"}
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "AgentConfig / AgentRegistryEntry 契约形状在 platform-host 新 getter/setter 中的正确消费"}

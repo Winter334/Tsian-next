@@ -17,8 +17,13 @@ Thumbs.db
 .claude/
 .codex/
 .omc/
-.trellis/
 .zcode/
+
+# Trellis：规划与 spec 产物入库；运行时状态与大体积回滚材料不入库
+# （.trellis/.gitignore 已覆盖 .developer / .current-task / .runtime/ / .backup-* 等）
+.trellis/tasks/**/rollback/
+.trellis/tasks/**/snapshot/
+.trellis/.template-hashes.json
 
 # 本地构建与打包产物
 tmp/

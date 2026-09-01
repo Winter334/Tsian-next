@@ -1,0 +1,8 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audit the complete target-to-asset round trip and producer/consumer agreement."}
+{"file":".trellis/spec/guides/validation-strategy.md","reason":"Choose risk-proportionate build, smoke, integration and packaged-browser evidence."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Check for duplicate authority, unused fields and platform/card ownership drift."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Check platform-web source quality and forbidden patterns."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check strict RPC, Tool and workspace boundary normalization."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Audit formal merge, generated-media CAS, checkpoint patch and Blob GC."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Verify shared contract changes and consumer builds."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Ensure obsolete July scope was not reintroduced during implementation."}

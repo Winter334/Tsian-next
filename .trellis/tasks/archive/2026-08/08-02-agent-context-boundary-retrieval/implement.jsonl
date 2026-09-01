@@ -1,0 +1,8 @@
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Agent Runtime tools, compression, environment permissions, UI tool events and native protocol contracts."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Desktop Assistant streaming, session timeline persistence and formal turn UI data flow."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Model-facing observation compactness, workspace search ownership and cross-layer quality rules."}
+{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"Diagnostic authority, retention, virtual adapter and owner-only access contracts."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Shared ConversationMessageRecord, ToolEvent and runtime bridge consumer contracts."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Capability ownership, Skill/Tool boundaries, authoritative data and real-consumer checks."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"End-to-end raw-result to Agent/UI/Audit projection data-flow review."}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Desktop Assistant and diagnostics Skill AI-facing instruction changes."}

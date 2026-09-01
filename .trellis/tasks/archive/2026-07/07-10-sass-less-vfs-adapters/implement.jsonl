@@ -1,0 +1,9 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "platform-web frontend scope and required checks"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "browser esbuild-wasm runtime traps, suffix invariant, and browser validation"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "strict TypeScript and packaged frontend contracts"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "reuse official compilers and shared VFS helpers"}
+{"file": ".trellis/spec/guides/module-structure-guide.md", "reason": "separate shared dispatcher, VFS, Sass, and Less responsibilities"}
+{"file": ".trellis/tasks/archive/2026-07/07-10-vue-vfs-css-modules/design.md", "reason": "completed prerequisite VFS, virtual style, scoped CSS, and CSS Modules architecture"}
+{"file": ".trellis/tasks/07-10-sass-less-vfs-adapters/research/browser-compiler-baseline.md", "reason": "verified Sass/Less browser exports, API decisions, security boundary, and integration seams"}
+{"file": ".trellis/tasks/07-10-sass-less-vfs-adapters/research/validation.md", "reason": "completed focused validation evidence and parent integration fixture handoff matrix"}

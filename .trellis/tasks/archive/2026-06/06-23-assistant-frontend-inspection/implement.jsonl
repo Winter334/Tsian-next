@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/platform-web/frontend/directory-structure.md", "reason": "新文件 platform-host/frontend-inspector.ts 的归属与 agent-runtime/platform-host 层边界"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "新工具 schema 与 InspectFrontendInput/Result 的运行时边界规整与 contract 使用"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "inspector 要镜像 runtime snapshot / bridge state / 单会话生命周期模式"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "平台前端禁用模式与 pre-commit 检查（build:web / build:contracts）"}
+{"file": ".trellis/spec/contracts/backend/directory-structure.md", "reason": "AgentPlatformToolName 该加在 packages/contracts/src/runtime.ts 的哪个导出边界"}
+{"file": ".trellis/spec/contracts/backend/error-handling.md", "reason": "INSPECT_FRONTEND_* toolError 错误码的契约式建模"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "本任务核心是复用 resolvePackagedFrontendUrl / mountRemoteIframeFrontend / runAgentRuntimeTurn，需对照复用而非重写"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "改动横跨 contracts → agent-runtime → platform-host → storage，需对照跨层一致性"}
+{"file": "docs/active/play-frontend-sdk-direction.md", "reason": "方向依据：第 6 章助手职责第 9 条（看效果迭代）的物理实现"}
+{"file": "docs/active/assistant-frontend-inspection-direction.md", "reason": "本工具的方向设计依据文档"}

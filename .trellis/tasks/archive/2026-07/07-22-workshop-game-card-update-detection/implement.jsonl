@@ -1,0 +1,8 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web frontend entry spec; lists required frontend guides and build checks for apps/platform-web changes."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Owns DesktopShell, My Apps, Market, and route-view UI conventions needed for badges and confirmation UX."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Defines local Vue state, Dexie boundaries, cross-view refresh events, and no-global-store conventions for the update-state module."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Covers game-card package/import boundaries and contract-shape safety for package install/update flows."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Owns Dexie schema rules, DB name bump requirement, and Service Worker DB-name mirroring for the new local origin field."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Feature spans market API, local storage, platform-host state, desktop shell, and My Apps UI."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Existing market install/import code should be reused or extracted instead of duplicated."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Update detection should live in a focused module rather than adding unrelated global logic to large route/shell files."}

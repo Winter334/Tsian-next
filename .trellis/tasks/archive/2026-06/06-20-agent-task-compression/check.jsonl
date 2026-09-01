@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "提交前质量门：lint/类型检查/禁用模式；本任务改 context-lifecycle.ts、index.ts、platform-host、AssistantView 需核对 pre-commit 检查"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "检查两种压缩范式共存：master 一次压缩 + ContextBudgetExhaustedError 不回归；delegated 任务压缩多次 + 时长兜底新机制契约写入 spec；压缩对象分层（剧情 vs 任务）不混淆"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查任务压缩跨层：工具循环 → 压缩函数 → host 落盘（delegated 无落盘但助手有后续任务）；时长兜底跨层：agent_call timeoutMs → AbortController → 循环检查"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查复用：任务压缩复用 estimateTokenCount/compressContext model 调用；统一构建 helper 子代理+助手共用；无重复造剧情压缩轮子"}

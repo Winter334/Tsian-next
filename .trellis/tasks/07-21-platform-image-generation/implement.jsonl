@@ -1,0 +1,9 @@
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Reuse the platform-meta workspace volume for the unified desktop environment file."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse existing local config storage, Tool registration and Provider request utilities without copying embedding design."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Remove target identity concepts from Tool schema and Agent-facing descriptions."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Agent Runtime, bridge, config and platform host implementation requirements."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Platform-meta lifecycle and checkpoint exclusion rules for .tsian/local files."}
+{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"Sanitize Provider and Tool diagnostics."}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Author shared Tool and invoke target contracts."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Consume target contracts in play-bridge and platform-web."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Current Provider, RAG, Tool and config evidence for the refreshed scope."}

@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "agent-runtime/index.ts、context-lifecycle.ts、platform-host/index.ts、views/AssistantView.vue 属 platform-web 层；改动前读 layer 索引与 Required Checks（build:web / build:contracts）"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "两种压缩范式（剧情 vs 任务）的契约记载；Turn Token Budget And In-Turn Compression 场景（master 一次压缩）需与新的任务压缩多次共存；delegated 跳过压缩的记载需更新为任务压缩"}
+{"file": ".trellis/spec/runtime-core/backend/index.md", "reason": "agent-runtime 是 runtime-core 的 platform-web 实现；任务压缩 + 时长兜底改造需对照 runtime-core Required Checks"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "任务压缩从工具循环 → context-lifecycle → host 落盘的跨层；时长兜底从 agent_call 参数 → AbortController → 工具循环检查的跨层；agentId 事件链（agent-call-concurrency 已建）与任务压缩共存"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "任务压缩复用底层 estimateTokenCount/compressContext 的 model 调用能力，但换 prompt + 压缩对象；统一构建 helper 子代理+助手共用；不重复造剧情压缩的轮子"}
+{"file": ".trellis/tasks/06-20-agent-call-concurrency/design.md", "reason": "agent-call-concurrency 已落地的并行执行 + 事件 agentId 是本任务基础；delegated 过程可见（createAgentCallRunner 透传）与本任务 delegated 压缩共存"}
+{"file": ".trellis/tasks/06-19-tool-token-budget/design.md", "reason": "tool-token-budget 的 master 一次压缩 + ContextBudgetExhaustedError 兜底是本任务要修正/共存的；delegated 跳过压缩的缺口是本任务 R2 要补的；turn 内压缩接入点（每轮调 model 前检查）对称复用"}

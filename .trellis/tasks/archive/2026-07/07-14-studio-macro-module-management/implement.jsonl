@@ -1,0 +1,5 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web frontend scope and required build checks"}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Vue component conventions, RetroOS route/window patterns, resource manager/editor routing"}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"local Vue state and platform API refresh/event conventions"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"required validation and platform-web quality constraints"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"new picker/navigation helpers should reuse existing workspace APIs and avoid duplicated logic"}

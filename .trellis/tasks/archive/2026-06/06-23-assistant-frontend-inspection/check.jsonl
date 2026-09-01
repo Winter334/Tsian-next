@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "核查禁用模式与必需构建（build:web / build:contracts / vue-tsc）"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "核查工具入参/出参边界规整与 contract 类型使用"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "核查跨包 contract 改动（AgentPlatformToolName）的验证要求"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "核查是否复用而非重复实现加载/挂载/回合路径"}

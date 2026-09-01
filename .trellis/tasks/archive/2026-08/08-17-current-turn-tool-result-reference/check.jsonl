@@ -1,0 +1,4 @@
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"检查 accepted 后注册、顶层解析顺序、结构化错误、text/native 和生命周期边界。"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"检查引用未写入持久化/UI、验证命令充分且未新增专项测试。"}
+{"file":".trellis/tasks/08-03-agent-tool-observation-contract/design.md","reason":"检查 32 KiB gate、Tool memory、UI projection 与原始 response 权威性未被破坏。"}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"检查 schema/Skill 只说明可执行正向用法，不暴露不必要内部机制。"}

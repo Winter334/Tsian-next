@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "check 阶段验证 contracts 改动符合跨包契约质量规范(字段命名/可选性/导出边界)"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "check 阶段验证 platform-web 代码改动符合前端质量规范和禁止模式"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "check 阶段验证运行时边界规范化——read/search 新字段从契约到 SDK 透传链路类型一致"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "check 阶段按跨层思维指南验证 offset/limit/pattern/contextLines/ignoreCase 从契约→执行层→入口→SDK→trace 的全链路数据流无遗漏"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "check 阶段验证新增 helper 是否复用现有 normalizeSearchLimit/createPreview 模式而非重复实现"}

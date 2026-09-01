@@ -1,0 +1,10 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web ownership, package boundaries, required checks, and related frontend/storage routing."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Authoritative Explorer .keep/clipboard/read-only behavior and Editor/media/close-guard contracts."}
+{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Controller/composable command boundaries, request state, and subscription/timer cleanup."}
+{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"HTML-in-Canvas Source generations, projected input, lifecycle, Source-local controls, animation frame reasons, and dynamic media constraints."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Platform-web tests, type-check, build, cleanup, and forbidden-pattern expectations."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Prevents duplicating workspace mutations, validation, events, and media lifecycle across RetroOS and Spatial."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Guides the coordinated DOM/controller/renderer video path and avoids flat/compositor escapes."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Guides incremental extraction of the large Explorer and the isolated dynamic-media engine seam."}
+{"file":".trellis/tasks/07-31-spatial-workspace-surfaces/research/current-workspace-surfaces-evidence.md","reason":"Focused current-code evidence for workspace behavior, identities, shortcut hazards, CodeMirror reuse, media lifecycle, and the required video engine exception."}
+{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/research/current-architecture-and-api.md","reason":"Parent dual-shell, Source capture, input, dirty-frame, and privacy-preserving media architecture."}

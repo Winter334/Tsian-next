@@ -1,0 +1,4 @@
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"监视器应保持 DebugView 只读观测职责与 RetroOS 组件约定。"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"bridge、Vue 状态、Blob 下载与构建检查。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"分页 summary、详情、导出均需与存储契约一致。"}
+{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/code-evidence.md","reason":"提供当前 DebugView 三数据源与已有 fflate 能力证据。"}

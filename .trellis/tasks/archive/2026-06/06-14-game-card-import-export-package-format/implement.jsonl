@@ -1,0 +1,8 @@
+{"file":".trellis/spec/contracts/backend/directory-structure.md","reason":"Contract ownership rules for Game Card package and frontend binding types."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Frontend consumer expectations for Game Card and bridge contract shapes."}
+{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Placement rules for storage, bridge adapters, and route-level frontend loading."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Dexie state, game card storage, and bridge state rules."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Runtime boundary validation, remote iframe bridge, and Game Card frontend safety rules."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Required build checks and bridge/storage review checklist."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Package import/export touches contracts, storage, bridge loading, and UI boundaries."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"New package helpers and constants should reuse existing path/storage patterns."}

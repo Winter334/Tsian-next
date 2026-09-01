@@ -1,0 +1,8 @@
+{"file":".trellis/tasks/08-13-opening-projection-agent-failures/research/findings.md","reason":"本次失败请求的证据、根因矩阵、实现边界与延后项"}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web 规范索引；reply projection 权威段由 research 标出，实施时按需读取 state-management"}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"reply projection consumer fallback 与 opening turn 0 的可执行契约"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"现有 smoke-only 测试政策、platform-web 构建与验证要求"}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"task compression、workspace Tool 原子轮与错误保留契约"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"browser-script SDK、workspace executor、card consumer 与测试 seam 的跨层一致性"}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"新增 Agent guardrail 前的必要性判据与 AI-facing 噪声控制"}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"opening Skill 修改必须自包含且只写 Agent 可执行动作"}

@@ -1,0 +1,11 @@
+{"file":".trellis/tasks/08-21-opening-modeling-submit-workspace/prd.md","reason":"Defines the approved outcome, staging/publish boundaries, recovery behavior, and acceptance criteria."}
+{"file":".trellis/tasks/08-21-opening-modeling-submit-workspace/design.md","reason":"Defines opening-stage ownership, action boundaries, continuation flow, data contracts, and rollback semantics."}
+{"file":".trellis/tasks/08-21-opening-modeling-submit-workspace/research/failure-diagnosis.md","reason":"Preserves the exact failure chain and historical constraints that the implementation must address without reviving stale split behavior."}
+{"file":".trellis/tasks/08-21-opening-modeling-submit-workspace/research/source-outline-options.md","reason":"Documents the existing frontier/timeline consumers and compares source-anchor summaries with a separate Markdown outline."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Contains the transcript-backed opening interview, formal completion, workspace consumption, and invokeAgent contracts affected by staged recovery."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Defines runtime boundary normalization and Agent tool/invocation contracts used by stage and publish actions."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Guides the setup composable state transitions, async request guards, and restore behavior."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Requires one data authority, explicit consumers, correct artifact landing, and capability placement for workspace-managed Agent data."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Guides removal of the old atomic/complete-brief workflow from action schemas and prompts without leaving residual decision noise."}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Ensures the rewritten opening Skill and storyteller handoff remain self-contained and operational rather than developer-facing."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Covers the workspace action, delegated Agent, frontend recovery, and publish signal data flow."}

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "检查前端 composable 质量：useFrontierAdvance 的状态管理、事件订阅、错误处理"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "检查 timeline 锚点 kind/source/player 类型判别、runtime.plotOrder 类型安全"}
+{"file": ".trellis/spec/guides/airp-data-capability-design-principles.md", "reason": "验证每个新字段有真实消费者、Tool 能力边界清晰、无过度设计"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨 platform-host/storage/workspace-templates/play-frontend-dev 多层，检查数据流一致性"}

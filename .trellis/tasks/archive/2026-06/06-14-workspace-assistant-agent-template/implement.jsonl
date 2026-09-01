@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Default assistant touches contracts, local game-card metadata, workspace template files, runtime registry assumptions, and docs."}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Covers Agent/Skill registry, workspace files, Skill loading, actions, browser-script boundaries, and runtime history behavior."}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Covers platform-web persistence and runtime state expectations around local saves and workspace mutation."}
+{"file": ".trellis/spec/contracts/backend/directory-structure.md", "reason": "Covers game-card contract ownership and shared contract directory expectations."}
+{"file": "docs/active/agent-framework-runtime-workspace-direction.md", "reason": "Authoritative product/architecture direction for Agent, Skill, Runtime Workspace, and Game Card boundaries."}
+{"file": "docs/active/airp-workflow-platform-direction.md", "reason": "Authoritative platform/product direction for game cards, save instances, and platform/frontend boundaries."}
+{"file": ".trellis/tasks/06-14-remote-game-frontend-foundation/design.md", "reason": "Parent child-roadmap design and cross-child boundary decisions for assistant template and remote frontend work."}

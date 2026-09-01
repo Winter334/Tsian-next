@@ -1,0 +1,8 @@
+{"file":".trellis/spec/guides/validation-strategy.md","reason":"Select sufficient contract, adapter, Tool and RAG verification."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Check file lifecycle, visibility and lack of duplicate storage."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Review platform-web implementation quality."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Audit strict env, RPC and Tool boundary normalization."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Verify desktop.env stays local and out of checkpoints."}
+{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"Audit secret/prompt/image redaction."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Verify shared contract shape and build coverage."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Check that obsolete Provider UI and packaging work did not return."}

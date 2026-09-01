@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Remote iframe bridge spans contracts, platform-web bridge adapter, PlayView, platform-host, and game-card storage context."}
+{"file": ".trellis/spec/contracts/backend/directory-structure.md", "reason": "Remote bridge protocol types belong in the shared contract boundary if exposed to external play frontends."}
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "Frontend/browser consumers should use shared bridge payload types rather than redefining them locally."}
+{"file": ".trellis/spec/platform-web/frontend/directory-structure.md", "reason": "Implementation must place bridge adapter, platform-host coordination, and PlayView changes in the right package areas."}
+{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "PlayView is a route component and should preserve existing frontend/bridge separation."}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Remote bridge uses active save/game-card state and immediate platform actions."}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Bridge query/action boundaries, workspace visibility, raw AI debug exclusion, and platform action behavior are documented here."}
+{"file": "docs/active/airp-workflow-platform-direction.md", "reason": "Authoritative platform/frontend boundary and remote game frontend direction."}
+{"file": "docs/active/agent-framework-runtime-workspace-direction.md", "reason": "Workspace, trace, diagnostics, Agent/Skill, and frontend data boundaries."}
+{"file": ".trellis/tasks/06-14-remote-game-frontend-foundation/design.md", "reason": "Parent design owns cross-child decisions for permissive URL policy, bridge boundaries, and remote workspace writes."}

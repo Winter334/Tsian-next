@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared verification guide index for migration review."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check generated template/manifest consistency after update."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check scripts/hooks/agents/workflow remain aligned after update."}

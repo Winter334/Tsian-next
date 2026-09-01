@@ -1,0 +1,11 @@
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Contract changes require build:contracts and consuming builds."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Play frontend bridge and workspace read/write consumption contracts."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Bridge boundary normalization, workspace binary storage, scope/path constraints."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Bridge state and workspace mutation refresh conventions."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Vue component and object URL media rendering conventions."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Required platform-web validation and bridge API guardrails."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Workspace binary persistence/checkpoint model and storage quality constraints."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Feature crosses UI, bridge, contracts, platform host, and storage."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Decides why uploaded portraits are workspace media assets rather than hidden frontend DB state."}
+{"file":".trellis/tasks/07-05-character-image-upload-persistence/design.md","reason":"Task-specific architecture, data flow, AIRP boundary, and default avatar decisions."}
+{"file":".trellis/tasks/07-05-character-image-upload-persistence/implement.md","reason":"Ordered implementation checklist and validation commands."}

@@ -1,0 +1,2 @@
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Design principles for AIRP tool capability boundaries, data authority, write strategy, document layering, and avoiding over-engineering."}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Guidance for updating AI-facing AGENT.md/SKILL.md/tool descriptions without developer-side rationale or hidden assumptions."}

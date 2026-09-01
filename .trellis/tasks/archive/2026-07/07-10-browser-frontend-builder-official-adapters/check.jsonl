@@ -1,0 +1,7 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Required checks and frontend ownership boundaries for final review."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Review final integration against frontend-build runtime contracts and parent product-loop gate."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Review packaged frontend and Game Card package boundaries."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Review IndexedDB/SW storage invariants were not modified and product loop used correct storage paths."}
+{"file":".trellis/tasks/archive/2026-07/07-10-sass-less-vfs-adapters/research/validation.md","reason":"Check Sass/Less matrix was covered or explicitly handed off."}
+{"file":".trellis/tasks/archive/2026-07/07-10-import-meta-glob-vfs/research/validation.md","reason":"Check glob matrix was covered or explicitly handed off."}
+{"file":".trellis/tasks/archive/2026-07/07-10-worker-subbuild-materialization/research/validation.md","reason":"Check Worker matrix and browser fixture evidence were covered or explicitly handed off."}

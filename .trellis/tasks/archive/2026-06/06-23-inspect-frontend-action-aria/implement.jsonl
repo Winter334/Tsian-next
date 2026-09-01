@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "tool arg normalization + InspectDomAction type extension 需遵循运行时边界归一化与契约类型约束"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "新增 serializeAria/applyAction case 前的预检/禁用模式与提交门"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "auto-waiting rAF 轮询与 actions 循环不触碰 Vue ref/bridge 状态,需确认边界"}
+{"file": ".trellis/spec/platform-web/frontend/directory-structure.md", "reason": "改动集中在 platform-host/frontend-inspector.ts 与 agent-runtime/*,确认层级归属正确(agent-runtime 不反向依赖 platform-host)"}

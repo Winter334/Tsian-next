@@ -1,0 +1,9 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Implement card frontend bridge usage, source ownership and build/package expectations."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Design inline components, keyboard/focus behavior, dialog lifecycle and Object URL cleanup."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Preserve settled turn metadata and coordinate history, streaming, restore and non-persistent card state."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Normalize projections, entrypoints, invoke options and workspace Blob reads without coercion."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Consume shared brief validator, runtime entrypoint and generated-media target contracts."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Keep frontend consumers aligned with optional entrypoint and target-only invoke shapes."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse stable path, existing bridge, Object URL and packaging patterns across both frontend sources."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Separate pure parsing, state/invocation services and visual components."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Start from the current metadata loss, opening flow and already-delivered packaging infrastructure."}

@@ -1,0 +1,9 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"The parent coordinates contracts, platform host, storage, card workspace and frontend data flow."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Use the AIRP ownership and authority rules for platform Tool, card semantics and durable media."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"The unified desktop environment is a new platform-managed workspace file."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"The refreshed design removes guard/asset identity concepts from Tool and Agent prompts."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform host, Agent Runtime, bridge and frontend integration requirements."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Workspace, checkpoint manifest, restore, prune and Blob lifecycle contracts."}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Shared invoke target, Tool name and entrypoint contract authoring rules."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Consumer rules for platform-web, play-bridge and card frontend."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Current-code evidence, stale July assumptions and refreshed task boundaries."}

@@ -1,0 +1,249 @@
+# Workspace Index - baisha
+
+> Journal tracking for AI development sessions.
+
+---
+
+## Current Status
+
+<!-- @@@auto:current-status -->
+- **Active File**: `journal-4.md`
+- **Total Sessions**: 206
+- **Last Active**: 2026-08-27
+<!-- @@@/auto:current-status -->
+
+---
+
+## Active Documents
+
+<!-- @@@auto:active-documents -->
+| File | Lines | Status |
+|------|-------|--------|
+| `journal-4.md` | ~1281 | Active |
+| `journal-3.md` | ~1982 | Archived |
+| `journal-2.md` | ~1986 | Archived |
+| `journal-1.md` | ~1994 | Archived |
+<!-- @@@/auto:active-documents -->
+
+---
+
+## Session History
+
+<!-- @@@auto:session-history -->
+| # | Date | Title | Commits | Branch |
+|---|------|-------|---------|--------|
+| 206 | 2026-08-27 | Prepare SDK beta release | `234e9dd2` | `master` |
+| 205 | 2026-08-27 | 场记回合后维护稳定性优化 | `0a38b969` | `master` |
+| 204 | 2026-08-26 | 收尾 Agent Tool Observation 契约治理 | `4c2af185`, `95608c41`, `ee3c12a2`, `48316a3b` | `master` |
+| 203 | 2026-08-26 | Storyteller 原作文风学习与卡内容写入 | `863d6327` | `master` |
+| 202 | 2026-08-22 | 文本工具协议失败上下文恢复 | `b940ddc8` | `master` |
+| 201 | 2026-08-21 | 分阶段开局建模与原著时间线摘要 | `1e10e23c`, `eb779c64` | `master` |
+| 200 | 2026-08-20 | Fix Gemini streamed tool calls and diagnostics | `c81739f2` | `master` |
+| 199 | 2026-08-18 | 文本工具协议纠错与当前轮结果引用 | `7f34a234` | `master` |
+| 198 | 2026-08-17 | Text Tool Protocol retry hardening | `76b40a9` | `master` |
+| 197 | 2026-08-16 | 实现正文处理配置应用 | `c9597be` | `master` |
+| 196 | 2026-08-15 | Claude 自动提示词缓存 | `9178d06` | `master` |
+| 195 | 2026-08-15 | 修复开局投影与建模流程 | `d514341` | `master` |
+| 194 | 2026-08-12 | 简化开局访谈状态与校验 | `ab7bd08` | `master` |
+| 193 | 2026-08-11 | 重构 Agent 上下文状态与压缩 | `5290631`, `65efc15`, `3da85d1` | `master` |
+| 192 | 2026-08-10 | 开局访谈 Tool memory 与状态协议 | `b59943c` | `master` |
+| 191 | 2026-08-10 | 开局向导对话与模型一致性优化 | `c2e27cd`, `1bdb21e` | `master` |
+| 190 | 2026-08-10 | 沉浸阅读器整卡打包链 | `214d226` | `chore/trellis-workflow-update-20260808` |
+| 189 | 2026-08-09 | 优化开局向导角色选择体验 | `9dc6da9`, `3c351ed` | `chore/trellis-workflow-update-20260808` |
+| 188 | 2026-08-09 | 访谈驱动的开局建模与游戏卡源码归属 | `6d624de`, `3862b55`, `6537890` | `chore/trellis-workflow-update-20260808` |
+| 187 | 2026-08-08 | Consolidate repository smoke suite | `bc0232d` | `master` |
+| 186 | 2026-08-07 | 归档 AI API 请求自动重试 | `db5510d` | `master` |
+| 185 | 2026-08-07 | 归档确定性装备父任务 | - | `master` |
+| 184 | 2026-08-07 | 收尾已完成父任务 | - | `master` |
+| 183 | 2026-08-07 | 完成 Spatial Desktop 发布集成 | `67f45a4` | `master` |
+| 182 | 2026-08-07 | Spatial system surfaces | `db809ab` | `master` |
+| 181 | 2026-08-06 | Complete Spatial agent surfaces | `e5fd0ea` | `master` |
+| 180 | 2026-08-06 | 完成 Spatial Play 与全局界面 | `9dbf047` | `master` |
+| 179 | 2026-08-05 | Spatial Toast and Dialog Form | `43bc60f` | `master` |
+| 178 | 2026-08-04 | Spatial Confirm presentation | `ba1a85f` | `master` |
+| 177 | 2026-08-04 | Spatial workspace surfaces | `c303f9e` | `master` |
+| 176 | 2026-08-04 | 完成 Spatial 应用库与创意工坊 | `3b20bc9` | `master` |
+| 175 | 2026-08-03 | Agent Tool Observation 契约治理 | `95608c4`, `ee3c12a` | `master` |
+| 174 | 2026-08-02 | Spatial 桌面基础框架与缩放修复 | `59a5b76`, `44ce575` | `master` |
+| 173 | 2026-08-02 | Agent context boundary and retrieval governance | `4c2af18` | `master` |
+| 172 | 2026-08-01 | 优化游戏前端工具调用体验 | `d59ac0b` | `master` |
+| 171 | 2026-08-01 | Spatial rendering and input foundation | `7867400`, `f5c8fd5` | `master` |
+| 170 | 2026-07-31 | 诊断虚拟卷资源管理器接入 | `4d928c6` | `master` |
+| 169 | 2026-07-30 | Trace JSON 折叠阅读优化 | `b224863` | `master` |
+| 168 | 2026-07-30 | 统一 AI Trace 监视器、诊断包与 workspace 投影 | `8292623` | `master` |
+| 167 | 2026-07-30 | 统一 AI Trace 核心存储与采集 | `382cf8c`, `4063dff` | `master` |
+| 166 | 2026-07-26 | 完成确定性装备管理与换装 UI | `7ff51bd` | `task/stage-manager-maintenance-tool-optimization` |
+| 165 | 2026-07-25 | 装备 Schema 与 Stage Manager 同步 | `b3c1037`, `c5b187b` | `task/stage-manager-maintenance-tool-optimization` |
+| 164 | 2026-07-24 | 角色详情响应式重设计与装备展示 | `0352218`, `6a91893` | `task/stage-manager-maintenance-tool-optimization` |
+| 163 | 2026-07-23 | Workshop game card update detection | `96577a1` | `task/stage-manager-maintenance-tool-optimization` |
+| 162 | 2026-07-23 | Stage manager maintenance tool optimization | `6c8c298` | `task/stage-manager-maintenance-tool-optimization` |
+| 161 | 2026-07-20 | Add entity field patch tool | `6d0ae58` | `task/07-19-remove-researcher-agent` |
+| 160 | 2026-07-20 | 移除资料员 Agent | `55bf2fc` | `task/07-19-remove-researcher-agent` |
+| 159 | 2026-07-19 | 提交剩余卡片改动 | `60591b1` | `task/07-19-timeline-injection-bg-events` |
+| 158 | 2026-07-19 | 时间线注入原著剧情节点 | `a8fce1e` | `task/07-19-timeline-injection-bg-events` |
+| 157 | 2026-07-19 | 长篇小说导入性能优化 | `68616e8` | `feat/long-novel-import-performance` |
+| 156 | 2026-07-18 | Turn history recall system | `b5947d7` | `task/turn-history-recall` |
+| 155 | 2026-07-18 | Redesign checkpoint API | `53ee3c1` | `feat/agent-reply-regex-projection` |
+| 154 | 2026-07-18 | 通用 Agent 回复正则投影系统 | `fc770c7`, `32fa7e5` | `feat/agent-reply-regex-projection` |
+| 153 | 2026-07-17 | Platform Web 大文件拆分 | `8466711`, `b86c76d`, `d3a1f50`, `11d2655`, `f065e38` | `task/model-tool-probe-gemini-fetch` |
+| 152 | 2026-07-17 | Text Tool Protocol v2 | `7c62392` | `task/model-tool-probe-gemini-fetch` |
+| 151 | 2026-07-15 | Opening turn history | `a7c0cd4` | `feat/studio-message-layer-role-ui` |
+| 150 | 2026-07-13 | stage-manager 维护优化第二轮 | `2d7c73d` | `task/stage-manager-maintenance-round2` |
+| 149 | 2026-07-13 | stage-manager 回合后维护优化 | `a3abcad` | `task/stage-manager-post-turn-optimize` |
+| 148 | 2026-07-13 | 消息序列编辑 UI | `568f74f` | `feat/message-sequence-editor-ui` |
+| 147 | 2026-07-12 | Market resource version alignment | `5523c04` | `feat/game-card-save-version-upgrade-warning` |
+| 146 | 2026-07-12 | 解耦平台硬编码剧情选项 | `227fb74` | `master` |
+| 145 | 2026-07-12 | 提取酒馆预设写作 Agent 技术 | `fe43a75` | `master` |
+| 144 | 2026-07-11 | 完成前端构建器最终集成验证 | `0a3cb4f` | `feat/timeline-orbit-svg-polish` |
+| 143 | 2026-07-11 | 前端自检工具 Agent 可行动观测优化 | `ed76c10`, `3a4c1bb` | `feat/timeline-orbit-svg-polish` |
+| 142 | 2026-07-11 | 完成 Worker 子构建物化 | `0e88509` | `feat/timeline-orbit-svg-polish` |
+| 141 | 2026-07-11 | 修复 inspect_frontend 导入写入被覆盖 | `2f4564a` | `feat/timeline-orbit-svg-polish` |
+| 140 | 2026-07-11 | Task 模式上下文管理优化 | `5827d5e`, `82bcca1` | `feat/timeline-orbit-svg-polish` |
+| 139 | 2026-07-11 | 可见 Play iframe 前端自检收尾 | `20f03f0`, `64a4f5a`, `7fba1c1` | `feat/timeline-orbit-svg-polish` |
+| 138 | 2026-07-10 | Sass Less 虚拟文件适配 | `27af439`, `6ef9293` | `feat/timeline-orbit-svg-polish` |
+| 137 | 2026-07-10 | 修复工作区可编辑文本读取 | `46d7e41` | `feat/timeline-orbit-svg-polish` |
+| 136 | 2026-07-10 | 浏览器前端构建器 Vue VFS 与 CSS Modules | `b07a204`, `ba137ed` | `feat/timeline-orbit-svg-polish` |
+| 135 | 2026-07-09 | SDK publish preparation | `6701d3d`, `a22f951` | `feat/timeline-orbit-svg-polish` |
+| 134 | 2026-07-09 | Timeline fullscreen orbit stretch | `0100be6` | `feat/timeline-orbit-svg-polish` |
+| 133 | 2026-07-09 | frontier 推进窗口语义化与读完短路 | `3189a29` | `feat/timeline-orbit-svg-polish` |
+| 132 | 2026-07-09 | 美化角色状态显示 | `de5ed90` | `feat/timeline-orbit-svg-polish` |
+| 131 | 2026-07-08 | 归档状态栏父任务 | - | `master` |
+| 130 | 2026-07-06 | roll_dice 对抗裁定扩展 | `a4c6462` | `feat/play-frontend-status-bar` |
+| 129 | 2026-07-06 | 自定义 Tools 创意工坊分发 | `85018da` | `feat/play-frontend-status-bar` |
+| 128 | 2026-07-06 | 07-05 Agent Tool 机制：类 MCP 工具发现与卡定制层 | `6d6d4a1`, `4406b1a` | `feat/play-frontend-status-bar` |
+| 127 | 2026-07-05 | 07-05-status-bar-character-field-pinning: 左侧状态栏角色字段钉选 | `8bda07d`, `c413ccb` | `feat/play-frontend-status-bar` |
+| 126 | 2026-07-05 | 07-04-runtime-summary-injection: 发送前多消息 runtime 上下文注入 | `6c25684`, `712debb`, `9fb1acc` | `feat/play-frontend-status-bar` |
+| 125 | 2026-07-04 | 回合后场记编排 + card.entrypoints bridge API | `17b5731` | `master` |
+| 124 | 2026-07-04 | 默认 AIRP Agent 模板重写 | `95e392c` | `feat/airp-agent-invocation-entrypoints` |
+| 123 | 2026-07-03 | 修复 play frontend 类型检查 | `86cead3` | `feat/play-frontend-message-windowing` |
+| 122 | 2026-07-03 | 游戏前端长历史消息窗口化 | `aae2572` | `feat/play-frontend-message-windowing` |
+| 121 | 2026-07-03 | Workshop content management | `13486c3` | `feat/workspace-context-cache-split` |
+| 120 | 2026-07-03 | Tsian Boot BSOD Nyan splash | `e48c5c8` | `feat/workspace-context-cache-split` |
+| 119 | 2026-07-03 | Optimize workshop cover traffic | `30cb4b1`, `a12e9b5` | `feat/workspace-context-cache-split` |
+| 118 | 2026-07-03 | 创意工坊多资源类型实现 | `6249b78` | `feat/workspace-context-cache-split` |
+| 117 | 2026-07-03 | App Market MVP — 卡包上传/下载/搜索/安装 + 创意工坊任务创建 | `8024077`, `60d3a85` | `feat/workspace-context-cache-split` |
+| 116 | 2026-07-02 | Account Center Window — 操作员身份终端桌面窗口 | `5674b44` | `feat/workspace-context-cache-split` |
+| 115 | 2026-07-02 | Account system Discord auth | `80c0645` | `feat/workspace-context-cache-split` |
+| 114 | 2026-07-02 | novel-airp opening confirm Step 5 | `a144b90`, `e94c8af` | `feat/workspace-context-cache-split` |
+| 113 | 2026-07-02 | novel-airp play setup dialog Step 4 — archive (code landed prior sessions) | `3317ce9`, `6b02113`, `89152ac`, `318b6ee`, `7a1d5ce`, `d3c3365`, `bd7e210` | `feat/workspace-context-cache-split` |
+| 112 | 2026-07-02 | novel-airp understanding loader: random SVG magic circle | `7b8d84d`, `7a2ebf8` | `feat/workspace-context-cache-split` |
+| 111 | 2026-07-02 | Model config UI redesign | `b6f78ee` | `feat/workspace-context-cache-split` |
+| 110 | 2026-07-02 | Add OpenAI Responses provider | `58f8e5f` | `feat/workspace-context-cache-split` |
+| 109 | 2026-07-01 | Step 3 角色设定向导 + 脚本/系统监视器修复 | `250e264` | `feat/workspace-context-cache-split` |
+| 108 | 2026-07-01 | 统一三处脚本 runner 注入（createBrowserScriptRunners 工厂） | `8e7449f` | `feat/workspace-context-cache-split` |
+| 107 | 2026-07-01 | Task 超时从总时长改为无响应超时 | `de84e2e` | `feat/workspace-context-cache-split` |
+| 106 | 2026-07-01 | test_skill_script 工具 + 错误透传 + Worker TS 注解修复 | `1e7e7dc` | `feat/workspace-context-cache-split` |
+| 105 | 2026-07-01 | 规范收尾：invoke-agent-context-management + play-frontend-vue-refactor | `a2ae121`, `46ab4dc`, `4577d4a` | `feat/workspace-context-cache-split` |
+| 104 | 2026-06-30 | DebugView 缓存命中率真实数据显示 + 仪表盘重设计 | `b302e51` | `feat/workspace-context-cache-split` |
+| 103 | 2026-06-30 | workspace.context 拆分优化前缀缓存 + 缓存显示问题诊断 | `368f136` | `feat/workspace-context-cache-split` |
+| 102 | 2026-06-30 | platform-frontend-build-service Phase 6 + 验收期运行时修复 | `33b5799` | `master` |
+| 101 | 2026-06-29 | novel AIRP skill/agent 文档中文化 | `2653a16` | `refactor/novel-airp-schema-consolidation` |
+| 100 | 2026-06-29 | novel AIRP 维护/检索 skill 优化 | `262f971` | `refactor/novel-airp-schema-consolidation` |
+| 99 | 2026-06-29 | novel AIRP schema 收口与开局链路修复 | `260eafe` | `refactor/novel-airp-schema-consolidation` |
+| 98 | 2026-06-29 | 换回 ZCode 环境恢复 + 缓存任务错误落地修正 + 工作区路径级 scope 重构 | `521708f`, `19a8416`, `45edc4a` | `master` |
+| 97 | 2026-06-28 | Novel opening guide UI refinement | `fe2c447` | `master` |
+| 96 | 2026-06-28 | Novel AIRP source import guide | `8ebac8b` | `master` |
+| 95 | 2026-06-28 | Novel AIRP workspace schema guide | `c882b2d` | `master` |
+| 94 | 2026-06-27 | Play SDK 领域 API 重设计 + injection + workspace RPC 拆出 | `6f38f55` | `feat/play-sdk-domain-api` |
+| 93 | 2026-06-27 | 检查点存储优化 + .tsian 分层重构 + 平台配置规划 | `4ee1cf7`, `95a5cb1`, `c713401` | `master` |
+| 92 | 2026-06-26 | 文本协议完善与任意agent入口 | `8826ffc` | `master` |
+| 91 | 2026-06-26 | 助手工具调用跨 turn 保留 + 过程节点持久化 + ask_user UI 修复 | `46f2acc`, `8e8926d`, `4f996e7`, `a39cb8c` | `master` |
+| 90 | 2026-06-26 | ask_user 助手开关与工具开关体系重设计 | `4d5dcb4` | `master` |
+| 89 | 2026-06-26 | 存储架构与渲染流程重构:过程节点持久化+单源重建+剧情选项 | `d6f1603`, `1882e0a`, `02a0976` | `master` |
+| 88 | 2026-06-25 | ask_user 工具:AI 向玩家提问+选项+自定义回答 | `e727987` | `master` |
+| 87 | 2026-06-25 | native 模式 tool message content 去冗余包装 | `85cdb6d` | `master` |
+| 86 | 2026-06-25 | 创建开发前端项目 apps/play-frontend-dev | `678e9d3`, `fcbf377` | `master` |
+| 85 | 2026-06-25 | 抽 play-bridge SDK 本地包 | `8c6dba7` | `master` |
+| 84 | 2026-06-24 | 默认 AIRP schema 与 hub-and-spoke Agent 阵容 | `3c44f61` | `master` |
+| 83 | 2026-06-24 | Skill 脚本执行能力升级与文档约定 | `47f0889` | `feat/inspect-frontend-action-aria` |
+| 82 | 2026-06-23 | 默认前端 UI 重做与协议层原地验证 | `4828592` | `master` |
+| 81 | 2026-06-23 | Assistant Attachment Upload — multimodal image+text attachments for desktop assistant | `91730ae`, `df1ec81`, `96c612e`, `e6e71ac`, `553d86c`, `82584ef` | `master` |
+| 80 | 2026-06-22 | Library toolbar + platform event-bus auto-refresh | `28cef8b` | `master` |
+| 79 | 2026-06-22 | 编辑器简化 + 媒体查看器 + 存储层重构 (mediaType 移除 + 二进制 Blob) | `84f875f`, `27bc44e` | `refactor/split-platform-host-index` |
+| 78 | 2026-06-20 | 取消子4 tool-executor-policy + 父任务 tool-runtime-performance 收口 | `0ea93e6` | `master` |
+| 77 | 2026-06-20 | 子3 工具命名统一 + glob + 移除 patch/validate 工具 | `47b7b52` | `master` |
+| 76 | 2026-06-20 | assistant-context-persistence 实测修复（.tsian/local/ 写入通道缺口） | `f59868e`, `a5272f6` | `master` |
+| 75 | 2026-06-20 | assistant-context-persistence 实现（虚拟文件系统 + 任务摘要稳态） | `3b3bfb4`, `1c98d9d`, `dba74f1`, `254d693`, `90ca040`, `49c4b1e` | `master` |
+| 74 | 2026-06-19 | 收尾子任务1 tool-skill-decouple + 开启子任务2 tool-token-budget | `14e788a`, `e8d5bd8`, `34d7751`, `b7c5ca6`, `7ed0165` | `feat/ai-streaming-response` |
+| 73 | 2026-06-19 | 子2a 质量门 + 子2b 工具过程可见与并行执行全流程 | `bace0b2`, `ffb717f` | `feat/ai-streaming-response` |
+| 72 | 2026-06-18 | Finish agent-provider model selection: verify + spec | `eda8dca`, `ba0a3a6`, `a6f8578`, `5bc3dbe` | `chore/trellis-upgrade-0.6.2` |
+| 71 | 2026-06-18 | Assistant chat UI polish + multi-session + archive | `583e77a` | `master` |
+| 70 | 2026-06-18 | Agent tool permission runtime enforcement | `bfcdbd8` | `master` |
+| 69 | 2026-06-18 | Agent-centered Studio management UI | `ad4d77f` | `master` |
+| 68 | 2026-06-18 | Simplify Studio Agent Skill UI | `e522ac9` | `master` |
+| 67 | 2026-06-18 | Agent model parameters settings | `aa5c24a` | `master` |
+| 66 | 2026-06-17 | Agent provider presets | `aa829b4` | `master` |
+| 65 | 2026-06-17 | Runtime monitor and settings UI redesign | `1740bfb` | `master` |
+| 64 | 2026-06-17 | Game Card Studio workspace | `c71e70b` | `master` |
+| 63 | 2026-06-17 | Simplify game card metadata | `c742c77` | `master` |
+| 62 | 2026-06-17 | Game card package export fixes | `f6bc04f` | `master` |
+| 61 | 2026-06-17 | Game card package binding UI | `ab12128` | `master` |
+| 60 | 2026-06-17 | Runtime workspace explorer | `be315f0` | `master` |
+| 59 | 2026-06-16 | RetroOS multi-window desktop shell | `392d7ff` | `master` |
+| 58 | 2026-06-16 | My Apps Game Card Launcher | `f0df71b` | `master` |
+| 57 | 2026-06-16 | Generic workspace operation tools | `d0fcd15` | `master` |
+| 56 | 2026-06-16 | Split card content from save runtime data | `e28bcb2`, `6dec22e` | `master` |
+| 55 | 2026-06-15 | Remote Game Frontend Foundation | `7e34d93` | `master` |
+| 54 | 2026-06-14 | Runtime Foundation Completion | `e9844eb` | `master` |
+| 53 | 2026-06-14 | Complete agent runtime collaboration policy | `05ac442` | `master` |
+| 52 | 2026-06-14 | Remote Execution Disposition | `971bde0` | `master` |
+| 51 | 2026-06-14 | Runtime Workspace Metadata Contract | `2d9ff87` | `master` |
+| 50 | 2026-06-14 | Agent-Facing Runtime Diagnostics | `0fb944a` | `master` |
+| 49 | 2026-06-14 | Controlled execution policy | `3fb8c34` | `master` |
+| 48 | 2026-06-14 | Runtime workspace maintenance pipeline | `645e999` | `master` |
+| 47 | 2026-06-14 | Runtime side-effect transactions | `2c34855` | `master` |
+| 46 | 2026-06-13 | Browser skill script executor | `4981ffe` | `master` |
+| 45 | 2026-06-13 | Native AIRP history writeback | `eeb10cc` | `master` |
+| 44 | 2026-06-13 | Agent Call MVP | `1de3cb4` | `master` |
+| 43 | 2026-06-13 | 持久化运行时追踪 | `e6387b5` | `master` |
+| 42 | 2026-06-13 | Platform Action Executor MVP | `e7af2ee` | `master` |
+| 41 | 2026-06-13 | Action Executor Registry MVP | `3198c76` | `master` |
+| 40 | 2026-06-13 | Skill Action 调用门控 MVP | `6e8f0e1` | `master` |
+| 39 | 2026-06-13 | 按名称加载 Skill | `8c73e5c` | `master` |
+| 38 | 2026-06-13 | Agent 按需读取 Workspace Skill | `df5f453` | `master` |
+| 37 | 2026-06-13 | 实现 Workspace Agent Runtime MVP | `a58ba22` | `master` |
+| 36 | 2026-06-12 | 实现 Agent 上下文组装 MVP | `2f4bc40` | `master` |
+| 35 | 2026-06-12 | 实现 Skill 按需加载 MVP | `575aae1` | `master` |
+| 34 | 2026-06-12 | 实现 Agent/Skill 注册表 MVP | `3e367e3` | `master` |
+| 33 | 2026-06-12 | Runtime Workspace Storage API MVP | `e492c69` | `master` |
+| 32 | 2026-06-12 | Record Agent Framework Runtime Workspace Direction | `8c1d141` | `master` |
+| 31 | 2026-06-12 | Agent Runtime MVP vertical slice | `5131fb2` | `master` |
+| 30 | 2026-06-12 | 记录 Agent Runtime 平台方向 | `55ef35b` | `master` |
+| 29 | 2026-06-10 | Upgrade Trellis to 0.6 beta | `ef9cabd` | `master` |
+| 28 | 2026-06-10 | 优化工作流编辑器端口体验 | `8d7f592` | `master` |
+| 27 | 2026-06-08 | 标准化工作流节点定义 | `01e141f` | `master` |
+| 26 | 2026-06-08 | 工作流状态数据库心智模型优化 | `e987d6e`, `b64a0bf` | `master` |
+| 25 | 2026-06-07 | 优化工作流编辑器易用性 | `8b7dc35`, `5c02aff` | `master` |
+| 24 | 2026-06-07 | Workflow-carried state contract authoring wrap-up | `f4f9048`, `74c970d` | `master` |
+| 23 | 2026-06-06 | 升级工作流编辑器画布化编辑体验 | `561a0e9` | `master` |
+| 22 | 2026-06-06 | 持久状态底座迁移为 state records | `2026593` | `master` |
+| 21 | 2026-06-06 | 公开状态读取节点迁移为 state-query | `0732b11` | `master` |
+| 20 | 2026-06-06 | 新增暂缓事项登记表 | `9fae461` | `master` |
+| 19 | 2026-06-06 | 迁移持久状态写入节点 | `eeea261` | `master` |
+| 18 | 2026-06-05 | 退役 apply-patch 工作流节点 | `dc3813f` | `master` |
+| 17 | 2026-06-05 | Retire event-archive memory query source | `a8d5c09` | `master` |
+| 16 | 2026-06-05 | Workflow-as-system direction refresh | `ba857c1`, `34b6af6` | `master` |
+| 15 | 2026-06-05 | Stabilize AIRP workflow compatibility boundaries | `c8d2394` | `master` |
+| 14 | 2026-06-05 | 发布检索基础节点并替换默认 AIRP 检索 | `5afa0a2`, `279d549` | `master` |
+| 13 | 2026-06-05 | AIRP 检索结构阶段抽象 | `2559901`, `27f2a26` | `master` |
+| 12 | 2026-06-05 | Generic maintenance write migration | `823e147`, `0da996b`, `815677e` | `master` |
+| 11 | 2026-06-05 | Schema-validated memory-write boundary | `f23c377` | `master` |
+| 10 | 2026-06-04 | Generic memory schema core | `a823c6c` | `master` |
+| 9 | 2026-06-04 | Explicit mod memory write workflow | `5e73ed0` | `master` |
+| 8 | 2026-06-04 | Memory chain nodeization | `9ddaa93` | `master` |
+| 7 | 2026-06-04 | Workflow trace debug UI and time macro fix | `67af203` | `master` |
+| 6 | 2026-06-04 | Bootstrap Trellis coding specs | `93af90f` | `master` |
+| 5 | 2026-06-04 | Workflow node schema slots | `ccf9b65` | `master` |
+| 4 | 2026-05-31 | Save-level workflow preset override | `23b8add` | `master` |
+| 3 | 2026-05-29 | Record AIRP workflow platform direction | `de962e5` | `master` |
+| 2 | 2026-05-29 | Wire workflow presets into runtime | `fa8be18` | `master` |
+| 1 | 2026-05-29 | Visual resource editors | `92bae05`, `75d2f8a` | `master` |
+<!-- @@@/auto:session-history -->
+
+---
+
+## Notes
+
+- Sessions are appended to journal files
+- New journal file created when current exceeds 2000 lines
+- Use `add_session.py` to record sessions

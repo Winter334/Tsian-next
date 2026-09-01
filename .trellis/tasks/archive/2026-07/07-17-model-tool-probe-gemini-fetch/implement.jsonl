@@ -1,0 +1,7 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Required platform-web frontend spec index and build commands."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Settings UI changes must follow Vue component and player-facing copy conventions."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Browser AI provider config, model fetch, Settings model-test UI, and secret-handling contracts."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Runtime boundary normalization and strict TypeScript guidance for provider responses."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Required validation for platform-web changes."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"BaseUrl normalization and provider fetch helpers should avoid duplicate ad-hoc URL logic."}
+{"file":".trellis/tasks/07-17-model-tool-probe-gemini-fetch/research.md","reason":"Task-specific provider API research and user decisions."}

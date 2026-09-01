@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/archive/2026-08/08-17-text-tool-protocol-retry-robustness/research.md","reason":"真实纠错失败序列、当前全局预算锚点和既有验证面。"}
+{"file":".trellis/tasks/archive/2026-08/08-17-text-tool-protocol-retry-robustness/design.md","reason":"现有私有标签、纠错文案、压缩和回滚不变量。"}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Text Tool Protocol parser、纠错次数与消息生命周期契约。"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"网络重试隔离、smoke-only 验证和测试保留原则。"}

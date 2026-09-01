@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "platform-web required checks"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "browser build runtime traps, suffix invariant, and full-loop validation"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "packaged frontend boundary and strict TS review"}
+{"file": ".trellis/tasks/archive/2026-07/07-10-vue-vfs-css-modules/design.md", "reason": "verify no regression of prerequisite SFC/CSS Modules design"}
+{"file": ".trellis/tasks/07-10-sass-less-vfs-adapters/research/browser-compiler-baseline.md", "reason": "review implementation against verified compiler/browser/security baseline"}
+{"file": ".trellis/tasks/07-10-sass-less-vfs-adapters/research/validation.md", "reason": "verify focused evidence, known limits, and parent integration handoff are complete"}

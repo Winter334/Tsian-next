@@ -1,0 +1,6 @@
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Contract changes require contracts and consuming frontend builds."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Remote/packaged frontend contract consumption must stay typed and serializable."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Game card package files and Dexie state must follow local persistence rules."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Import validation and iframe frontend bridge boundaries need review."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Required platform-web checks and runtime/bridge review checklist."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify package data flow from zip to storage to PlayView iframe loading."}

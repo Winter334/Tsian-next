@@ -1,0 +1,9 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Check build requirements after platform-web changes."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Review Market UI branches for route/component conventions and no long-running template logic."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check refresh/mutation behavior and assistant local file replacement boundaries."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Verify no unintended Dexie/schema change and assistant local vs checkpoint/card package boundaries."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Check contract consumers compile after MarketResourceType extension."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Contract quality checklist and build requirements."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Review that Tool distribution remains file-based and does not hide configurable data in DB fields."}
+{"file":".trellis/tasks/archive/2026-07/07-05-agent-tool-mechanism/prd.md","reason":"Regression check against original Tool distribution and local boundary requirements."}
+{"file":".trellis/tasks/archive/2026-07/07-05-agent-tool-mechanism/design.md","reason":"Regression check against Tool registry path semantics and self-contained Tool directory design."}

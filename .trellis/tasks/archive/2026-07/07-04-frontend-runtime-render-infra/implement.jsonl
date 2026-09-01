@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/platform-web/frontend/hook-guidelines.md", "reason": "本任务新增 useRuntime/useEntity/useScene/useRuntimeStaleBus 等 composable，需遵循 hook 写法、模块级单例模式、响应式 ref 规范。"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "useRuntime 是模块级共享响应式状态，需遵循 Vue ref/Dexie/bridge 状态管理规范，正确处理 ready/turn/sync 事件订阅与 refresh。"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "DisplayItem/RuntimeData 等类型在 bridge 边界（workspace.read 返回 string 需 JSON.parse）做运行时归一，需遵循类型安全与边界 normalization 规范。"}
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "消费 @tsian/contracts 的 WorkspaceReadResult/WorkspaceScope 类型，需遵循 contracts 消费侧类型安全规范。"}
+{"file": ".trellis/tasks/archive/2026-07/07-04-renderable-runtime-entity-schema/design.md", "reason": "依赖任务的数据约定：runtime.json 结构、extensions 公共形状、9 种 render 预设、render→槽位映射、name/aliases 语义。parseRuntime/parseEntity 必须对齐此约定。"}

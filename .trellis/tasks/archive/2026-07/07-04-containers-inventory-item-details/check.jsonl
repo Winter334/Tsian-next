@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "验证 container/item 强类型、parseContainer/parseItem 错误分级符合契约。"}
+{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "验证新增 Vue 组件 props/emits/scoped 样式符合规范。"}
+{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "验证 workspace-templates container/item schema 定义符合 storage 层约定。"}
+{"file": ".trellis/tasks/07-04-containers-inventory-item-details/prd.md", "reason": "对照 AC 与 R1–R18 逐条检查。"}
+{"file": ".trellis/tasks/07-04-containers-inventory-item-details/design.md", "reason": "对照组件架构、字段清单、数据流、错误降级进行核对。"}
+{"file": ".trellis/tasks/07-04-containers-inventory-item-details/implement.md", "reason": "逐 Step 核对执行清单是否完成。"}

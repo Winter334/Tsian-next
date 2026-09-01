@@ -1,0 +1,4 @@
+{"file":"docs/active/README.md","reason":"Active documentation index and maintenance rules for where the new direction document belongs."}
+{"file":"docs/active/implementation-plan.md","reason":"Current implementation roadmap that must be updated to reflect the AIRP workflow platform direction."}
+{"file":"docs/active/memory-system-decisions.md","reason":"Existing memory system decisions that constrain the near-term choice to polish event/archive memory before adding alternate architectures."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Existing workflow preset resource reference contract from the prior runtime/editor task."}

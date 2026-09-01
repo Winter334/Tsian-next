@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Check maintenance contracts, validation matrix, trace/raw-history boundaries, and runtime platform purity."}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Check successful-turn persistence and transaction behavior across runtime/storage state."}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "Check build requirements and interaction.sendMessage failure rollback behavior."}
+{"file": "docs/active/current-state-handoff.md", "reason": "Check active state documentation reflects the resulting maintenance capability."}
+{"file": "docs/active/agent-framework-runtime-workspace-direction.md", "reason": "Check the project direction remains aligned with workspace maintenance contracts."}
+{"file": ".trellis/tasks/archive/2026-06/06-13-runtime-side-effect-transactions/prd.md", "reason": "Check maintenance writes reuse staged successful-turn semantics."}
+{"file": ".trellis/tasks/archive/2026-06/06-13-runtime-workspace-writeback-mvp/prd.md", "reason": "Check raw history remains the authoritative base record and summaries are derived."}
+{"file": ".trellis/tasks/archive/2026-06/06-13-agent-call-mvp/prd.md", "reason": "Check memory Agent/delegation behavior remains compatible with maintenance scope."}

@@ -1,0 +1,14 @@
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "核查 platform-web 变更范围和必跑构建"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "核查 Agent Runtime 工具调用、task/narrative 模式、agent_call 和运行时边界未破坏"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "核查助手 context 虚拟文件、UI 会话消息、Dexie 状态边界"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "核查 build:web 与质量要求"}
+{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "核查 .tsian/local 生命周期和 checkpoint 排除规则"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "核查 contracts authoring 与 build:contracts 要求"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "核查 shared type exports、optional fields 与 contracts 质量清单"}
+{"file": ".trellis/spec/contracts/frontend/index.md", "reason": "核查 consuming frontend build 要求"}
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "核查前端消费 shared contracts 的类型安全"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核查跨层数据流 contracts/runtime/host/storage/UI 一致"}
+{"file": ".trellis/spec/guides/data-fileification-principle.md", "reason": "核查未新增隐藏 DB 状态且 context 仍文件化"}
+{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "核查 AI-facing prompt/schema 中旧 raw tool replay 概念无残留噪声"}
+{"file": ".trellis/spec/guides/module-structure-guide.md", "reason": "核查新增 helper 没有加重 god file"}
+{"file": ".trellis/tasks/07-11-task-context-handoff/research/current-implementation.md", "reason": "核查实现是否覆盖已识别根因和高风险路径"}

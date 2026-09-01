@@ -1,0 +1,4 @@
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"核对唯一可执行标签、按错误码预算、引用生命周期、schema/savepoint 顺序和 text/native 一致性。"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"核对 smoke-only 门槛、必要构建和触及测试的保留价值审计。"}
+{"file":".trellis/tasks/08-03-agent-tool-observation-contract/research/agent-tool-observation-contract.md","reason":"检查引用未破坏 accepted observation、Tool memory、UI presentation 或 32 KiB gate。"}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"检查 AI-facing 文本没有恢复旧标签、兜底宣传或无必要负例。"}

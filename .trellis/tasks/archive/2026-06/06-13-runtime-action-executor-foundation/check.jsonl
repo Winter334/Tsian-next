@@ -1,0 +1,5 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Verify required checks match touched packages."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check action executor, platform action, trace, and runtime boundary compliance."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Apply platform-web quality gates before completion."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review cross-layer data flow and ownership after implementation."}
+{"file":"docs/active/current-state-handoff.md","reason":"Ensure the handoff reflects the new executor foundation status if implementation changes it."}

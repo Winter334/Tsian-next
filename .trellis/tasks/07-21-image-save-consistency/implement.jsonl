@@ -1,0 +1,6 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Coordinate host source binding with storage transaction and frontend completion."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Keep source authority generic and avoid card schema leakage into storage."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Checkpoint manifests, restore, invokeAgent commits, prune and Blob GC contracts."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Workspace transactions, volume routing and persisted state update rules."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Strict target/source boundary and host mutation routing."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/research/current-state-review-2026-08-26.md","reason":"Evidence for existing explicit side-channel commits and stale formal full-replace behavior."}

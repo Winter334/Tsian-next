@@ -1,0 +1,9 @@
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Verify contract changes against contracts authoring and required checks."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Ensure build:contracts and consuming build expectations are satisfied."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Check frontend bridge payload/event types are consumed from shared contracts and documented consistently."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Quality review for platform-web Agent Runtime and bridge changes."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check streaming event and frontend state handling obey existing bridge/streaming conventions."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check runtime boundary normalization and contract use across platform-host/bridge/play frontend."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Run and interpret required platform-web validation; protect sendMessage stream/rollback behavior."}
+{"file":".trellis/spec/guides/agent-skill-design-principles.md","reason":"Review whether AgentInvocation and agent_call boundaries remain clean."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Review AI-facing text updates for stale concept traces or unnecessary restrictions."}

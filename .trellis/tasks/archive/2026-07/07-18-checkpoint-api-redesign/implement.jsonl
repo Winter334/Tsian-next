@@ -1,0 +1,8 @@
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Checkpoint storage model, pruning policy, Dexie schema constraints, and current invokeAgent workspace-with-checkpoint behavior."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web required checks and frontend/runtime boundaries for bridge and DebugView changes."}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Contracts package authoring and validation requirements for CheckpointSummary and InvokeAgentRequest changes."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Consumer-side type-safety requirements for shared contract changes used by platform-web and play frontends."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Task spans contracts, SDK, platform actions, storage, and play frontend call sites."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Checkpoint metadata remains Dexie-backed; design must avoid misplaced file-backed duplicates."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"API capability design: separate behavior fields from descriptive tags/reason and avoid overloading one concept."}
+{"file":".trellis/tasks/07-15-agent-reply-regex-projection/design.md","reason":"Active API task touching the same contracts/play-bridge/platform-host files; implementation must coordinate with it."}

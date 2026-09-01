@@ -1,0 +1,7 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web frontend scope and required checks for final frontend-build integration validation."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Frontend-build runtime traps, import.meta.glob/style/worker contracts, layered validation, and parent product loop requirement."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Packaged frontend boundary, Game Card package/frontend package contracts, and strict TS expectations."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Packaged frontend IndexedDB/SW DB-name invariants and gameCardFrontendFiles storage boundary."}
+{"file":".trellis/tasks/archive/2026-07/07-10-sass-less-vfs-adapters/research/validation.md","reason":"Sass/Less child handoff matrix and parent product-loop expectations."}
+{"file":".trellis/tasks/archive/2026-07/07-10-import-meta-glob-vfs/research/validation.md","reason":"import.meta.glob child handoff matrix and dynamic chunk/metafile evidence."}
+{"file":".trellis/tasks/archive/2026-07/07-10-worker-subbuild-materialization/research/validation.md","reason":"Worker child implementation summary, validation gap, and parent packaged-iframe fixture handoff."}

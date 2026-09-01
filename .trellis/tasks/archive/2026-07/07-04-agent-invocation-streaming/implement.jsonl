@@ -1,0 +1,13 @@
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Contract shape changes for InvokeAgent request/result and AgentInvocation events must follow contracts authoring requirements."}
+{"file":".trellis/spec/contracts/backend/directory-structure.md","reason":"Choose the correct contracts source files and export boundaries for shared invocation types."}
+{"file":".trellis/spec/contracts/backend/error-handling.md","reason":"Agent invocation failed events and bridge errors must use JSON-compatible shared error payloads."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Contract changes require build:contracts and consuming package build validation."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Frontend consumers of @tsian/contracts need updated bridge payload and event shapes."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Existing bridge contract and InvokeAgent semantics are documented here and must be updated consistently."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web bridge/runtime changes must follow frontend shell and Agent Runtime requirements."}
+{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"New host/bridge responsibilities should be placed in focused modules rather than bloating platform-host/index.ts."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Streaming bridge events, turn events, and play frontend state conventions are documented here."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Runtime boundary normalization and shared contract consumption rules apply to bridge payload changes."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Runtime turn and bridge changes require build:web and must preserve sendMessage rollback/streaming behavior."}
+{"file":".trellis/spec/guides/agent-skill-design-principles.md","reason":"This task changes Agent invocation boundaries and must preserve Agent/Skill responsibility separation."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Updating send/invokeAgent terminology must remove stale AI-facing master/旁路 wording rather than leaving confusing traces."}

@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/08-12-simplify-opening-interview-state/research/current-opening-evidence.md","reason":"Observed failure, current authorities, actual downstream dependencies, and source synchronization boundaries."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Keep the simplified Skill self-contained and action-oriented without process-heavy leakage."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace Skill action, workspace state, frontend recovery, and package consumers end to end."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Require a concrete consumer for each retained state field and hard validation."}

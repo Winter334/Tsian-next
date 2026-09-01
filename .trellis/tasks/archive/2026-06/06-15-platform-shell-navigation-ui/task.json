@@ -1,0 +1,29 @@
+{
+  "id": "platform-shell-navigation-ui",
+  "name": "platform-shell-navigation-ui",
+  "title": "Platform Shell Navigation UI",
+  "description": "Redesign the platform shell information architecture, navigation, layout density, and empty states for the UI phase.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "platform-web",
+  "priority": "P2",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-06-15",
+  "completedAt": "2026-06-17",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "06-15-platform-ui-development-phase",
+  "relatedFiles": [],
+  "notes": "Superseded by 06-16-retroos-multi-window-desktop-shell. The earlier home-navigation-hub scope was replaced by the current RetroOS multi-window desktop shell direction; remaining shell polish should be tracked as focused follow-up work.",
+  "meta": {
+    "resolution": "superseded",
+    "supersededBy": "06-16-retroos-multi-window-desktop-shell"
+  }
+}
