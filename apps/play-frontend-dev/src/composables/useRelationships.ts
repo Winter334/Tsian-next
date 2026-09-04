@@ -31,6 +31,15 @@ const relationshipsCache = new Map<string, RelationshipsCacheEntry>()
 const relationshipsInFlight = new Map<string, Promise<RelationshipsCacheEntry>>()
 
 /**
+ * 清空关系分片读取缓存。与 useEntity.invalidateEntityCache 同构，由 useRuntime
+ * 在每次 runtime 刷新时调用。
+ */
+export function invalidateRelationshipsCache(): void {
+  relationshipsCache.clear()
+  relationshipsInFlight.clear()
+}
+
+/**
  * 把 subject ref 转成 relationships 分片 workspace 路径。
  * `character:萧玄` → `save/relationships/character-萧玄.json`
  * （scope = `<type>-<localId>`，对齐 platform 的 scopeFromSubject 实现）。

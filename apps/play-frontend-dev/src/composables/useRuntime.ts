@@ -21,6 +21,8 @@ import { parseRuntime } from "../lib/parse-runtime"
 import { useTsian, getTsianClient } from "./useTsian"
 import { setOnSynced } from "./useSyncAfterTurn"
 import { onRuntimeStale } from "./useRuntimeStaleBus"
+import { invalidateEntityCache } from "./useEntity"
+import { invalidateRelationshipsCache } from "./useRelationships"
 
 /** runtime.json workspace 路径（与 lib/source.ts RUNTIME_PATH 对齐）。 */
 const RUNTIME_PATH = "save/playthrough/runtime.json"
@@ -38,6 +40,15 @@ function initialRuntimeData(): RuntimeData {
 
 // ── 模块级共享响应式状态（所有 useRuntime() 调用共用）──
 const runtimeData = ref<RuntimeData>(initialRuntimeData())
+/**
+ * 刷新代次：每次 refresh 完成 +1，单调递增。
+ *
+ * 供依赖 save-runtime 派生文件（entity / relationships / scene 分片）的组件当作
+ * "重新读取"信号。不能改用 runtime.updatedAtTurn——回合后维护会改写 entity/
+ * relationships 而不保证改写 runtime.json，updatedAtTurn 不变时那些组件就永远
+ * 停在旧数据上。
+ */
+const runtimeRevision = ref(0)
 /** refresh 是否在执行中（避免重复并发读取）。 */
 let refreshing = false
 /** 在 refresh 执行期间又收到新触发时，标记完成后需再刷新一次（避免漏刷新）。 */
@@ -66,6 +77,10 @@ async function refresh(): Promise<void> {
 
   const tsian = getTsianClient()
   runtimeData.value = { ...runtimeData.value, status: "loading" }
+  // runtime 刷新触发（回合结束 / 维护完成 / stale）意味着整个 save-runtime 视图都可能
+  // 变旧，派生文件的读取缓存一并作废，否则下游按需读取会继续命中旧内容。
+  invalidateEntityCache()
+  invalidateRelationshipsCache()
 
   try {
     const file = await tsian.workspace.read(RUNTIME_PATH, "save-runtime")
@@ -107,6 +122,7 @@ async function refresh(): Promise<void> {
     }
   } finally {
     refreshing = false
+    runtimeRevision.value += 1
     // 执行期间又收到触发：再跑一次，确保读到最新数据
     if (pendingRefresh) {
       pendingRefresh = false
@@ -175,5 +191,7 @@ export function useRuntime() {
     refresh,
     /** 加载状态便捷只读 ref（派生自 runtimeData.status）。 */
     status: readonly(status),
+    /** 刷新代次：每次 refresh 完成 +1，供派生文件消费方当作重新读取信号。 */
+    runtimeRevision: readonly(runtimeRevision),
   }
 }

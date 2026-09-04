@@ -20,7 +20,7 @@ import CharacterList from "./CharacterList.vue"
 import CharacterSlot from "./CharacterSlot.vue"
 import type { CharacterMode } from "./CharacterStage.vue"
 
-const { runtimeData } = useRuntime()
+const { runtimeData, runtimeRevision } = useRuntime()
 const runtime = computed(() => runtimeData.value.runtime)
 const runtimeError = computed(() => runtimeData.value.error)
 const runtimeStatus = computed(() => runtimeData.value.status)
@@ -58,7 +58,7 @@ const presentRefs = computed<Array<{ ref: string }>>(() => {
 const hasPresent = computed(() => presentRefs.value.length > 0)
 
 watch(
-  () => [currentSceneRef.value, runtime.value?.updatedAtTurn ?? -1] as const,
+  () => [currentSceneRef.value, runtimeRevision.value] as const,
   ([entityRef]) => void loadScene(entityRef),
   { immediate: true },
 )
@@ -215,7 +215,7 @@ const scenePresentEmpty = computed(() =>
           :track-scroll-top="trackScroll[activeMode]"
           :mobile-hero-collapsed="heroCollapsed"
           :portrait-refresh-token="portraitRefreshToken"
-          :runtime-revision="runtime?.updatedAtTurn ?? 0"
+          :runtime-revision="runtimeRevision"
           @select="onSelect"
           @portrait-updated="portraitRefreshToken += 1"
           @open-character-drawer="openCharacterDrawer"

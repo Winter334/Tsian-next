@@ -707,6 +707,8 @@ const { displayItems, itemErrors } = parseRuntime(raw)
 
 - The bus is **payload-less**: subscribers respond by re-reading their own data. Do not attach event details (they cause "detail doesn't match my context" false-negatives).
 - `useRuntime()` auto-subscribes to `ready`, `onTurnEnd`, `setOnSynced`, and `onRuntimeStale`. UI components calling `useRuntime()` do **not** need to wire these themselves.
+- `useRuntime().runtimeRevision` is the staleness signal for **derived** save-runtime files (entity / relationships / scene shards): a monotonic counter bumped once per completed `refresh()`. Components that read those shards must watch it, and must **not** use `runtime.updatedAtTurn` for this — post-turn maintenance rewrites `save/entities/**` and `save/relationships/**` without any guarantee that it also rewrites `runtime.json`, so an `updatedAtTurn`-keyed watcher silently keeps showing pre-maintenance data.
+- `refresh()` clears the module-level read caches of `useEntity` / `useRelationships` (`invalidateEntityCache` / `invalidateRelationshipsCache`) before re-reading. Any new cached per-path reader of save-runtime data must register the same invalidation there; a cache whose only invalidation signal is runtime content will serve stale shards.
 - Checkpoint `restore()` has no event broadcast — callers must explicitly invoke `useRuntime().refresh()` after restore succeeds.
 - Player-initiated actions that mutate workspace (future UI: use item, move inventory) should call `emitRuntimeStale()` on success. Do **not** globally wrap `runAction`/`invokeAgent` to auto-emit — most calls do not touch runtime and would cause noise refreshes.
 

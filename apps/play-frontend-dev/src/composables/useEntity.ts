@@ -31,6 +31,16 @@ interface EntityLoadOptions {
 const entityCache = new Map<string, EntityCacheEntry>()
 const entityInFlight = new Map<string, Promise<EntityCacheEntry>>()
 
+/**
+ * 清空实体读取缓存。runtime 刷新（回合结束 / 回合后维护完成 / runtimeStale）后调用——
+ * 维护 agent 改写 save/entities/** 时不保证同步改写 runtime.json，缓存不能靠
+ * runtime 内容变化来失效。
+ */
+export function invalidateEntityCache(): void {
+  entityCache.clear()
+  entityInFlight.clear()
+}
+
 async function readEntity(path: string): Promise<EntityCacheEntry> {
   const tsian = getTsianClient()
   try {

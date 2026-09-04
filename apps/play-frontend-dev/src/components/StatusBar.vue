@@ -53,7 +53,7 @@ const emit = defineEmits<{
 }>()
 
 // useRuntime 模块级单例：与 StoryView 共享同一份数据 + 刷新触发。
-const { runtimeData } = useRuntime()
+const { runtimeData, runtimeRevision } = useRuntime()
 
 const barRef = ref<HTMLElement | null>(null)
 
@@ -142,7 +142,7 @@ async function loadProtagonistEntity(): Promise<void> {
 }
 
 watch(
-  () => [protagonistRefStr.value, runtime.value?.updatedAtTurn ?? -1] as const,
+  () => [protagonistRefStr.value, runtimeRevision.value] as const,
   () => {
     void loadProtagonistEntity()
   },
