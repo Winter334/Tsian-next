@@ -372,6 +372,26 @@ function directoryOf(path: string): string {
   return parts.join("/")
 }
 
+/**
+ * 资源管理器把存档运行时文件显示为 save/save-NN/...（save-NN 是虚拟存档槽目录），
+ * 但 runtime 注入侧的 save/ 就是"当前存档"本身，没有槽位这一层。选择器选出来的
+ * 路径要去掉槽位段再写进配置，否则存下的 contextPath 注入时找不到文件。
+ */
+function toRuntimeWorkspacePath(path: string): string {
+  return path.replace(/^save\/save-\d{2,}(\/|$)/, "save$1")
+}
+
+/**
+ * 反向：无槽位的 save/ 路径在资源管理器里不存在对应目录，直接当初始目录会开出空列表。
+ * 回落到 save 根，让使用者自己选槽位。
+ */
+function toStudioBrowseDirectory(path: string): string {
+  if (path !== "save" && path.startsWith("save/") && !/^save\/save-\d{2,}(\/|$)/.test(path)) {
+    return "save"
+  }
+  return path
+}
+
 function createEditorSessionId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -497,7 +517,7 @@ function openPicker(purpose: PickerPurpose, mode: "file" | "directory", initialP
 
 function openPathFilePicker(): void {
   const currentPath = draft.value?.kind === "path" ? draft.value.path : ""
-  openPicker("path-file", "file", directoryOf(currentPath))
+  openPicker("path-file", "file", toStudioBrowseDirectory(directoryOf(currentPath)))
 }
 
 function openTemplateFilePicker(): void {
@@ -568,7 +588,7 @@ async function handlePickerSelect(path: string): Promise<void> {
     if (current.kind !== "path") {
       return
     }
-    current.path = normalizePath(path)
+    current.path = toRuntimeWorkspacePath(normalizePath(path))
     await loadFileContent()
     return
   }

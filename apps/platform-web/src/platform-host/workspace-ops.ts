@@ -63,6 +63,8 @@ interface StudioSaveSlot {
 interface StudioWorkspaceContext {
   card: NonNullable<Awaited<ReturnType<typeof getLocalGameCard>>>
   saveSlots: StudioSaveSlot[]
+  /** 无槽位 runtime 路径（save/xxx）在 studio 侧的默认落点：活动存档优先，否则第一个槽。 */
+  defaultSaveSlot: StudioSaveSlot | null
 }
 
 type StudioResolvedPath =
@@ -83,6 +85,8 @@ type StudioResolvedPath =
       storagePath: string
       saveId: string
       alias: string
+      /** true = 入参本就是无槽位 runtime 路径，结果回写时不加 save/<alias>/ 前缀。 */
+      slotless?: boolean
     }
 
 function workspaceStudioError(code: string, message: string): Error & { code: string } {
@@ -104,6 +108,11 @@ function formatStudioSaveDirectoryName(index: number): string {
   return `save-${String(index + 1).padStart(2, "0")}`
 }
 
+/** studio 虚拟存档槽目录名恒为 save-NN；其余第二段一律视为无槽位 runtime 路径。 */
+function isStudioSaveSlotAlias(segment: string): boolean {
+  return /^save-\d{2,}$/.test(segment)
+}
+
 async function loadStudioWorkspaceContext(cardId: string): Promise<StudioWorkspaceContext> {
   const card = await getLocalGameCard(cardId)
   if (!card) {
@@ -114,12 +123,16 @@ async function loadStudioWorkspaceContext(cardId: string): Promise<StudioWorkspa
     .filter((save) => save.gameCardId === card.manifest.id)
     .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
 
+  const saveSlots = saves.map((save, index) => ({
+    alias: formatStudioSaveDirectoryName(index),
+    saveId: save.id,
+  }))
+  const activeSaveId = await getActiveSaveId()
+
   return {
     card,
-    saveSlots: saves.map((save, index) => ({
-      alias: formatStudioSaveDirectoryName(index),
-      saveId: save.id,
-    })),
+    saveSlots,
+    defaultSaveSlot: saveSlots.find((slot) => slot.saveId === activeSaveId) ?? saveSlots[0] ?? null,
   }
 }
 
@@ -170,6 +183,26 @@ function resolveStudioWorkspacePath(
         "WORKSPACE_SAVE_SLOT_REQUIRED",
         "需要先进入 save/ 下的具体存档槽，才能打开或编辑存档运行时文件。",
       )
+    }
+
+    // 无槽位 runtime 路径（如 agent contextPaths 里写的 save/source/manifest.json）：
+    // 注入侧 save/ 即"当前存档"，studio 侧回落到默认槽，避免可注入却打不开编辑。
+    if (!isStudioSaveSlotAlias(alias)) {
+      const fallbackSlot = context.defaultSaveSlot
+      if (!fallbackSlot) {
+        throw workspaceStudioError(
+          "WORKSPACE_SAVE_SLOT_NOT_FOUND",
+          "这张游戏卡还没有任何存档槽，无法打开存档运行时文件。",
+        )
+      }
+      return {
+        scope: "save-runtime",
+        displayPath,
+        storagePath: displayPath,
+        saveId: fallbackSlot.saveId,
+        alias: fallbackSlot.alias,
+        slotless: true,
+      }
     }
 
     const saveSlot = context.saveSlots.find((candidate) => candidate.alias === alias)
@@ -234,6 +267,10 @@ function storageFileToStudioFile(file: WorkspaceFile, resolvedPath: StudioResolv
 
 function storagePathToStudioPath(path: string, resolvedPath: StudioResolvedPath): string {
   if (resolvedPath.scope === "card-content" || resolvedPath.scope === "card-frontend") {
+    return path
+  }
+
+  if (resolvedPath.slotless) {
     return path
   }
 
