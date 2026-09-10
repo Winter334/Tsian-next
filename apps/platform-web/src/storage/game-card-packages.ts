@@ -1,3 +1,4 @@
+import { initialSaveEntries, normalizeInitialSaveConfig } from "./save-initialization"
 import type {
   FrontendFramework,
   FrontendPackageManifest,
@@ -297,7 +298,8 @@ function normalizeRuntimeConfig(value: unknown): GameCardRuntimeConfig | undefin
   }
 
   const entrypoints = normalizeRuntimeEntrypoints(value.entrypoints)
-  return entrypoints ? { entrypoints } : {}
+  const initialSave = normalizeInitialSaveConfig(value.initialSave)
+  return { ...(entrypoints ? { entrypoints } : {}), ...(initialSave ? { initialSave } : {}) }
 }
 
 export function normalizeGameCardManifest(value: unknown): GameCardManifest {
@@ -685,6 +687,7 @@ export async function exportGameCardPackage(
     ...card.manifest,
     ...(options.version?.trim() ? { version: options.version.trim() } : {}),
   })
+  initialSaveEntries(manifest.runtime?.initialSave, contentFiles)
   const packageManifest: GameCardPackageManifest = {
     schema: GAME_CARD_PACKAGE_SCHEMA,
     manifest,

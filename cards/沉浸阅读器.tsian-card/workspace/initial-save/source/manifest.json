@@ -1,0 +1,15 @@
+{
+  "title": "",
+  "importedAt": null,
+  "status": "pending",
+  "chapterCount": 0,
+  "files": {
+    "chaptersIndex": "save/source/chapters.index.json",
+    "shardsRoot": "save/source/shards/"
+  },
+  "storage": {
+    "kind": "sharded",
+    "targetShardCharacters": 1000000
+  },
+  "notes": "Filled when a novel is imported."
+}

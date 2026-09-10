@@ -1,0 +1,51 @@
+{
+  "id": "opening-modeling-semantic",
+  "name": "opening-modeling-semantic",
+  "title": "世界架构师开局建模语义化",
+  "description": "让世界架构师提交世界定义与初始资料的语义内容，由卡前端编排正文生成和场记开局维护，程序承担存储装配、流程与恢复。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "卡属开局语义协议、Agent/Skill/工具/上下文、实际卡前端编排与场记开局回合适配",
+  "package": null,
+  "priority": "P1",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-09-10",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/agent.json",
+    "cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/AGENT.md",
+    "cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/SKILL.md",
+    "cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/_opening-workflow.js",
+    "cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/开局建模/scripts/publish-opening.js",
+    "cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/skills/frontier推进/SKILL.md",
+    "cards/沉浸阅读器.tsian-card/workspace/initial-save/schema/current.md",
+    "cards/沉浸阅读器.tsian-card/workspace/docs/属性刻度规范.md",
+    "apps/play-frontend-dev/src/composables/useSetupState.ts",
+    "apps/play-frontend-dev/src/lib/opening-interview.ts",
+    "apps/play-frontend-dev/src/composables/useSyncAfterTurn.ts",
+    "apps/play-frontend-dev/src/lib/maintenance-context.ts",
+    "cards/沉浸阅读器.tsian-card/workspace/agents/stage-manager/skills/回合后维护/scripts/maintenance-core.js",
+    "apps/play-frontend-dev/src/composables/useFrontierAdvance.ts",
+    "scripts/package-immersive-reader-card.mjs"
+  ],
+  "notes": "需求与程序编排已获确认，规划可执行、无阻塞性待确认项。复用已有研究任务；本轮仅整理任务，尚未实施。frontier 不作为保留约束，RAG 不处理，真实 AI 测试由用户负责。",
+  "meta": {
+    "planning_state": "requirements confirmed; ready for implementation planning/execution, not started",
+    "depends_on": [
+      "09-10-stage-manager-semantic-maintenance"
+    ],
+    "orchestration": "card frontend invokes fixed architect -> storyteller -> stage-manager sequence",
+    "frontier_policy": "not a compatibility/preservation constraint; no replacement system in this task",
+    "rag_policy": "deprecated, retained, excluded",
+    "validation_policy": "necessary deterministic engineering checks; live model testing by user"
+  }
+}

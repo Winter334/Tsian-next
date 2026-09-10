@@ -428,6 +428,10 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
       ? record.contextSlot.trim()
       : undefined
   const persist = typeof record.persist === "boolean" ? record.persist : undefined
+  if (record.includeRecentHistory !== undefined && typeof record.includeRecentHistory !== "boolean") {
+    throw new RemoteBridgeRpcError("INVALID_INVOKE_AGENT_HISTORY", "includeRecentHistory must be a boolean.")
+  }
+  const includeRecentHistory = record.includeRecentHistory as boolean | undefined
   let transcript: InvokeAgentRequest["transcript"]
   if (record.transcript !== undefined) {
     if (!isRecord(record.transcript)
@@ -451,6 +455,7 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
     ...(injection ? { injection } : {}),
     ...(contextSlot ? { contextSlot } : {}),
     ...(persist !== undefined ? { persist } : {}),
+    ...(includeRecentHistory !== undefined ? { includeRecentHistory } : {}),
     ...(transcript ? { transcript } : {}),
   }
 }

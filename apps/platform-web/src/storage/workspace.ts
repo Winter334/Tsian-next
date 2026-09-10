@@ -1,6 +1,5 @@
 import type {
   AgentConfig,
-  GameCardContentFile,
   WorkspaceEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
@@ -63,14 +62,7 @@ import type {
   RuntimeWorkspaceChanges,
 } from "./workspace-types"
 
-import {
-  DEFAULT_WORKSPACE_FILES,
-  DEFAULT_SAVE_RUNTIME_FILES,
-  DEFAULT_WORKSPACE_VERSION,
-  WORKSPACE_MANIFEST_PATH,
-  DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS,
-  RUNTIME_DEFAULT_CARD_PATHS,
-} from "./workspace-templates"
+import { createPlatformSaveFiles } from "./save-initialization"
 function createTableId(saveId: string, path: string): string {
   return [
     saveId,
@@ -79,36 +71,6 @@ function createTableId(saveId: string, path: string): string {
   ].join(":")
 }
 
-function toContentFile(file: {
-  path: string
-  content: string
-}): GameCardContentFile {
-  const path = normalizeWorkspaceFilePath(file.path)
-  return {
-    path,
-    content: file.content,
-    mediaType: inferMediaTypeFromPath(path, { fallback: "text/plain" }),
-  }
-}
-
-export function createDefaultWorkspaceTemplateFiles(): GameCardContentFile[] {
-  return DEFAULT_WORKSPACE_FILES
-    .filter((file) => !RUNTIME_DEFAULT_CARD_PATHS.has(file.path))
-    .map(toContentFile)
-}
-
-export function createDefaultSaveRuntimeFiles(): CheckpointWorkspaceFile[] {
-  const now = Date.now()
-  return DEFAULT_SAVE_RUNTIME_FILES.map((file) => {
-    const path = normalizeWorkspaceFilePath(file.path)
-    return {
-      path,
-      content: file.content,
-      createdAt: now,
-      updatedAt: now,
-    }
-  })
-}
 
 function ordinaryWorkspaceFiles(files: WorkspaceFile[]): WorkspaceFile[] {
   return files.filter((file) => isOrdinaryWorkspacePath(file.path))
@@ -208,126 +170,15 @@ async function touchSave(saveId: string, updatedAt: number): Promise<void> {
   })
 }
 
-function defaultWorkspaceFileByPath(path: string): {
-  path: string
-  content: string
-  mediaType?: string
-} | undefined {
-  return DEFAULT_SAVE_RUNTIME_FILES.find((file) => file.path === path)
-}
-
-function parseWorkspaceManifestVersion(content: string | undefined): number {
-  if (!content) {
-    return 0
-  }
-
-  try {
-    const parsed = JSON.parse(content) as unknown
-    if (
-      typeof parsed === "object"
-      && parsed !== null
-      && !Array.isArray(parsed)
-      && typeof (parsed as { workspaceVersion?: unknown }).workspaceVersion === "number"
-      && Number.isFinite((parsed as { workspaceVersion: number }).workspaceVersion)
-    ) {
-      return Math.max(0, Math.floor((parsed as { workspaceVersion: number }).workspaceVersion))
-    }
-  } catch {
-    return 0
-  }
-
-  return 0
-}
-
-function plainRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
-}
-
-function serializeWorkspaceManifest(content: string | undefined): string {
-  let base: Record<string, unknown> = {}
-  if (content) {
-    try {
-      const parsed = JSON.parse(content) as unknown
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        base = parsed as Record<string, unknown>
-      }
-    } catch {
-      base = {}
-    }
-  }
-
-  return JSON.stringify({
-    ...base,
-    version: typeof base.version === "string" ? base.version : "0.0.0",
-    workspaceVersion: DEFAULT_WORKSPACE_VERSION,
-    contentModel: {
-      ...plainRecord(base.contentModel),
-      fileContent: "text",
-      binaryContent: false,
-      cardContentRoot: "/",
-      activeSaveRoot: "save/",
-    },
-    platformMetadata: {
-      ...plainRecord(base.platformMetadata),
-      path: ".tsian/",
-      ordinaryWorkspaceVisible: false,
-    },
-  }, null, 2) + "\n"
-}
-
-async function upgradeDefaultWorkspaceFilesForSave(saveId: string): Promise<void> {
-  const existingRecords = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
-  const existingByPath = new Map(existingRecords.map((record) => [record.path, record]))
-  const manifest = existingByPath.get(WORKSPACE_MANIFEST_PATH)
-  if (parseWorkspaceManifestVersion(manifest?.content) >= DEFAULT_WORKSPACE_VERSION) {
-    return
-  }
-
-  const now = Date.now()
-  await localDb.transaction("rw", localDb.workspaceFiles, async () => {
-    for (const path of DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS) {
-      if (existingByPath.has(path)) {
-        continue
-      }
-
-      const defaultFile = defaultWorkspaceFileByPath(path)
-      if (!defaultFile) {
-        continue
-      }
-
-      await localDb.workspaceFiles.put({
-        id: createTableId(saveId, path),
-        saveId,
-        path,
-        content: defaultFile.content,
-        createdAt: now,
-        updatedAt: now,
-      })
-    }
-
-    await localDb.workspaceFiles.put({
-      id: createTableId(saveId, WORKSPACE_MANIFEST_PATH),
-      saveId,
-      path: WORKSPACE_MANIFEST_PATH,
-      content: serializeWorkspaceManifest(manifest?.content),
-      createdAt: manifest?.createdAt ?? now,
-      updatedAt: now,
-    })
-  })
-}
-
 export async function initializeWorkspaceForSave(saveId: string): Promise<void> {
   const existingCount = await localDb.workspaceFiles.where("saveId").equals(saveId).count()
   if (existingCount > 0) {
-    await upgradeDefaultWorkspaceFilesForSave(saveId)
     return
   }
 
   const now = Date.now()
   await localDb.transaction("rw", localDb.workspaceFiles, async () => {
-    for (const file of createDefaultSaveRuntimeFiles()) {
+    for (const file of createPlatformSaveFiles(now)) {
       const path = normalizeWorkspaceFilePath(file.path)
       await localDb.workspaceFiles.put({
         id: createTableId(saveId, path),

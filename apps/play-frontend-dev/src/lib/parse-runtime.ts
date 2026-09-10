@@ -58,7 +58,7 @@ function loadFailedData(error: "load-failed" | "not-found"): RuntimeData {
 
 /**
  * 校验 runtime.json 固定字段是否齐备。
- * 对齐 workspace-templates.ts 默认模板：turn/worldTime/weather/activeSceneRefs/extensions
+ * 对齐 卡内 initial-save/playthrough/runtime.json：turn/worldTime/weather/activeSceneRefs/extensions
  * 为必检；location/protagonistRef/updatedAtTurn/updatedBy 允许 null/缺省。
  */
 function isRuntimeLike(raw: unknown): raw is RuntimeLikeInput {

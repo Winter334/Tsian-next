@@ -1,7 +1,6 @@
 import type { JsonValue, WorkspaceFile } from "@tsian/contracts"
 import { parse } from "@babel/parser"
 import { createRuntimeWorkspaceTransaction } from "@/storage/workspace"
-import { createDefaultWorkspaceTemplateFiles } from "@/storage/workspace"
 import { executeWorkspaceOperation } from "@/agent-runtime/workspace-operations"
 import { parseActionDeclarations, resolveBrowserScriptPath, resolveHelperPath } from "@/agent-runtime/workspace-tools"
 import { buildSkillRegistry } from "@/agent-runtime/registry"
@@ -9,7 +8,7 @@ import { validateStrictJson } from "../frontend-actions/json"
 import { resolveFrontendAction } from "../frontend-actions/registry"
 import { validateAndInlineFrontendActionImports } from "../frontend-actions/imports"
 
-export type EquipmentDistribution = "internal" | "formal"
+export type EquipmentDistribution = "formal"
 export type EquipmentTarget = "action-preview" | "action-commit" | "skill"
 
 interface FixtureJsonContent { encoding: "json"; value: JsonValue }
@@ -143,8 +142,7 @@ function formalWorkspaceFiles(): WorkspaceFile[] {
 }
 
 export async function distributionFiles(distribution: EquipmentDistribution): Promise<WorkspaceFile[]> {
-  if (distribution === "formal") return formalWorkspaceFiles()
-  return createDefaultWorkspaceTemplateFiles().map((entry) => file(entry.path, entry.content ?? ""))
+  return formalWorkspaceFiles()
 }
 
 function compileFunctionBody(source: string): (...args: unknown[]) => Promise<unknown> {

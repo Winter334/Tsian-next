@@ -365,6 +365,7 @@ function buildEnabledRuntimeToolSchemas(options: {
   queryDiagnosticsAvailable?: boolean
 }): ToolSchema[] {
   return buildEnabledToolSchemas({
+    disabledToolNames: options.agentContext.agent.disabledTools,
     enabledPlatformTools: options.enabledPlatformTools,
     allowAgentCall: options.allowAgentCall,
     visibleContacts: options.visibleContacts,

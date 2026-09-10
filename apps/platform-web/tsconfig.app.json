@@ -16,7 +16,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@tsian/contracts": ["../../packages/contracts/src/index.ts"],
-      "@tsian/web-utils": ["../../packages/web-utils/src/index.ts"]
+      "@tsian/web-utils": ["../../packages/web-utils/src/index.ts"],
+      "@tsian/play-bridge": ["../../packages/play-bridge/src/index.ts"]
     },
     "types": ["vite/client"]
   },

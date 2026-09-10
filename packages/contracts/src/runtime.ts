@@ -858,6 +858,9 @@ export interface InvokeAgentRequest {
   /** 是否持久化上下文。true = 读写 context-slot.json（跨调用持久化）；
    *  false/省略 = 不读不写（一次性调用）。默认 false。 */
   persist?: boolean
+  /** 是否用游玩近期对话初始化未持久化的上下文，默认 true。
+   *  false 不影响显式注入或已持久化的 Agent 上下文；完全独立调用需同时 persist:false。 */
+  includeRecentHistory?: boolean
   /** Full player-visible archive, valid only with persist:true + contextSlot. */
   transcript?: {
     mode: "full"

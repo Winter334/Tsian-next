@@ -474,6 +474,9 @@ async function executeRuntimeWorkspaceToolCall(
   let pendingToolResultRef: { id: string; value: string } | undefined
   let observation: RuntimeWorkspaceToolObservation
   try {
+    if (context.agentContext?.agent.disabledTools.includes(call.name)) {
+      throw toolError("TOOL_DISABLED", "This tool is disabled for the current Agent.")
+    }
     if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.useSkill) {
       observation = {
         index,

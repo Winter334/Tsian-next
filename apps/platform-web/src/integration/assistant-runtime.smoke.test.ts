@@ -61,11 +61,6 @@ import { invokeAgent } from "../platform-host/ai-invocation"
 import { runAssistantChat } from "../platform-host/assistant-chat"
 import { sendMessage } from "../platform-host/runtime-turn"
 import {
-  WORLD_ARCHITECT_AGENT_FILES,
-  WORLD_ARCHITECT_SKILL_FILES,
-} from "../storage/workspace-templates/agents/world-architect"
-import { DEFAULT_SAVE_RUNTIME_FILES } from "../storage/workspace-templates/files"
-import {
   assistantContextPath,
   createAssistantSession,
   createLocalSaveFromGameCard,
@@ -94,6 +89,14 @@ import { parseFrontier } from "../../../play-frontend-dev/src/lib/parse-frontier
 import { sourceSummaryState } from "../../../play-frontend-dev/src/lib/timeline-summary"
 import type { SourceAnchor } from "../../../play-frontend-dev/src/lib/frontier-types"
 import type { Runtime } from "../../../play-frontend-dev/src/lib/runtime-types"
+
+const worldArchitectSources = import.meta.glob(
+  "../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/**/*",
+  { eager: true, query: "?raw", import: "default" },
+) as Record<string, string>
+const worldArchitectFiles = Object.entries(worldArchitectSources).map(([path, content]) => ({
+  path: path.slice(path.indexOf("workspace/") + "workspace/".length), content,
+}))
 
 const CARD_ID = "assistant-runtime-smoke"
 const MODEL_ID = "assistant-smoke-model"
@@ -853,15 +856,15 @@ describe("Agent context contracts smoke", () => {
     })).toBeNull()
   })
 
-  it("keeps the world architect template synchronized and its resident context minimal", () => {
-    const agentFile = WORLD_ARCHITECT_AGENT_FILES.find((file) => file.path === "agents/world-architect/agent.json")
+  it("validates the distributed world architect assets and their resident context", () => {
+    const agentFile = worldArchitectFiles.find((file) => file.path === "agents/world-architect/agent.json")
     const config = JSON.parse(agentFile?.content ?? "null") as { contextPaths?: Array<{ path?: string }> }
     expect(config.contextPaths?.map((entry) => entry.path)).toEqual([
       "save/source/manifest.json",
       "save/schema/current.md",
       "save/playthrough/frontier.json",
     ])
-    expect(WORLD_ARCHITECT_SKILL_FILES.map((file) => file.path)).toEqual(expect.arrayContaining([
+    expect(worldArchitectFiles.map((file) => file.path)).toEqual(expect.arrayContaining([
       "agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js",
       "agents/world-architect/skills/开局建模/scripts/read-opening-slice.js",
       "agents/world-architect/skills/开局建模/scripts/commit-opening-entities.js",
@@ -869,11 +872,11 @@ describe("Agent context contracts smoke", () => {
       "agents/world-architect/skills/开局建模/scripts/commit-opening-state.js",
       "agents/world-architect/skills/开局建模/scripts/publish-opening.js",
     ]))
-    const openingTemplatePaths = WORLD_ARCHITECT_SKILL_FILES.map((file) => file.path)
+    const openingTemplatePaths = worldArchitectFiles.map((file) => file.path)
     expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/_progress.js")
     expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/read-opening-progress.js")
     expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/advance-opening-progress.js")
-    const openingSkill = WORLD_ARCHITECT_SKILL_FILES.find((file) => file.path.endsWith("开局建模/SKILL.md"))?.content ?? ""
+    const openingSkill = worldArchitectFiles.find((file) => file.path.endsWith("开局建模/SKILL.md"))?.content ?? ""
     expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/commit-opening.js")
     expect(openingSkill).toContain("run_script.inputRefs.openingReply")
     expect(openingSkill).toContain("responseRef")
@@ -992,7 +995,7 @@ describe("Agent context contracts smoke", () => {
     expect(sourceSummaryState({ ...futureSource, summary: undefined }, 1, new Set())).toBe("hidden")
 
     const scriptContent = (suffix: string): string => {
-      const file = WORLD_ARCHITECT_SKILL_FILES.find((entry) => entry.path.endsWith(suffix))
+      const file = worldArchitectFiles.find((entry) => entry.path.endsWith(suffix))
       if (!file) throw new Error(`Missing opening script: ${suffix}`)
       return file.content
     }
@@ -1220,6 +1223,26 @@ describe("Agent context contracts smoke", () => {
 })
 
 describe("Assistant Runtime transaction smoke", () => {
+  it("can opt out of inherited gameplay history without changing default invocation behavior", async () => {
+    const seeded = await seedRuntime({ contextMarker: "isolated-invocation" })
+    await writeWorkspaceFileForSave(seeded.saveId, {
+      path: "save/history/turns/turn-000001.json",
+      content: JSON.stringify({ schema: "tsian.airp.history.turn.v2", turn: 1, createdAt: new Date().toISOString(), timeline: [
+        { kind: "user", content: "INHERITED_STORY_MARKER" },
+        { kind: "assistant", content: "Previous story outcome" },
+      ] }),
+    })
+    const requests: OpenAiRequestBody[] = []
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      requests.push(requestBody(init))
+      return openAiFinalResponse("Done")
+    }))
+    await invokeAgent({ agentId: SIDE_AGENT_ID, input: "Only current material", persist: false, includeRecentHistory: false })
+    await invokeAgent({ agentId: SIDE_AGENT_ID, input: "Default invocation", persist: false })
+    expect(requestMessageText(requests[0]!)).not.toContain("INHERITED_STORY_MARKER")
+    expect(requestMessageText(requests[1]!)).toContain("INHERITED_STORY_MARKER")
+  })
+
   it("keeps level 1 game Agents from writing card content", async () => {
     await seedRuntime({ contextMarker: "card-content-permission-baseline" })
     const requests: OpenAiRequestBody[] = []

@@ -34,18 +34,13 @@ Use these specs when changing `apps/platform-web/src/**`.
 
 ## Context Injection Composer
 
-`contextPaths` in `agent.json` supports three entry forms (see `ContextPathEntry` in contracts):
-- **String** `"path"` — backward-compatible: one `user` message per file, content macro-expanded, injected at `workspace-context`
-- **Path object** `{path, role, position}` — one file, inject as specified role and message-sequence position, content macro-expanded
-- **Template object** `{template, role, position}` — inline template string, macro-expanded, inject as specified role and message-sequence position
+`contextPaths` in `agent.json` accepts a string path, a `{path, role, position}` entry, or an inline `{template, role, position}` entry. Paths and templates use the shared macro engine; that engine does not interpret a card's save schema.
 
-`position` is optional and defaults to `"workspace-context"`. Legal values, in runtime skeleton order, are `"before-history"` (system prompt 后、history 前), `"workspace-context"` (history 后、turn-runtime 前), `"after-input"` (玩家输入后、tail 前), and `"tail"` (消息序列绝对末尾，PREFILL.md 兼容迁移层). The message builder consumes `AgentContextEntry.contextInjectionsByPosition`; `contextInjections` is only the `workspace-context` alias retained for debug metadata.
+Current positions are `prelude` (system prompt after, history before), `runtime` (history after, before the current input), and `framing` (after the input, at the end). Omitted positions default to `runtime`. `registry.ts` normalizes declarations; `context.ts` compiles them into `AgentContextEntry.contextInjectionsByPosition`, consumed by the message builder. Do not use the retired position names or the removed `contextInjections` alias.
 
-**Macro engine** (`macro-engine.ts`): `expandMacros()` processes `{{file:path}}`, `{{file:path?enabled}}`, `{{file:dir/*.md?enabled}}` (1-layer glob, no recursion), `{{random:A,B,C}}`, then implicit whitespace cleanup. Relative paths resolve against the injected file's directory (template objects use the agent directory). `enabledModules: string[]` on `AgentConfig` controls `?enabled` inclusion by file stem; absent defaults to include all (backward-compatible), while an explicitly configured empty array means include none.
+The macro engine supports file includes, single-level globs, enabled module selection, and random alternatives. Relative includes resolve against the injected file's directory (inline templates use the Agent directory). An explicitly empty `enabledModules` selects no modules; missing configuration preserves all. Random alternatives invalidate stable prefix caching.
 
-**Compilation flow**: `registry.ts` parses entries → `context.ts` `assembleAgentContext` resolves files + expands macros + groups by position → `index.ts` emits one `RuntimeChatMessage` per injection (with role + source label) at the declared skeleton position. Empty compiled content is skipped. `AgentContextEntry.contextInjectionsByPosition` is the authoritative message-building field.
-
-**Cache**: pure-string entries preserve the existing one-file-per-message split (prefix cache stable). `{{random}}` causes per-turn cache miss — use sparingly.
+For specialized semantic input, change the card-owned preparation code and injected files, not the generic composer. The immersive reader prepares its stage-manager material in `apps/play-frontend-dev/src/lib/maintenance-context.ts`; see the [card source README](../../../../cards/沉浸阅读器.tsian-card/README.md).
 
 ## Unified Diagnostics
 

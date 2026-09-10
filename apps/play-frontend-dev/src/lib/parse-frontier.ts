@@ -2,7 +2,7 @@
  * lib/parse-frontier.ts — frontier JSON → FrontierData 纯函数。
  *
  * 纯函数：无 Vue/Dexie/bridge 依赖，可被 composable 与单测直接 import。
- * 对齐 task 07-08 design.md §2 timeline 数据模型 + workspace-templates.ts schema 文档。
+ * 对齐 task 07-08 design.md §2 timeline 数据模型 + 卡内 schema 文档。
  *
  * 错误策略：
  * - 读取级错误（非对象/缺 timeline 数组）→ load-failed，frontier=null。

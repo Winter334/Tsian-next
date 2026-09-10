@@ -161,7 +161,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
 
 ## Runtime 变量
 
-`save/playthrough/runtime.json` 存放高频访问、玩家面向或界面需要高频读取的摘要。`worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台墙钟时间，也不用于日历运算。`plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记每回合读 frontier.json timeline 映射维护，用于判断是否触发 frontier 推进（`plotOrder > 最后 source 锚点 order` 时触发）。未知或尚未建立时写空字符串/0。
+`save/playthrough/runtime.json` 存放高频访问、玩家面向或界面需要高频读取的摘要。`worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台墙钟时间，也不用于日历运算。`plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记根据语义节点材料判断并提交进度变化，由卡内提交脚本维护，用于判断是否触发 frontier 推进（`plotOrder > 最后 source 锚点 order` 时触发）。未知或尚未建立时写空字符串/0。
 
 ```json
 {
@@ -181,7 +181,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
 }
 ```
 
-`activeSceneRefs` 是当前活跃场景指针数组（每项 `{ ref, name }`）；场景内容权威在 `save/scenes/<id>.json`，runtime 只存指针。`protagonistRef` 是当前主角指针（`{ ref, name }`），主角实体权威仍在 `save/entities/character/<localId>.json`。`location` 是当前地点指针 `{ ref, name } | null`。`weather` 是当前天气字符串。`plotOrder` 是数字，单调递增，表示玩家当前走到哪个 source order；场记每回合读 frontier.json timeline 映射维护，用于判断是否触发 frontier 推进。`extensions` 仍用于月相、倒计时、诅咒周期、节气规则等新增/临时时间机制；当前世界/剧情时间本身写 `worldTime`，剧情进度坐标写 `plotOrder`。
+`activeSceneRefs` 是当前活跃场景指针数组（每项 `{ ref, name }`）；场景内容权威在 `save/scenes/<id>.json`，runtime 只存指针。`protagonistRef` 是当前主角指针（`{ ref, name }`），主角实体权威仍在 `save/entities/character/<localId>.json`。`location` 是当前地点指针 `{ ref, name } | null`。`weather` 是当前天气字符串。`plotOrder` 是数字，单调递增，表示玩家当前走到哪个 source order；场记根据语义节点材料判断并提交进度变化，由卡内提交脚本维护，用于判断是否触发 frontier 推进。`extensions` 仍用于月相、倒计时、诅咒周期、节气规则等新增/临时时间机制；当前世界/剧情时间本身写 `worldTime`，剧情进度坐标写 `plotOrder`。
 
 ## frontier.json
 
@@ -213,7 +213,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
     - `time`：游戏时间字符串，自由粒度（默认年+季/月）。原文无明确时间词时从剧情推断估计；开局第一个锚点 `time` 固定 `"元年"`。
     - `label`：一句话客观标签，不是剧情摘要。
     - `summary`：可选的 1～3 句已读原著客观梗概。旧锚点可缺省；不写未读内容、创作指令或玩家尚未经历的事件。
-  - player 锚点：`{ kind: "player", order, turn, time, label, alignment, sourceRef }`。stage-manager 维护时追加，标记玩家视角显著事件。
+  - player 锚点：`{ kind: "player", order, turn, time, label, alignment, sourceRef }`。场记提交语义显著事件后由脚本追加，标记玩家视角显著事件。
     - `order`：等于玩家当前所在 source 区间的起始 source 锚点 order。同一 source 区间内的多个 player 锚点共享相同 order，按 turn 排序展开。
     - `turn`：游戏回合号，分支内排序与后续精确找 turn 正文用。
     - `time`：游戏时间字符串（显示用）。
@@ -237,7 +237,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
 
 ## Turn recall metadata
 
-`save/history/turns/turn-NNNNNN.json` 的正文 timeline 是历史正文权威。`meta.recall` 是场记维护的派生导航层，用于正文 Agent 按旧事件细节召回 turn；可覆盖重写，可从正文和存档重新生成，不改变 turn 正文语义。
+`save/history/turns/turn-NNNNNN.json` 的正文 timeline 是历史正文权威。`meta.recall` 是由场记提交语义摘要、程序落盘的派生导航层，用于正文 Agent 按旧事件细节召回 turn；成功重试不重复写入，不改变 turn 正文语义。需要修改已提交回合时先回溯。
 
 ```json
 {

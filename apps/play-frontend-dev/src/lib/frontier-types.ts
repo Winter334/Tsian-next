@@ -3,7 +3,7 @@
  *
  * 对齐：
  * - `save/playthrough/frontier.json` 默认模板
- *   （apps/platform-web/src/storage/workspace-templates.ts 种子 + schema 文档）
+ *   （cards/沉浸阅读器.tsian-card/workspace/docs/novel-airp-schema-guide.md 种子 + schema 文档）
  * - task 07-08 design.md §2 timeline 数据模型
  *
  * timeline 锚点用 `kind` 区分 source（world-architect 推进时建）与 player

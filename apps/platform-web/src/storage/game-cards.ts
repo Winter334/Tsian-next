@@ -1,3 +1,4 @@
+import { initialSaveEntries, normalizeInitialSaveConfig } from "./save-initialization"
 import type {
   GameCardContentFile,
   GameCardManifest,
@@ -17,10 +18,7 @@ import {
   type LocalGameCardMarketOrigin,
   type LocalGameCardRecord,
 } from "./db"
-import {
-  createDefaultWorkspaceTemplateFiles,
-  normalizeWorkspaceFilePath,
-} from "./workspace"
+import { normalizeWorkspaceFilePath } from "./workspace"
 import { listLocalSaves, deleteLocalSave } from "./saves"
 import {
   DEFAULT_FRONTEND_BINDING,
@@ -230,7 +228,8 @@ function normalizeRuntimeConfig(manifest: GameCardManifest): GameCardRuntimeConf
   const entrypoints = normalizeRuntimeEntrypoints(
     (runtime as { entrypoints?: unknown }).entrypoints,
   )
-  return entrypoints ? { entrypoints } : {}
+  const initialSave = normalizeInitialSaveConfig((runtime as { initialSave?: unknown }).initialSave)
+  return { ...(entrypoints ? { entrypoints } : {}), ...(initialSave ? { initialSave } : {}) }
 }
 
 function legacyManifestDescription(manifest: GameCardManifest): string | undefined {
@@ -404,37 +403,6 @@ async function toLocalGameCardView(record: LocalGameCardRecord): Promise<LocalGa
   return view
 }
 
-function hasTemplateFile(
-  files: GameCardContentFile[],
-  expected: GameCardContentFile,
-): boolean {
-  return files.some((file) =>
-    file.path === expected.path
-    && file.content === expected.content
-  )
-}
-
-/** Staleness check now reads the per-file content table; preserves the existing
- *  builtin reset-protection semantic (builtin content drifted → ensureBuiltinBlankGameCard
- *  re-seeds). Async because it queries Dexie. */
-async function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): Promise<boolean> {
-  if (record.source !== "builtin") {
-    return true
-  }
-
-  if (
-    record.manifest.cover?.url !== BUILTIN_BLANK_GAME_CARD_COVER_URL
-    || record.manifest.cover?.alt !== "Blank Agent Runtime cover"
-    || record.manifest.runtime?.entrypoints?.playerTurn !== "storyteller"
-  ) {
-    return false
-  }
-
-  const files = await listLocalGameCardContentFiles(record.id)
-  return createDefaultWorkspaceTemplateFiles()
-    .every((file) => hasTemplateFile(files, file))
-}
-
 function createBuiltinBlankGameCardRecord(
   createdAt: number,
   updatedAt: number = createdAt,
@@ -445,16 +413,10 @@ function createBuiltinBlankGameCardRecord(
     id: BUILTIN_BLANK_GAME_CARD_ID,
     name: "Blank Agent Runtime",
     version: "0.0.0",
-    summary: "A default empty Tsian Runtime Workspace with official Agent and Skill templates.",
+    summary: "An empty workspace for authoring a game card. Add your own agents, frontend and initial save files.",
     cover: {
       url: BUILTIN_BLANK_GAME_CARD_COVER_URL,
       alt: "Blank Agent Runtime cover",
-    },
-    runtime: {
-      entrypoints: {
-        playerTurn: "storyteller",
-        postTurnMaintenance: "stage-manager",
-      },
     },
     ...(frontend ? { frontend } : {}),
   }
@@ -517,6 +479,10 @@ export async function putLocalGameCard(
   const existing = await localDb.gameCards.get(manifest.id)
   const frontendFileRecords = input.frontendFiles?.map((file) =>
     normalizeFrontendFile(manifest.id, file, now)
+  )
+  initialSaveEntries(
+    manifest.runtime?.initialSave,
+    input.contentFiles ?? (manifest.runtime?.initialSave ? await listLocalGameCardContentFiles(manifest.id) : []),
   )
   const contentFileRecords = input.contentFiles === undefined
     ? undefined
@@ -972,20 +938,16 @@ export async function deleteLocalGameCardFrontendPathForCard(
 
 export async function ensureBuiltinBlankGameCard(): Promise<LocalGameCardView> {
   const existing = await localDb.gameCards.get(BUILTIN_BLANK_GAME_CARD_ID)
-  if (existing && await isCurrentBuiltinBlankGameCard(existing)) {
+  if (existing) {
     return toLocalGameCardView(existing)
   }
 
-  // Stale or missing: re-seed the card row and its template content rows.
+  // The blank card is an authoring shell, not a second distribution of the official card.
   const now = Date.now()
-  const record = createBuiltinBlankGameCardRecord(
-    existing?.createdAt ?? now,
-    now,
-    existing?.manifest.frontend,
-  )
+  const record = createBuiltinBlankGameCardRecord(now)
   await putLocalGameCard({
     manifest: record.manifest,
-    contentFiles: createDefaultWorkspaceTemplateFiles(),
+    contentFiles: [],
     source: "builtin",
   })
   return toLocalGameCardView(record)

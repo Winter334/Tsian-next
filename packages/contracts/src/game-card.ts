@@ -12,6 +12,13 @@ export interface GameCardManifest {
 
 export interface GameCardRuntimeConfig {
   entrypoints?: GameCardRuntimeEntrypoints
+  initialSave?: GameCardInitialSaveConfig
+}
+
+/** Card-owned files copied into save/ only when a new save is created. */
+export interface GameCardInitialSaveConfig {
+  /** Directory relative to the card workspace root, without the authoring workspace/ prefix. */
+  templateRoot: string
 }
 
 export interface GameCardRuntimeEntrypoints {

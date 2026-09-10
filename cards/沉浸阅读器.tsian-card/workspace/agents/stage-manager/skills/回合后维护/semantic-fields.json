@@ -1,0 +1,37 @@
+{
+  "entityFields": {
+    "summary": "brief",
+    "identity": "identity",
+    "appearance": "appearance",
+    "goals": "goals",
+    "background": "background",
+    "gender": "gender",
+    "aliases": "aliases",
+    "tags": "tags",
+    "lifecycle": "lifecycle",
+    "visibility": "visibility",
+    "itemType": "type"
+  },
+  "worldRuleSections": [
+    "力量体系阶梯",
+    "维度定义",
+    "世界观术语与称呼约定"
+  ],
+  "eventTypes": [
+    "对话交流",
+    "玩家选择",
+    "冲突争执",
+    "关系变化",
+    "承诺亏欠",
+    "秘密揭露",
+    "发现线索",
+    "物品变化",
+    "状态变化",
+    "场景变化",
+    "战斗危险",
+    "计划目标",
+    "交易谈判",
+    "亲密暧昧",
+    "伏笔回收"
+  ]
+}

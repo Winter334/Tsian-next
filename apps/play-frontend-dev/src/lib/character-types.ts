@@ -3,7 +3,7 @@
  *
  * 对齐：
  * - design.md §3.1 + §3.2
- * - `apps/platform-web/src/storage/workspace-templates.ts` 中 character 推荐字段
+ * - `cards/沉浸阅读器.tsian-card/workspace/docs/novel-airp-schema-guide.md` 中 character 推荐字段
  *   （identity: age/gender/role/affiliation/realm；gauges 自由命名数组；
  *    appearance 单段字符串；goals: current/shortTerm/longTerm；background 单段字符串）
  *

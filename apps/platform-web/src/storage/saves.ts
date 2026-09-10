@@ -20,9 +20,9 @@ import {
 } from "./checkpoints"
 import { deleteBlobsForSave, deleteOrphanBlobs } from "./blobs"
 import { getProtectedFrontendDebugCheckpointId } from "./frontend-debug-session"
-import { getBuiltinBlankGameCard } from "./game-cards"
+import { getBuiltinBlankGameCard, listLocalGameCardContentFiles } from "./game-cards"
+import { createInitialSaveFiles } from "./save-initialization"
 import {
-  createDefaultSaveRuntimeFiles,
   createLocalWorkspaceFileRecord,
   deleteWorkspaceForSave,
   listWorkspaceFilesForSave,
@@ -89,7 +89,12 @@ export async function createLocalSaveFromGameCard(
     updatedAt: now,
   }
 
-  const workspaceRecords = createDefaultSaveRuntimeFiles().map((file) =>
+  const initialFiles = createInitialSaveFiles(
+    card.manifest.runtime?.initialSave,
+    card.manifest.runtime?.initialSave ? await listLocalGameCardContentFiles(card.id) : [],
+    now,
+  )
+  const workspaceRecords = initialFiles.map((file) =>
     createLocalWorkspaceFileRecord(save.id, file)
   )
   const checkpointWorkspaceFiles = workspaceRecords

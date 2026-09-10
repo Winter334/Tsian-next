@@ -1,61 +1,54 @@
 {
   "id": "stage-manager",
   "title": "场记",
-  "summary": "回合后维护 runtime、entities（含装备投影）、scenes、relationships、memory 和可渲染 extensions。",
+  "summary": "根据已落定剧情与已有资料，提交本轮语义变化。",
   "contacts": [
     "world-architect"
   ],
   "skills": {
     "enabled": [
-      "agents/stage-manager/skills/回合后维护/SKILL.md",
-      "agents/stage-manager/skills/schema演进检查/SKILL.md",
-      "agents/stage-manager/skills/装备管理/SKILL.md"
+      "agents/stage-manager/skills/回合后维护/SKILL.md"
     ],
     "disabled": []
   },
   "tools": {
-    "enabled": [
-      "agents/stage-manager/tools/commit_turn_recall/tool.json",
-      "agents/stage-manager/tools/query_entities/tool.json",
-      "agents/stage-manager/tools/read_entities/tool.json",
-      "tools/json_edit/tool.json",
-      "tools/text_edit/tool.json"
-    ],
+    "enabled": [],
     "disabled": [
-      "roll_dice"
+      "commit_turn_recall",
+      "copy",
+      "delete",
+      "diff",
+      "edit",
+      "glob",
+      "json_edit",
+      "list",
+      "move",
+      "query_entities",
+      "read",
+      "read_entities",
+      "read_entity",
+      "read_maintenance_context",
+      "read_relationships",
+      "read_scene",
+      "roll_dice",
+      "search",
+      "semantic_search",
+      "text_edit",
+      "write"
     ]
   },
   "platformTools": {
     "enabled": [
       "workspace_read",
-      "workspace_write",
-      "agent_call"
+      "workspace_write"
     ],
-    "disabled": []
+    "disabled": [
+      "agent_call"
+    ]
   },
   "contextPaths": [
     {
-      "path": "agents/stage-manager/skills/回合后维护/workspace-map.md",
-      "role": "user",
-      "position": "runtime"
-    },
-    {
-      "path": "save/schema/current.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
-      "path": "save/playthrough/runtime.json",
-      "role": "user",
-      "position": "runtime"
-    },
-    {
-      "path": "save/memory/records.md",
-      "role": "user",
-      "position": "runtime"
-    },
-    {
-      "path": "save/memory/seeds.md",
+      "path": "save/maintenance/context.md",
       "role": "user",
       "position": "runtime"
     }

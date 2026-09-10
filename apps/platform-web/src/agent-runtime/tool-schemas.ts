@@ -554,6 +554,8 @@ const workspaceDeleteSchema: ToolSchema = {
  * tools by `workspace_write`.
  */
 export function buildEnabledToolSchemas(options: {
+  /** Direct tool names hidden by the Agent; script SDK permissions stay independent. */
+  disabledToolNames?: string[]
   enabledPlatformTools: AgentPlatformToolName[]
   allowAgentCall: boolean
   visibleContacts: AgentRegistryEntry[]
@@ -671,5 +673,6 @@ export function buildEnabledToolSchemas(options: {
     }
   }
 
-  return schemas
+  const disabled = new Set(options.disabledToolNames ?? [])
+  return schemas.filter(schema => !disabled.has(schema.name))
 }

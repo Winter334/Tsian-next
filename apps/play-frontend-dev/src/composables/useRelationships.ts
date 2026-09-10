@@ -4,7 +4,7 @@
  * 与 useEntity/useScene 同构（design §3.4）：
  * - 输入 subject ref（如 `character:萧玄`）。
  * - 路径 `save/relationships/<type>-<localId>.json`，与 platform 写入约定一致
- *   （workspace-templates.ts scopeFromSubject: `type + '-' + localId`）。
+ *   （卡内人物关系分片约定: `type + '-' + localId`）。
  * - 输出 `{ data, error, load }`。
  * - 错误策略：not-found / load-failed，不抛错（type-safety §"play-frontend
  *   Workspace Data Consumption"）。

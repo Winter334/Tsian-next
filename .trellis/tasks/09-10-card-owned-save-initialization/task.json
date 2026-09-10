@@ -1,0 +1,45 @@
+{
+  "id": "card-owned-save-initialization",
+  "name": "card-owned-save-initialization",
+  "title": "前置清理：卡内容来源与卡属存档初始化",
+  "description": "梳理卡包、真实前端源码与平台动态生成内容的权威来源，区分废弃模板与活跃初始化逻辑，将玩法相关初始存档归属卡并保留最小通用兜底。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "卡包合同/静态初始资产 + 平台新存档与默认升级 + 实际发布源",
+  "package": null,
+  "priority": "P1",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-09-10",
+  "completedAt": "2026-09-10",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/package-immersive-reader-card.mjs",
+    "apps/platform-web/card-package-harness/main.ts",
+    "cards/沉浸阅读器.tsian-card/README.md",
+    "cards/沉浸阅读器.tsian-card/card-manifest.json",
+    "packages/contracts/src/game-card.ts",
+    "apps/platform-web/src/storage/save-initialization.ts",
+    "apps/platform-web/src/storage/save-initialization.test.ts",
+    "apps/platform-web/src/storage/saves.ts",
+    "apps/platform-web/src/storage/workspace.ts",
+    "apps/platform-web/src/storage/game-cards.ts",
+    "apps/platform-web/src/storage/game-card-packages.ts"
+  ],
+  "notes": "前置清理完成：卡属初始文件树、空通用兜底、旧模板/副本清理；33 测试、构建及真实打包导入新建/checkpoint 通过。无迁移/兼容层，主任务未开始。",
+  "meta": {
+    "prerequisite_for": [
+      "09-10-stage-manager-semantic-maintenance"
+    ],
+    "execution_order": 1,
+    "planning_state": "completed; official package and new-save initialization verified",
+    "artifact": "tmp/immersive-reader-cleanup.tsian-card.zip"
+  }
+}

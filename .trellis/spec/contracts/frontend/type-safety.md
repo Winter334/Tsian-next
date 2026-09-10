@@ -2,6 +2,10 @@
 
 Frontend/browser consumers should use shared contract types instead of redefining bridge payloads locally.
 
+## Card initial-save configuration
+
+`GameCardRuntimeConfig.initialSave?: GameCardInitialSaveConfig` declares `{ templateRoot: string }`, a card-workspace-relative directory copied to `save/` on new-save creation only. Preserve it through manifest normalization, import/export and card editing even when `entrypoints` is absent. Its JSON/Markdown contents belong to the card; platform consumers validate paths/resources, not gameplay fields. No configuration means no initial business files; invalid or empty declared resources are errors. See [storage initialization](../../platform-web/storage/index.md#card-owned-initial-saves).
+
 ## Current Shared Shapes
 
 - `ConversationMessageRecord` and `SessionHistoryEntry` describe frontend-readable session state (turn history rebuilt from workspace turn files).
@@ -765,3 +769,10 @@ async function onUseItem() {
 - Do not degrade unknown `render` values to text — push them to `itemErrors` so schema drift is visible. (Omitted `render` is a separate case and maps to `text`.)
 - Do not throw out of workspace-read composables — surface `error: "not-found" | "load-failed"` and let the UI decide.
 - Do not globally wrap `runAction`/`invokeAgent` to auto-emit `runtimeStale`; only the component that knows it mutated workspace should emit.
+
+
+## Agent invocation context and direct tools
+
+`invokeAgent` has two independent controls: `persist` reads/writes the target Agent's dialogue context; `includeRecentHistory` (default true) allows gameplay history to initialize a missing context. A card-owned independent task uses both `persist: false` and `includeRecentHistory: false`, plus its own explicit input/materials. The latter is schema-agnostic and does not change other callers' defaults. Preserve explicit false through SDK/remote normalization.
+
+`agent.tools.disabled` rejects direct tool names at both schema exposure and dispatch, including workspace primitives. It does not revoke a Skill's workspace SDK operations: those still come from `platformTools`, actor level and the host-selected workspace boundary. This separation lets semantic scripts use controlled storage without exposing raw file editing to the model. It is not a new authorization bypass for scripts.

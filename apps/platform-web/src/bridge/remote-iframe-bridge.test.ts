@@ -207,7 +207,7 @@ function realActionService(workerFactory: FrontendActionWorkerFactory): RemoteFr
   }
 }
 
-function harness(service: RemoteFrontendActionService) {
+function harness(service: RemoteFrontendActionService, bridge = bridgeStub()) {
   const container = document.createElement("div")
   document.body.append(container)
   const createElement = document.createElement.bind(document)
@@ -225,7 +225,7 @@ function harness(service: RemoteFrontendActionService) {
   try {
     handle = mountRemoteIframeFrontend(container, {
       url: "http://localhost/",
-      bridge: bridgeStub(),
+      bridge,
       gameCardId: CARD_ID,
       frontendActionService: service,
     })
@@ -251,6 +251,7 @@ function harness(service: RemoteFrontendActionService) {
   return {
     handle,
     messages,
+    receive,
     run() {
       receive({
         channel: REMOTE_PLAY_BRIDGE_CHANNEL,
@@ -425,5 +426,25 @@ describe("remote iframe Frontend Action transaction smoke", () => {
       message.kind === "response" && message.id === "run-1" && message.ok
     ))).toBe(false)
     mounted.handle.dispose()
+  })
+})
+
+
+describe("invocation history isolation bridge option", () => {
+  it("preserves false across the remote boundary and rejects non-booleans", async () => {
+    const bridge = bridgeStub()
+    const invoke = vi.spyOn(bridge.interaction, "invokeAgent")
+    const mounted = harness({ runAction: async () => ({ output: {} }) }, bridge)
+    const send = (value: unknown, id: string) => mounted.receive({
+      channel: REMOTE_PLAY_BRIDGE_CHANNEL, kind: "request", sessionId: mounted.handle.sessionId,
+      id, method: "interaction.invokeAgent", params: { agentId: "stage-manager", input: "current facts", persist: false, includeRecentHistory: value },
+    })
+    try {
+      send(false, "history-good")
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ persist: false, includeRecentHistory: false })))
+      send("false", "history-bad")
+      await vi.waitFor(() => expect(mounted.messages.some(message => "id" in message && message.id === "history-bad" && "ok" in message && !message.ok)).toBe(true))
+      expect(invoke).toHaveBeenCalledOnce()
+    } finally { mounted.handle.dispose() }
   })
 })

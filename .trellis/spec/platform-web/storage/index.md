@@ -27,7 +27,15 @@ Tables:
 - `embeddingIndex`
 - `diagnosticRecords` — global `ai-request` / `frontend-error` union records; see [Unified Diagnostics](./diagnostics.md).
 
-Built-in blank game cards seed the default Runtime Workspace template, including the default novel AIRP Agent roster (`storyteller`, `stage-manager`, `world-architect`), Agent-local Skills, framework knowledge docs, save runtime files, and `.tsian` platform metadata. The built-in blank card's configured player-turn entrypoint is `storyteller`. Refreshing a stale `source: "builtin"` game card is allowed, but save workspaces must use non-overwriting workspace-version upgrades.
+### Card-owned initial saves
+
+A card may declare `runtime.initialSave: { templateRoot: "initial-save" }`. The directory is relative to the card workspace root; its file contents are copied unchanged into a new save's `save/` namespace. Platform code does not interpret gameplay schema or expand template macros. The official reader's initial business files live in `cards/沉浸阅读器.tsian-card/workspace/initial-save/`.
+
+`save-initialization.ts` validates the declaration, selects files and creates separate `.tsian/manifest.json` metadata. Missing configuration produces no business files. An explicitly declared missing/empty directory, traversal, metadata injection, duplicate target or file/directory collision is an error, not a fallback. Card import/storage and export validate the declaration/resources; save creation validates again because an installed card can be edited.
+
+`saves.ts:createLocalSaveFromGameCard` creates initial files and the initial checkpoint from the same data. Importing/updating a card, reopening a save or restoring a checkpoint never reapplies the template. There is no automatic AIRP business-file upgrade/repair or old-card migration layer. `initializeWorkspaceForSave` only seeds platform metadata when a workspace is empty. Existing business data is not overwritten or deleted.
+
+The builtin blank card is an empty authoring shell, with no official Agent roster, entrypoints or gameplay files. Its generic frontend placeholder is not the immersive reader. Deprecated `workspace-templates` sources have been removed; do not recreate them as a second distribution.
 
 Local database changes normally use rename-and-reset. The explicitly approved diagnostics exception adds Dexie schema version 2 under the existing v14 database name so cards/saves remain intact; it does not migrate legacy diagnostic data.
 

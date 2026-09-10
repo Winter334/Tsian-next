@@ -300,7 +300,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
           agentId,
           userInput,
           injection: input.injection,
-          recentHistory: historyBefore,
+          recentHistory: input.includeRecentHistory === false ? [] : historyBefore,
           turn: invokeMaxTurn,
           signal: invokeController.signal,
           traceContext,

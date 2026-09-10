@@ -20,6 +20,9 @@
     "entrypoints": {
       "playerTurn": "storyteller",
       "postTurnMaintenance": "stage-manager"
+    },
+    "initialSave": {
+      "templateRoot": "initial-save"
     }
   }
 }

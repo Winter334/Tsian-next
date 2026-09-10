@@ -3,7 +3,7 @@
  *
  * 对齐：
  * - task 07-04 design.md §5.1
- * - platform-web workspace-templates schema（container.type="container"；
+ * - 卡内 docs/novel-airp-schema-guide.md（container.type="container"；
  *   item.type ∈ equipment/material/consumable/special/other）
  *
  * 与 character-types 平级：本文件只出 container/item 视图用到的强类型；

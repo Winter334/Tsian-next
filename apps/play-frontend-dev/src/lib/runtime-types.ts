@@ -3,7 +3,7 @@
  *
  * 对齐：
  * - `save/playthrough/runtime.json` 默认模板
- *   （apps/platform-web/src/storage/workspace-templates.ts:1387）
+ *   （cards/沉浸阅读器.tsian-card/workspace/initial-save/playthrough/runtime.json）
  * - schema design §3.1 render→category 映射、§4.1 扩展项公共形状、§4.2 预设 render。
  *
  * 本文件只出类型，不创 renderer 组件（D2）。UI 子任务按 category 取自己关心的
@@ -100,7 +100,7 @@ export interface RuntimeData {
 }
 
 /**
- * runtime.json 结构（与 workspace-templates.ts 默认模板对齐）。
+ * runtime.json 结构（与 卡内 initial-save/playthrough/runtime.json对齐）。
  * 固定字段原样保留，不由 parse 层转成 display item——由 UI 子任务按各自
  * 专门 UI 消费（角色卡、状态栏、场景面板等）。
  */

@@ -153,6 +153,9 @@ try {
 | `options.injection` | `InjectionMessage[]` | 注入上下文（同 send），可选 |
 | `options.contextSlot` | `string` | 可选上下文隔离 slot；配合 `persist` 防止不同调用方上下文串 |
 | `options.persist` | `boolean` | `true` 时读写目标 Agent 的 `context[-slot].json`；默认 `false`，一次性调用 |
+| `options.includeRecentHistory` | `boolean` | 默认 `true`；`false` 禁止用游玩近期对话初始化上下文，不影响显式注入或已持久化上下文。独立任务同时设置 `persist: false` |
+
+`persist: false` 本身不阻止游玩历史作为初始上下文；卡已准备独立任务材料时，应另设 `includeRecentHistory: false`。业务整理成功应由卡自己的提交结果判断，不应只凭模型结束回复。
 
 返回 `InvokeAgentResult`：`{ invocationId: string; response: string }`。`invokeAgent` 同样消耗 token；Promise resolve 表示最终文本可用，流式 delta / round / tool / completed / failed 事件通过 `onAgentInvocation` 到达。
 
@@ -692,7 +695,8 @@ await tsian.invokeAgent(maintenanceAgentId, input, {
   invocationId,
   purpose: "post-turn-maintenance",
   checkpoint: { mode: "current-turn-auto" },
-  persist: true,
+  persist: false,
+  includeRecentHistory: false,
 })
 ```
 

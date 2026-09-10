@@ -1,25 +1,7 @@
 import type { GameCardFrontendBinding } from "@tsian/contracts"
 import type { PutLocalGameCardFrontendFileInput } from "./game-cards"
 
-/**
- * Packaged frontend binding for the default lightweight frontend.
- *
- * Phase 5 (task 06-30): the default card switched from the legacy inline
- * native-JS triple (index.html + style.css + app.js + vendor/marked) to a
- * **source-form vanilla placeholder** that flows through the platform build
- * engine. This validates the full "source → platform build → SW load" chain
- * on the built-in card without depending on `@tsian/play-bridge` (an internal
- * package not yet published, which the esm.sh CDN cannot resolve).
- *
- * R7 split: this placeholder is the transitional default. The real frontend
- * migration (play-frontend-dev/src TS+bridge as the seed, Vue framework) is a
- * follow-up task that depends on (a) platform build engine support for
- * resolving internal `@tsian/*` packages without npm publish, and (b) the
- * planned play-frontend-dev refactor. See prd.md R7 / design.md §9 notes.
- *
- * The placeholder renders a simple "card loaded" shell with a minimal bridge
- * handshake so /play can mount it; it is NOT a full AIRP reader.
- */
+/** Generic authoring placeholder; the official reader frontend ships in its own card package. */
 export const DEFAULT_FRONTEND_BINDING: GameCardFrontendBinding = {
   kind: "packaged",
   entry: "frontend/dist/index.html",
@@ -37,8 +19,7 @@ export const DEFAULT_FRONTEND_BINDING: GameCardFrontendBinding = {
 
 const FRONTEND_SRC_MAIN_TS = [
   "// Tsian default card — placeholder frontend (vanilla).",
-  "// Transitional: the real AIRP frontend (TS + @tsian/play-bridge) lands in",
-  "// a follow-up task after play-frontend-dev refactor. This placeholder only",
+  "// Official cards provide their own frontend. This placeholder only",
   "// validates the platform build chain (source -> build -> SW load).",
   "",
   'const CHANNEL = "tsian.play-bridge.v1";',
@@ -59,7 +40,7 @@ const FRONTEND_SRC_MAIN_TS = [
   '  <div style="font-family: system-ui, sans-serif; color: #d4a24c; background: #14110d; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center;">',
   "    <h1 style=\"margin:0; font-size: 20px; letter-spacing: 0.08em;\">Tsian</h1>",
   "    <p style=\"margin:0; color: #a89a7e; font-size: 14px;\">游戏卡前端已加载（占位）</p>",
-  "    <p style=\"margin:0; color: #6f6553; font-size: 12px;\">正式前端待 play-frontend-dev 重构后接入</p>",
+  "    <p style=\"margin:0; color: #6f6553; font-size: 12px;\">请在工作室配置游戏卡的前端与内容</p>",
   "  </div>",
   "`;",
   "",

@@ -27,12 +27,12 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 - `runtime.protagonistRef` 是当前主角指针 `{ ref, name }`；主角实体权威仍在 `save/entities/character/<localId>.json`。
 - `runtime.location` 是当前地点指针 `{ ref, name } | null`。
 - `runtime.worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台时间，也不等同于 turn。未知或尚未建立时写空字符串。
-- `runtime.plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记每回合维护，用于判断是否触发 frontier 推进。
+- `runtime.plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记判断语义进度、由卡内提交脚本维护，用于判断是否触发 frontier 推进。
 - `runtime.weather` 是当前天气字符串；未知时写空字符串。
 
 ## runtime.json
 
-当前世界/剧情时间写固定字段 `worldTime`，天气写 `weather`。`plotOrder` 是数字，单调递增，表示玩家当前走到哪个 source order；场记每回合维护，用于判断是否触发 frontier 推进。月相、倒计时、诅咒周期等新增/临时时间机制仍可放在 `extensions`。
+当前世界/剧情时间写固定字段 `worldTime`，天气写 `weather`。`plotOrder` 是数字，单调递增，表示玩家当前走到哪个 source order；场记判断语义进度、由卡内提交脚本维护，用于判断是否触发 frontier 推进。月相、倒计时、诅咒周期等新增/临时时间机制仍可放在 `extensions`。
 
 ```json
 {
@@ -73,14 +73,14 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 - `extractedThrough`：已抽取到的最远源章节引用。
 - `timeline`：时间标记锚点数组，用 `kind` 区分 source/player：
   - source 锚点 `{ kind: "source", order, chapter, time, label, summary? }`：world-architect 推进时建立，标记原著剧情节点；`summary` 用 1～3 句客观概括实际已读原著，旧锚点可缺省。
-  - player 锚点 `{ kind: "player", order, turn, time, label, alignment, sourceRef }`：stage-manager 维护时追加，标记玩家视角显著事件。
+  - player 锚点 `{ kind: "player", order, turn, time, label, alignment, sourceRef }`：场记提交语义显著事件后由脚本追加，标记玩家视角显著事件。
   - `order`：单调递增整数，是我们建立的线性轴，表示剧情事件先后顺序，与原著精确时间标记无关（即使原著写“回到过去”，order 也只向前）。
   - `alignment`（仅 player）：`diverged`（偏离原著，sourceRef=分叉自的 source order 或 null）、`rejoined`（从分支并回主干，sourceRef=并回的 source order）、`aligned`（经历 source 事件且结果相近，sourceRef=该 source order；可选，完美跟随时不建）。
 - `timeline` 与 `sourceWindow` 独立：`sourceWindow` 记录已读窗口，`timeline` 记录锚点；推进时 `sourceWindow` 移动、`timeline` 追加 source 锚点。
 
 ## turn recall metadata
 
-历史正文权威是 `save/history/turns/turn-NNNNNN.json` 的正文 timeline。场记回合后维护可在同一 turn 写入卡片私有派生导航层 `meta.recall`，可覆盖重写；它只服务正文 Agent 旧事召回，不改变历史正文语义。
+历史正文权威是 `save/history/turns/turn-NNNNNN.json` 的正文 timeline。场记提交本轮语义摘要后，脚本写入卡片私有派生导航层 `meta.recall`，成功重试不重复写入；它只服务正文 Agent 旧事召回，不改变历史正文语义。
 
 ```json
 {
@@ -188,5 +188,5 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 ## Agent 职责
 
 - `storyteller` / 三人写手：玩家正式回合入口，写沉浸式正文和选项。
-- `stage-manager` / 场记：回合后维护 runtime、entities、scenes、relationships、memory 与可渲染状态；必要时 call 世界架构师。
+- `stage-manager` / 场记：根据本轮正文与已有资料提交语义变化；由卡内脚本处理存储格式、引用、机械字段与确定性派生。超出协议的新概念报告未完成原因，不直接编辑 schema 或文件。
 - `world-architect` / 世界架构师：开局建模、schema 设计与 pending patch。

@@ -1,8 +1,11 @@
-import type { GameCardContentFile, GameCardManifest } from "@tsian/contracts"
+import type { GameCardContentFile, GameCardManifest, WorkspaceFile } from "@tsian/contracts"
 import { strFromU8, unzipSync } from "fflate"
 import { buildFrontend } from "../src/frontend-build/engine"
 import { exportGameCardPackage, importGameCardPackage } from "../src/storage/game-card-packages"
-import { putLocalGameCard, writeLocalGameCardContentFile } from "../src/storage/game-cards"
+import { listLocalGameCardContentFiles, putLocalGameCard, readLocalGameCardContentFile, writeLocalGameCardContentFile } from "../src/storage/game-cards"
+import { createLocalSaveFromGameCard } from "../src/storage/saves"
+import { localDb } from "../src/storage/db"
+import { verifySemanticMaintenance } from "./semantic-maintenance"
 
 interface EncodedFile {
   path: string
@@ -32,7 +35,7 @@ function blobFromFile(file: EncodedFile): Blob {
 }
 
 function errorPayload(error: unknown): Record<string, unknown> {
-  if (!(error instanceof Error)) return { message: String(error) }
+  if (!(error instanceof Error)) return { message: typeof error === "object" ? JSON.stringify(error) : String(error) }
   const extended = error as Error & { code?: unknown; messageDetail?: unknown }
   return {
     name: error.name,
@@ -128,12 +131,41 @@ async function run(): Promise<void> {
     if (imported.id !== input.manifest.id) {
       throw new Error("Exported card package did not round-trip through the platform importer.")
     }
+    const templateRoot = input.manifest.runtime?.initialSave?.templateRoot
+    if (imported.manifest.runtime?.initialSave?.templateRoot !== templateRoot || !templateRoot) {
+      throw new Error("Initial save declaration did not survive the package round-trip.")
+    }
+    const initialFiles = input.workspaceFiles.filter(file => file.path.startsWith(`${templateRoot}/`))
+    const save = await createLocalSaveFromGameCard(imported)
+    const savedFiles = await localDb.workspaceFiles.where("saveId").equals(save.id).toArray()
+    for (const file of initialFiles) {
+      const path = `save/${file.path.slice(templateRoot.length + 1)}`
+      if (savedFiles.find(candidate => candidate.path === path)?.content !== file.content
+        || (await readLocalGameCardContentFile(imported.id, file.path))?.content !== file.content) {
+        throw new Error(`Imported initial save differs from its card source: ${path}`)
+      }
+    }
+    if (savedFiles.length !== initialFiles.length + 1 || !savedFiles.some(file => file.path === ".tsian/manifest.json")) {
+      throw new Error("Initial save contains missing or unexpected platform/business files.")
+    }
+    const checkpoints = await localDb.checkpoints.where("saveId").equals(save.id).toArray()
+    if (checkpoints.length !== 1 || checkpoints[0]!.manifest.length !== savedFiles.length) {
+      throw new Error("Imported initial save checkpoint is incomplete.")
+    }
+    const semanticMaintenanceRegression = await verifySemanticMaintenance((await listLocalGameCardContentFiles(imported.id)).map(file => ({ path: file.path, content: file.content, createdAt: 0, updatedAt: 0 } as WorkspaceFile)))
     const summary = encodeURIComponent(JSON.stringify({
       entryHtmlPath: build.entryHtmlPath,
       distFileCount: build.distPaths.length,
       bareImports: build.bareImports,
       byteSizeRegression,
       importRoundTrip: true,
+      semanticMaintenanceRegression,
+      initialSaveRegression: {
+        templateFileCount: initialFiles.length,
+        savedFileCount: savedFiles.length,
+        checkpointFileCount: checkpoints[0]!.manifest.length,
+        sourceUnchanged: true,
+      },
     }))
     const resultResponse = await fetch("/__card-package-result", {
       method: "POST",

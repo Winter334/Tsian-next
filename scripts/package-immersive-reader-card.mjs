@@ -136,7 +136,15 @@ async function loadAuthorManifestSnapshot() {
   if (frontend.bridgeVersion !== "tsian.play-bridge.v1") fail("manifest.frontend.bridgeVersion is unsupported.")
 
   const runtime = assertObject(manifest.runtime, "manifest.runtime")
-  assertKeys(runtime, ["entrypoints"], "manifest.runtime")
+  assertKeys(runtime, ["entrypoints", "initialSave"], "manifest.runtime")
+  const initialSave = assertObject(runtime.initialSave, "manifest.runtime.initialSave")
+  assertKeys(initialSave, ["templateRoot"], "manifest.runtime.initialSave")
+  const templateRoot = nonEmptyString(initialSave.templateRoot, "manifest.runtime.initialSave.templateRoot")
+  if (templateRoot.startsWith("/") || /[:\\\0]/.test(templateRoot)
+    || templateRoot.split("/").some(part => !part || part === "." || part === "..")
+    || ["save", ".tsian", "frontend", "game-card.json"].includes(templateRoot.split("/")[0])) {
+    fail("manifest.runtime.initialSave.templateRoot must be a non-reserved relative workspace directory.")
+  }
   const entrypoints = assertObject(runtime.entrypoints, "manifest.runtime.entrypoints")
   assertKeys(entrypoints, ["playerTurn", "postTurnMaintenance"], "manifest.runtime.entrypoints")
   nonEmptyString(entrypoints.playerTurn, "manifest.runtime.entrypoints.playerTurn")
@@ -157,6 +165,9 @@ function byteArraysEqual(left, right) {
 async function snapshotInputs() {
   const { manifest, bytes: manifestBytes } = await loadAuthorManifestSnapshot()
   const workspaceSources = await listTreeFiles(workspaceRoot)
+  if (!workspaceSources.some(file => file.relativePath.startsWith(`${manifest.runtime.initialSave.templateRoot}/`))) {
+    fail("Initial save template directory contains no files.")
+  }
   const frontendSources = await listTreeFiles(frontendRoot)
   const coverSources = await listTreeFiles(coverRoot)
   if (!frontendSources.some((file) => file.relativePath === "main.ts")) {
@@ -310,7 +321,7 @@ async function runBrowserExporter(manifest, snapshot) {
   }
 }
 
-function assertByteSizeRegression(summary) {
+function assertBrowserRegressions(summary) {
   const sizes = summary?.byteSizeRegression
   for (const name of ["ascii.txt", "chinese.txt", "emoji.txt", "binary.bin"]) {
     if (!Number.isInteger(sizes?.[name]) || sizes[name] <= 0) {
@@ -319,6 +330,19 @@ function assertByteSizeRegression(summary) {
   }
   if (summary?.importRoundTrip !== true) {
     fail("Browser exporter did not complete the platform import round-trip.")
+  }
+  const maintenance = summary?.semanticMaintenanceRegression
+  if (!maintenance || ["realWorker", "submitted", "receiptVerified", "idempotent", "midWriteRollback", "outputValidationRollback"].some(key => maintenance[key] !== true)
+    || maintenance.liveAiCalls !== 0 || maintenance.toolNames?.join(",") !== "use_skill,run_script") {
+    fail("Browser importer did not verify semantic maintenance execution and rollback.")
+  }
+  console.log("Verified imported semantic Skill in a real browser Worker: receipt, idempotency, write/output rollback; no AI calls.")
+  const initial = summary?.initialSaveRegression
+  if (!Number.isInteger(initial?.templateFileCount) || initial.templateFileCount <= 0
+    || initial.savedFileCount !== initial.templateFileCount + 1
+    || initial.checkpointFileCount !== initial.savedFileCount
+    || initial.sourceUnchanged !== true) {
+    fail("Browser importer did not verify the card-owned initial save and checkpoint.")
   }
 }
 
@@ -476,7 +500,7 @@ async function main() {
   const snapshot = await snapshotInputs()
   const manifest = snapshot.manifest
   const browserResult = await runBrowserExporter(manifest, snapshot)
-  assertByteSizeRegression(browserResult.summary)
+  assertBrowserRegressions(browserResult.summary)
   const verification = verifyCardPackage(browserResult.bytes, snapshot, manifest)
   if (browserResult.summary.entryHtmlPath !== "frontend/dist/index.html") {
     fail(`Browser build reported an unexpected entry: ${browserResult.summary.entryHtmlPath}`)
