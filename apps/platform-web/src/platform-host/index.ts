@@ -92,6 +92,7 @@ export {
   listPlatformWorkspaceDirectory,
   listPlatformWorkspaceRoots,
   searchPlatformWorkspace,
+  resolvePlatformStudioWorkspacePath,
   readPlatformWorkspaceFile,
   writePlatformWorkspaceFile,
   deletePlatformWorkspacePath,

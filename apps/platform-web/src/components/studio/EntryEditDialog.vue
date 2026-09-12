@@ -214,6 +214,7 @@ import { ParamTip } from "@/components/ui/tip"
 import { confirm as confirmDialog } from "@/composables/useConfirm"
 import {
   readPlatformWorkspaceFile,
+  resolvePlatformStudioWorkspacePath,
   writePlatformWorkspaceFile,
   type PlatformStudioModuleInfo,
 } from "@/platform-host"
@@ -259,6 +260,7 @@ const pickerOpen = ref(false)
 const pickerMode = ref<"file" | "directory">("file")
 const pickerPurpose = ref<PickerPurpose>("path-file")
 const pickerInitialPath = ref("")
+let fileLoadGeneration = 0
 
 const agentDirectory = computed(() => directoryOf(props.agentPath))
 const hasDraftChanges = computed(() => {
@@ -271,7 +273,7 @@ const hasDraftChanges = computed(() => {
     return true
   }
   if (current.kind === "path") {
-    return current.path.trim() !== source.path.trim()
+    return toRuntimeWorkspacePath(normalizePath(current.path)) !== toRuntimeWorkspacePath(normalizePath(source.path))
       || current.role !== source.role
       || current.position !== source.position
       || fileDraft.value !== fileOriginal.value
@@ -302,25 +304,24 @@ const pickerTitle = computed(() => {
 })
 
 watch(
-  () => [props.open, props.entry] as const,
+  () => [props.open, props.entry, props.cardId] as const,
   ([open]) => {
+    fileLoadGeneration += 1
+    fileDraft.value = ""
+    fileOriginal.value = ""
+    loadedPath.value = ""
+    loadingFile.value = false
+    fileError.value = ""
+    error.value = ""
+    enabledModulesDraft.value = []
+    pickerOpen.value = false
     if (!open || !props.entry) {
       draft.value = null
-      fileDraft.value = ""
-      fileOriginal.value = ""
-      loadedPath.value = ""
-      loadingFile.value = false
-      fileError.value = ""
-      error.value = ""
-      enabledModulesDraft.value = []
-      pickerOpen.value = false
       return
     }
 
     draft.value = cloneEditableEntry(props.entry)
     enabledModulesDraft.value = [...props.enabledModules]
-    error.value = ""
-    fileError.value = ""
     if (draft.value.kind === "path" && draft.value.path.trim()) {
       void loadFileContent()
     }
@@ -372,11 +373,7 @@ function directoryOf(path: string): string {
   return parts.join("/")
 }
 
-/**
- * 资源管理器把存档运行时文件显示为 save/save-NN/...（save-NN 是虚拟存档槽目录），
- * 但 runtime 注入侧的 save/ 就是"当前存档"本身，没有槽位这一层。选择器选出来的
- * 路径要去掉槽位段再写进配置，否则存下的 contextPath 注入时找不到文件。
- */
+// Keep the slot while editing; remove it only when serializing the runtime reference.
 function toRuntimeWorkspacePath(path: string): string {
   return path.replace(/^save\/save-\d{2,}(\/|$)/, "save$1")
 }
@@ -433,38 +430,40 @@ async function leaveDialogAndNavigate(navigate: () => void): Promise<void> {
   navigate()
 }
 
-async function openWorkspaceDirectory(path: string): Promise<void> {
+async function openWorkspacePath(path: string, destination: "workspace" | "workspace-editor"): Promise<void> {
   const normalizedPath = normalizePath(path)
   if (!normalizedPath) {
     return
   }
-  await leaveDialogAndNavigate(() => {
-    void router.push({
-      name: "workspace",
-      query: {
-        cardId: props.cardId,
-        path: directoryOf(normalizedPath),
-      },
+  try {
+    const studioPath = await resolvePlatformStudioWorkspacePath({
+      cardId: props.cardId,
+      path: normalizedPath,
     })
-  })
+    await leaveDialogAndNavigate(() => {
+      void router.push({
+        name: destination,
+        query: {
+          cardId: props.cardId,
+          path: destination === "workspace" ? directoryOf(studioPath) : studioPath,
+          ...(destination === "workspace-editor" ? {
+            mode: "edit",
+            editorId: createEditorSessionId(),
+          } : {}),
+        },
+      })
+    })
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : "无法定位 workspace 文件。"
+  }
 }
 
-async function openWorkspaceEditor(path: string): Promise<void> {
-  const normalizedPath = normalizePath(path)
-  if (!normalizedPath) {
-    return
-  }
-  await leaveDialogAndNavigate(() => {
-    void router.push({
-      name: "workspace-editor",
-      query: {
-        cardId: props.cardId,
-        path: normalizedPath,
-        mode: "edit",
-        editorId: createEditorSessionId(),
-      },
-    })
-  })
+function openWorkspaceDirectory(path: string): Promise<void> {
+  return openWorkspacePath(path, "workspace")
+}
+
+function openWorkspaceEditor(path: string): Promise<void> {
+  return openWorkspacePath(path, "workspace-editor")
 }
 
 function rejectBinaryFile(file: WorkspaceFile): void {
@@ -478,31 +477,44 @@ async function loadFileContent(): Promise<void> {
   if (!current || current.kind !== "path") {
     return
   }
+  const generation = ++fileLoadGeneration
+  const cardId = props.cardId
   const path = normalizePath(current.path)
+  const isCurrentLoad = () => generation === fileLoadGeneration
+    && draft.value === current
+    && current.kind === "path"
+    && props.cardId === cardId
+    && normalizePath(current.path) === path
+  fileDraft.value = ""
+  fileOriginal.value = ""
+  loadedPath.value = ""
+  fileError.value = ""
   if (!path) {
-    fileDraft.value = ""
-    fileOriginal.value = ""
-    loadedPath.value = ""
-    fileError.value = ""
+    loadingFile.value = false
     return
   }
 
   current.path = path
   loadingFile.value = true
-  fileError.value = ""
   try {
-    const file = await readPlatformWorkspaceFile({ cardId: props.cardId, path })
+    const studioPath = await resolvePlatformStudioWorkspacePath({ cardId, path })
+    const file = await readPlatformWorkspaceFile({ cardId, path: studioPath })
+    if (!isCurrentLoad()) {
+      return
+    }
     rejectBinaryFile(file)
+    current.path = file.path
     fileDraft.value = file.content
     fileOriginal.value = file.content
     loadedPath.value = file.path
   } catch (e) {
-    fileDraft.value = ""
-    fileOriginal.value = ""
-    loadedPath.value = ""
-    fileError.value = e instanceof Error ? e.message : "读取文件失败。"
+    if (isCurrentLoad()) {
+      fileError.value = e instanceof Error ? e.message : "读取文件失败。"
+    }
   } finally {
-    loadingFile.value = false
+    if (generation === fileLoadGeneration) {
+      loadingFile.value = false
+    }
   }
 }
 
@@ -588,7 +600,7 @@ async function handlePickerSelect(path: string): Promise<void> {
     if (current.kind !== "path") {
       return
     }
-    current.path = toRuntimeWorkspacePath(normalizePath(path))
+    current.path = normalizePath(path)
     await loadFileContent()
     return
   }
@@ -617,7 +629,7 @@ async function saveFileIfNeeded(current: EditableContextPathEntry): Promise<void
 
   await writePlatformWorkspaceFile({
     cardId: props.cardId,
-    path,
+    path: loadedPath.value,
     content: fileDraft.value,
     expectedContent: fileOriginal.value,
   })
@@ -647,7 +659,11 @@ async function confirm(): Promise<void> {
 
   try {
     await saveFileIfNeeded(current)
-    emit("save", { ...current, modified: true }, hasModuleMacros.value ? [...enabledModulesDraft.value] : undefined)
+    emit("save", {
+      ...current,
+      path: current.kind === "path" ? toRuntimeWorkspacePath(current.path) : "",
+      modified: true,
+    }, hasModuleMacros.value ? [...enabledModulesDraft.value] : undefined)
     emit("update:open", false)
   } catch (e) {
     error.value = e instanceof Error ? e.message : "保存条目失败。"

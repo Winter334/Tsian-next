@@ -258,6 +258,19 @@ function resolveStudioWorkspacePath(
   }
 }
 
+/** Resolve portable runtime references to the concrete paths used by Studio editors. */
+export async function resolvePlatformStudioWorkspacePath(input: {
+  cardId: string
+  path: string
+}): Promise<string> {
+  const context = await loadStudioWorkspaceContext(input.cardId)
+  const resolvedPath = resolveStudioWorkspacePath(context, input.path)
+  if (resolvedPath.scope === "save-runtime") {
+    return `save/${resolvedPath.alias}/${resolvedPath.storagePath.slice("save/".length)}`
+  }
+  return resolvedPath.displayPath
+}
+
 function storageFileToStudioFile(file: WorkspaceFile, resolvedPath: StudioResolvedPath): WorkspaceFile {
   return {
     ...file,

@@ -805,7 +805,7 @@ The setup wizard (`useSetupState`) consumes `onAgentInvocation` in two distinct 
 - `game-card.json` delete -> throws "game-card.json（卡片 manifest）不能删除".
 - Staged turn mutation on `card-content`/`card-frontend` -> upper layer throws "Runtime turn staging cannot mutate card-content."
 - Studio path resolution on `frontend/` -> resolves to card-frontend scope; no alias rewrite.
-- Studio path resolution on `save/<segment>/...` where `<segment>` is **not** a `save-NN` slot alias -> treated as a **slot-less runtime path** (the form agent configs use, where `save/` already means "the active save") and resolved against the default slot: the active save when it belongs to this card, otherwise the first slot. `storagePath` keeps the input path verbatim and result paths are returned slot-less (`slotless: true`), so a path that the runtime can inject is also openable and editable in Studio. Only `save-NN`-shaped segments still raise `WORKSPACE_SAVE_SLOT_NOT_FOUND`; a card with no save slots at all raises it too. Conversely, the Studio file picker strips `save/save-NN/` back to `save/` before writing a picked path into an agent config, so the two directions cannot drift apart.
+- Studio path resolution on `save/<segment>/...` where `<segment>` is **not** a `save-NN` slot alias -> treated as a **slot-less runtime path** (the form agent configs use, where `save/` already means "the active save") and resolved against the default slot: the active save when it belongs to this card, otherwise the first slot. `storagePath` keeps the input path verbatim and low-level operation results are returned slot-less (`slotless: true`). Only `save-NN`-shaped segments still raise `WORKSPACE_SAVE_SLOT_NOT_FOUND`; a card with no save slots at all raises it too. Editors must first resolve a concrete Studio path and retain its slot through reads, navigation, and writes; see Studio Context Reference Editing below.
 - `move({ path: "world/foo.md", targetPath: ".tsian/save/foo.md" })` at actorLevel 4 -> writes platform-meta then deletes card-content.
 - `copy({ path: "skills/foo", targetPath: ".tsian/local/assistant/skills/foo" })` at actorLevel 4 -> writes all matching target files and keeps the source files.
 - `move({ path: "world/foo.md", targetPath: "save/save-01/foo.md" })` in Studio -> writes the resolved save-runtime path using that save slot's `saveId`, then deletes card-content.
@@ -815,6 +815,38 @@ The setup wizard (`useSetupState`) consumes `onAgentInvocation` in two distinct 
 - `move` between two different Studio save aliases -> throws `WORKSPACE_MOVE_SAVE_SLOT_MISMATCH`.
 - Operation-level `scope` passed as a concrete value that does not match `scopeForPath(path)` -> throws `WORKSPACE_SCOPE_PATH_MISMATCH` (defensive constraint; the assertion is skipped when scope is `effective` or omitted). Mutation routing still uses `scopeForPath(path)`, so a matching explicit scope is redundant but allowed.
 - `move`/`copy` where `assertEditAccess(toPath)` fails the toScope editLevel (e.g. level-1 agent writing to card-content(2) or platform-meta(4)) -> throws the edit-access error. Cross-scope move/copy is only blocked by this path-based permission, never by a "from/to scope must match" rule (that rule was removed).
+
+## Scenario: Studio Context Reference Editing
+
+### 1. Scope / Trigger
+- Editing `contextPaths` file references in `EntryEditDialog.vue`, including file selection and Workspace editor/directory navigation.
+
+### 2. Signatures
+- `resolvePlatformStudioWorkspacePath({ cardId: string, path: string }): Promise<string>` reuses the host's Studio resolver and returns a concrete path such as `save/save-01/schema/current.md`.
+
+### 3. Contracts
+- The dialog path field and `loadedPath` retain the concrete Studio path. File reads, `expectedContent`-guarded writes, editor routes, and picker initial directories use that same path.
+- Picker selections keep their explicit slot even when it is not the active save. Changing the active save after loading must not retarget a subsequent write.
+- Only the emitted context entry strips `save/save-NN/` back to `save/`. Dirty checks compare runtime references, so resolving a slot alone does not create a false unsaved-change prompt.
+- Older asynchronous loads must not overwrite a newer entry/path/card or a closed dialog. File bodies remain unexpanded while editing.
+
+### 4. Validation & Error Matrix
+- Slot-less save reference -> current card's active slot, otherwise its first slot.
+- Explicit existing slot -> preserve it; missing explicit slot or no available saves -> `WORKSPACE_SAVE_SLOT_NOT_FOUND`, never redirect an explicit slot.
+- Card-owned path -> unchanged. Platform metadata -> existing forbidden-path error.
+
+### 5. Good / Base / Bad Cases
+- Good: pick `save/save-02/source/manifest.json`, edit/save slot 02, emit `save/source/manifest.json`.
+- Base: `agents/world-architect/AGENT.md` keeps its path.
+- Bad: strip the picked slot before reading or writing, then silently use the active save instead.
+
+### 6. Verification Required
+- Run focused temporary checks for both source/schema paths, non-active selection, active-save changes between read/write, editor/directory routes, empty/missing slots, late loads, and runtime macro expansion after saving. Remove new diagnostic tests after recording results.
+- Run `npm run build:web`; browser interaction remains a separate manual check.
+
+### 7. Wrong vs Correct
+- Wrong: normalize a picker selection with `toRuntimeWorkspacePath()` and immediately read/write that slot-less path.
+- Correct: resolve and retain the Studio path for editing; serialize `toRuntimeWorkspacePath(current.path)` only after saving the file.
 
 ## Scenario: Skill Config Declaration And Player Overrides
 
