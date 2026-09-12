@@ -32,3 +32,30 @@ tmp/
 openspec/changes/*/.debug-context.md
 openspec/changes/*/.plan-context.md
 openspec/changes/*/.session-state.md
+
+# Project-owned Codex memory workflow; keep other personal/platform assets ignored.
+!.codex/
+.codex/*
+!.codex/config.toml
+!.codex/hooks.json
+!.codex/trellis.md
+!.codex/spec-writing.md
+!.codex/README.md
+!.codex/agents/
+.codex/agents/*
+!.codex/agents/trellis-implement.toml
+!.codex/agents/trellis-check.toml
+!.codex/agents/trellis-research.toml
+!.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/codex-task/
+!.agents/skills/codex-memory/
+
+# Only Codex invocation metadata is shared for legacy skills, not their generated bodies.
+!.agents/skills/trellis-*/
+.agents/skills/trellis-*/*
+!.agents/skills/trellis-*/agents/
+.agents/skills/trellis-*/agents/*
+!.agents/skills/trellis-*/agents/openai.yaml

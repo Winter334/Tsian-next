@@ -1279,3 +1279,100 @@ Prepared @tsian/contracts 0.2.0-beta.6 and @tsian/play-bridge 0.2.0-beta.5, sync
 ### Status
 
 [OK] **Completed**
+
+
+## Session 207: Codex Trellis：保留任务记忆，解除强制流程
+
+**Date**: 2026-09-08
+**Task**: Codex Trellis：保留任务记忆，解除强制流程
+**Branch**: `master`
+
+### Summary
+
+仅改造 Codex 集成：小改直接做，大改先规划并保留任务决策记录；研究、独立审查与子代理按需使用，任务状态不再作为执行门禁。移除三个旧 Codex Hook；旧 Trellis 技能通过 Codex 原生 openai.yaml 改为仅显式调用，新增 codex-task/codex-memory。当前知识编写标准在 .codex/spec-writing.md，任务收尾只维护实际使用且已理解的 spec 章节，沉淀方法论、项目习惯与可复用经验，不批量清理历史规范。决策与维护说明见 .codex/README.md；旧共享技能正文及 Claude/ZCode 未改。
+
+### Main Changes
+
+- 检查/研究代理改为只读，主会话筛选真实问题；不再默认循环审查和防御性扩展。
+- 对项目级 Codex 资产添加窄范围 Git 白名单；保留其他个人配置和平台忽略规则。
+
+### Git Commits
+
+(No commits - implementation complete; changes left uncommitted)
+
+### Testing
+
+- [OK] 6 项配置与入口回归测试、2 个新技能 quick_validate 均通过；原生 Codex 模型输入确认新入口生效、旧技能目录与阶段提示消失。
+- [OK] 12 份共享技能正文及 Claude/ZCode 117 个文件 SHA256 校验未变化；git diff --check 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 新开 Codex 会话使用新入口；现有对话已注入的旧指令不会被文件修改追溯撤销。后续 trellis update 后检查 Codex 定制是否被恢复为旧流程。
+
+
+## Session 208: 原著驱动叙事与 0.3.1 修正：最终验收归档
+
+**Date**: 2026-09-12
+**Task**: 原著驱动叙事与 0.3.1 修正：最终验收归档
+**Branch**: `master`
+
+### Summary
+
+2026-09-12 用户确认此次任务圆满结束。原著驱动主流程和属性估值/角色标题修正已验收，主任务与三项已完成前置任务归档；仅更新任务记录、导航和会话日志，保留全部业务代码及无关在途改动，无 commit/push。
+
+### Main Changes
+
+- 最终结果：.trellis/tasks/archive/2026-09/09-11-canon-driven-storytelling/implement.md；0.3.1 修正与证据见同目录 follow-up.md，test-checklist.md 保留作回归参考，无任务遗留待办。
+- 一并归档至 .trellis/tasks/archive/2026-09/：09-10-card-owned-save-initialization、09-10-stage-manager-semantic-maintenance、09-10-opening-modeling-semantic；保留原工程完成日期与历史决策，最终 Agent 职责以后续原著驱动任务为准。
+- 同步归档后的任务上下文与相关 type-safety spec 链接。最终包 tmp/immersive-reader-character-fixes-0.3.1.tsian-card.zip 原样保留；SHA256 52ABCFD0B53CECA320514AC95645E000026DFB093C19232A444BD1122D5F6364。
+
+### Git Commits
+
+(No commits - acceptance recording and archival only)
+
+### Testing
+
+- [OK] 沿用已完成的 9 文件 76 测试、两侧类型检查、真实浏览器布局及真实卡包/Worker 验证，本次文档收尾不重复构建、不调用真实/付费 AI。用户整体实测验收与工程证据分别记录，不外推未经提供的性能基准。
+- [OK] 本次核对四项归档状态、18 条 JSON/JSONL 记录、28 个任务链接及测试包哈希；git diff --check 通过，仅既有 CRLF 提示。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 209: Cache optimization and pre-push cleanup
+
+**Date**: 2026-09-12
+**Task**: Cache optimization and pre-push cleanup
+**Branch**: `master`
+
+### Summary
+
+Organized the accumulated reader, Studio and Claude cache changes into separate commits at the user's request; prepared the Codex workflow and project-memory commit for push.
+
+### Main Changes
+
+- Retired six one-off business test files after all 60 checks passed; preserved formal smoke and real-browser card-package verification.
+- Claude uses explicit system and assistant-prefix cache boundaries without changing narrative context or Agent isolation; no live cache hit-rate claim.
+- Kept generated dist, ZIP artifacts and temporary probes out of Git; included required new card/frontend sources.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `29d6edca` | (see git log) |
+| `ffb16d65` | (see git log) |
+| `25eb6dd8` | (see git log) |
+
+### Testing
+
+- [OK] build:web and build:play-frontend passed; test:smoke:web 13 passed; Codex wiring 6 passed.
+- [OK] package:card passed real Chrome/Worker round-trip and semantic regressions with no AI calls; git staged diff checks passed.
+
+### Status
+
+[OK] **Completed**

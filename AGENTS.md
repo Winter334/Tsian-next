@@ -19,3 +19,12 @@ If you're using Codex or another agent-capable tool, additional project-scoped h
 Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
 
 <!-- TRELLIS:END -->
+
+## Codex workflow override
+
+When running Codex, read `.codex/trellis.md` instead of the shared Trellis phase guide.
+It defines lightweight execution and memory maintenance; use `.codex/spec-writing.md`
+when revising project knowledge. Shared Trellis command/skill routing above is for
+other platforms, not a mandatory sequence for Codex. The task, spec and workspace
+directories remain the sources of project memory. Claude Code and ZCode keep their
+existing entry points and workflow.

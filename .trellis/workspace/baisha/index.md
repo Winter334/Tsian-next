@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 206
-- **Last Active**: 2026-08-27
+- **Total Sessions**: 209
+- **Last Active**: 2026-09-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~1281 | Active |
+| `journal-4.md` | ~1378 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 209 | 2026-09-12 | Cache optimization and pre-push cleanup | `29d6edca`, `ffb16d65`, `25eb6dd8` | `master` |
+| 208 | 2026-09-12 | 原著驱动叙事与 0.3.1 修正：最终验收归档 | - | `master` |
+| 207 | 2026-09-08 | Codex Trellis：保留任务记忆，解除强制流程 | - | `master` |
 | 206 | 2026-08-27 | Prepare SDK beta release | `234e9dd2` | `master` |
 | 205 | 2026-08-27 | 场记回合后维护稳定性优化 | `0a38b969` | `master` |
 | 204 | 2026-08-26 | 收尾 Agent Tool Observation 契约治理 | `4c2af185`, `95608c41`, `ee3c12a2`, `48316a3b` | `master` |

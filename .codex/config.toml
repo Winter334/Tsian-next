@@ -1,0 +1,15 @@
+# Codex-only integration. Other platforms keep their own Trellis workflow.
+# Relative paths are resolved from this .codex/ directory.
+project_doc_fallback_filenames = ["AGENTS.md"]
+web_search = "live"
+developer_instructions = """
+Read .codex/trellis.md once at the start of a Codex session, or after losing that context.
+It defines this project's Codex workflow and supersedes shared Trellis phase/dispatch
+instructions. Use .trellis/ for project knowledge and task history, not execution gates.
+"""
+
+[agents]
+max_depth = 1
+
+# Legacy Trellis skills use agents/openai.yaml to opt out of implicit invocation.
+# Their SKILL.md bodies remain untouched for other clients and explicit use.
