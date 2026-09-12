@@ -1,75 +1,43 @@
 # AI Provider Caching
 
-## Scenario: Claude Top-Level Automatic Prompt Cache
+Use this guide when changing Claude request construction, its model-level caching switch, or cache diagnostics. The policy lives in `src/runtime-host/ai/providers/claude.ts`; the shared `buildClaudeRequestBody` covers text/native and streaming/non-streaming calls.
 
-### 1. Scope / Trigger
+## Why automatic tail caching is not enough here
 
-- Trigger: changing Claude model parameters, persisted provider normalization, Claude request construction, either model-settings surface, or cache-usage diagnostics.
+Narrative context stores player input and final prose, not the original current-turn envelope or full tool protocol. The next turn rebuilds that history. Earlier history can remain identical, but the previous request's final prefix usually does not: turn metadata, input labels, framing and tool messages are no longer there in the same form.
 
-### 2. Signatures
+Claude only writes cache entries at breakpoints. Its automatic lookback searches previously written prefixes; it does not create an entry for an arbitrary stable interior prefix. Consequently, preserving old prose alone does not guarantee reuse with an automatic tail-only breakpoint. Do not restore full tool histories or change narrative semantics merely to make the request append-only.
 
-```ts
-interface BrowserClaudeModelParameters {
-  promptCachingEnabled: boolean
-  // other Claude parameters omitted
-}
+## Request policy
 
-type ClaudeAutomaticCacheControl = {
-  type: "ephemeral"
-}
-```
+When `BrowserClaudeModelParameters.promptCachingEnabled` is true, the common builder adds:
 
-Enabled requests carry `cache_control: ClaudeAutomaticCacheControl` at the Messages API body top level.
+- Top-level `cache_control: { type: "ephemeral" }` for automatic tail caching within the current conversation/tool loop.
+- An explicit ephemeral breakpoint on the system text block, providing a base prefix for first turns and rewritten/compressed history.
+- An explicit ephemeral breakpoint on the last cacheable block of the most recent assistant message. At narrative turn start this is the stored history end; during tool rounds it advances to the latest assistant text/tool-use boundary. Mark the last parallel `tool_use`, not an earlier text block, and never mark thinking blocks.
 
-### 3. Contracts
+The two explicit breakpoints plus automatic caching use at most three of Claude's four slots. Custom request parameters cannot override `system`, `messages`, or `tools` (enforced by `parseBrowserAiCustomRequestParams`), so there is no second source of block-level markers to reconcile. Keep that protection rather than adding a speculative breakpoint-merging layer.
 
-- New Claude model parameters default `promptCachingEnabled` to `true`. Persisted parameters missing the field normalize to `true`; only explicit boolean `false` disables platform injection.
-- `buildClaudeRequestBody` is the single injection boundary for text, native, streaming, and non-streaming calls. Do not copy cache logic into individual adapter methods.
-- Enabled requests add `cache_control: { type: "ephemeral" }` before the existing custom-parameter merge, so the typed model setting owns that field when enabled. Disabled requests add nothing; an advanced custom JSON value may still provide its own `cache_control` under the existing merge contract.
-- An incompatible Claude-style endpoint fails normally. Do not retry automatically without caching: a hidden second request can add cost, latency, and Tool side effects. The model-level switch is the recovery path.
-- Keep explicit tools/system/message-block cache breakpoints, TTL selection, model capability tables, and endpoint probing out of this automatic switch until provider-reported usage demonstrates a need.
-- Cache observability remains provider-reported: Claude `cache_read_input_tokens` maps to `cached` and `cache_creation_input_tokens` maps to `cacheCreation`; never infer either from local message size.
+Cache markers must not mutate caller messages/config/tool schemas, change text or block ordering, or insert model-visible instructions. Claude's `system`/assistant string shorthand becomes text-block arrays only where a marker is needed. Non-Claude serialization, context storage, Agent isolation, and request routing are unchanged.
 
-### 4. Validation & Error Matrix
+## Configuration and compatibility
 
-| Configuration / provider result | Required behavior |
-|---|---|
-| New config or persisted field missing | Normalize enabled; send top-level ephemeral cache control |
-| Explicit `promptCachingEnabled: true` | Send top-level ephemeral cache control on every Claude call style |
-| Explicit `false`, no custom cache field | Omit platform-generated `cache_control` |
-| Explicit `false`, custom JSON supplies cache field | Preserve the advanced custom field under normal custom merge behavior |
-| Endpoint rejects cache control | Surface the provider error; user may disable; no cache-disabled retry |
-| Provider omits cache usage | Keep usage cache fields undefined and display no cache data |
-| Non-Claude provider | No request or configuration behavior change |
+- New/missing Claude settings normalize enabled; explicit false remains disabled. Both settings surfaces use the same field.
+- Disabling the switch omits all platform-added cache controls and preserves the uncached string/block shapes.
+- Keep the existing custom-parameter merge: enabled platform settings own top-level `cache_control`; when disabled, advanced custom JSON can still supply that top-level field.
+- Do not retry rejected requests with caching removed. Such a retry can add cost, latency or Tool side effects; the model switch is the explicit compatibility escape hatch.
+- Do not silently add a longer TTL, provider capability probing, or random/per-invocation routing keys. This fix concerns prefix writes, not upstream session affinity.
 
-### 5. Good / Base / Bad Cases
+## Evidence and limits
 
-- Good: a modern Claude model reuses a growing stable conversation prefix, with the first eligible call reporting cache creation and later calls reporting cache reads.
-- Base: a Claude-compatible proxy does not support the top-level field; disabling the model switch restores the previous platform-generated body shape.
-- Bad: add cache markers independently in text/native/stream builders, infer a hit from unchanged local text, or silently replay a rejected Tool call without caching.
+No code change can guarantee cache hits. Prefix/model/tool changes, history compression, the provider's minimum cache length, lookback limits, expiration and upstream routing still apply. A fresh historical prefix is generally written at one turn's start and becomes reusable in a later turn; the latest reconstructed turn is not magically fully cached.
 
-### 6. Verification Required
+Use only provider-reported `cache_read_input_tokens` -> `cached` and `cache_creation_input_tokens` -> `cacheCreation` for diagnostics. A deterministic prefix comparison establishes a structural opportunity for reuse, not a measured hit or savings percentage. Agent-specific local contexts and a missing explicit routing key do not by themselves prove cache interference.
 
-- Run `npm run build:web` and `npm run test:smoke:web`.
-- Verify default/missing/explicit-false normalization and inspect final text, native, and stream request bodies at the provider boundary.
-- Verify both desktop and Spatial settings read and update the same model parameter.
-- When a live endpoint and a prompt above its minimum cache threshold are available, confirm cache creation followed by cache read in unified diagnostics.
-- Follow the repository smoke-only policy: use manual or temporary boundary probes for this matrix; do not retain a provider unit-test file unless it is explicitly admitted to `test:smoke`.
+## Verification
 
-### 7. Wrong vs Correct
+For adapter changes, inspect final HTTP bodies across all four call styles; check switch-off/custom top-level behavior, input non-mutation, parallel tool IDs/results, bounded marker count, first-turn/no-history behavior, and old/new cross-turn prefix reachability. Use temporary explicit-path probes under the smoke-only policy, plus `npm run build:web` and `npm run test:smoke:web`; disclose any unrelated worktree failures instead of changing other tasks' files.
 
-#### Wrong
+A live check needs prompts above the actual model's minimum threshold and provider-reported creation/read usage on consecutive turns. Compare like-for-like requests from the same Agent/model and inspect timing; do not mix maintenance requests into a narrative hit-rate comparison.
 
-```ts
-// Per-call duplication drifts and can miss text or streaming paths.
-if (config.kind === "claude") body.cache_control = { type: "ephemeral" }
-```
-
-#### Correct
-
-```ts
-// The shared Claude builder covers every Claude request style.
-if (provider.promptCachingEnabled) {
-  body.cache_control = { type: "ephemeral" }
-}
-```
+References: [Claude prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching); task `09-12-claude-stable-prefix-cache` records the offline evidence and remaining live uncertainty.

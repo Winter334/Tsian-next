@@ -3,7 +3,7 @@ import type { ToolSchema } from "../../../agent-runtime/tool-schemas"
 
 import { buildClaudeContent, splitSystemMessage, splitSystemMessages } from "../content"
 import type { NativeToolCall, ProviderAdapter, RuntimeChatMessage } from "../types"
-import { mergeProviderCustomParams, putOptionalNumber, putOptionalStringArray } from "./shared"
+import { isRecord, mergeProviderCustomParams, putOptionalNumber, putOptionalStringArray } from "./shared"
 
 /** Serialize one `RuntimeChatMessage` into a Claude `messages` entry. */
 function buildClaudeNativeMessage(message: RuntimeChatMessage): Record<string, unknown> {
@@ -105,6 +105,37 @@ function applyClaudeModelParameters(body: Record<string, unknown>, config: Brows
   }
 }
 
+/** Write the history boundary separately from the changing current-turn tail.
+ * At turn start this is the stored narrative's end; in a tool loop it advances
+ * to the latest tool_use. Copy provider objects so caller messages stay intact. */
+function withClaudeAssistantCacheBreakpoint(
+  messages: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!
+    if (message.role !== "assistant") continue
+    const content = typeof message.content === "string"
+      ? [{ type: "text", text: message.content }]
+      : message.content
+    if (!Array.isArray(content)) continue
+    for (let blockIndex = content.length - 1; blockIndex >= 0; blockIndex -= 1) {
+      const block: unknown = content[blockIndex]
+      if (!isRecord(block)) continue
+      // Never put explicit markers on thinking blocks. Include all tool_use
+      // blocks in a parallel batch by marking the last one, not the first text.
+      if (block.type !== "text" && block.type !== "tool_use") continue
+      if (block.type === "text" && (typeof block.text !== "string" || !block.text.trim())) continue
+      const cachedContent = content.map((entry, candidate) => candidate === blockIndex
+        ? { ...block, cache_control: { type: "ephemeral" } }
+        : entry)
+      return messages.map((entry, candidate) => candidate === index
+        ? { ...message, content: cachedContent }
+        : entry)
+    }
+  }
+  return messages
+}
+
 function buildClaudeRequestBody(input: {
   config: BrowserAiConfig
   messages: Record<string, unknown>[]
@@ -118,9 +149,6 @@ function buildClaudeRequestBody(input: {
     messages: input.messages,
   }
   applyClaudeModelParameters(body, input.config)
-  if (provider.promptCachingEnabled) {
-    body.cache_control = { type: "ephemeral" }
-  }
   if (input.system) {
     body.system = input.system
   }
@@ -137,6 +165,16 @@ function buildClaudeRequestBody(input: {
         disable_parallel_tool_use: true,
       }
     }
+  }
+  if (provider.promptCachingEnabled) {
+    // Two explicit prefixes + automatic tail = at most three of four slots.
+    // Custom params cannot override system/messages/tools, so there are no
+    // user block markers to count or rewrite here.
+    body.cache_control = { type: "ephemeral" }
+    if (input.system?.trim()) {
+      body.system = [{ type: "text", text: input.system, cache_control: { type: "ephemeral" } }]
+    }
+    body.messages = withClaudeAssistantCacheBreakpoint(input.messages)
   }
   return mergeProviderCustomParams(body, provider.customRequestParamsText)
 }
