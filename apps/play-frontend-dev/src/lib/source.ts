@@ -11,7 +11,6 @@ export const CHAPTER_INDEX_PATH = "save/source/chapters.index.json"
 export const SOURCE_SHARDS_ROOT = "save/source/shards/"
 export const INITIAL_SUMMARY_PATH = "save/playthrough/understanding-summary.json"
 export const RUNTIME_PATH = "save/playthrough/runtime.json"
-export const FRONTIER_PATH = "save/playthrough/frontier.json"
 export const SETUP_SUMMARY_PATH = "save/playthrough/setup-summary.json"
 export const CHARACTER_ENTITIES_ROOT = "save/entities/character/"
 export const SOURCE_TARGET_SHARD_CHARACTERS = 1_000_000
@@ -20,7 +19,6 @@ const PSEUDO_CHAPTER_TARGET = 15_000
 
 // ── 类型 ──
 export type ImportMode = "paste" | "file"
-export type ExtractionMode = "full" | "frontier"
 export type ChapterDetection = "heuristic" | "fallback-length"
 export type ChapterConfidence = "strong" | "medium" | "weak" | "none"
 
@@ -30,7 +28,6 @@ export interface SourceManifest {
   title: string
   sourceFormat: "txt" | "md"
   importMode: ImportMode
-  recommendedExtractionMode: ExtractionMode
   chapterDetection: ChapterDetection
   chapterDetectionConfidence: ChapterConfidence
   originalFileName?: string
@@ -548,7 +545,6 @@ export function buildSourceCorpus(
     title: input.title || inferTitle(normalized, input.fileName),
     sourceFormat: input.sourceFormat,
     importMode: input.importMode,
-    recommendedExtractionMode: input.importMode === "paste" ? "full" : "frontier",
     chapterDetection: useDetected ? "heuristic" : "fallback-length",
     chapterDetectionConfidence: detected.confidence,
     ...(input.fileName ? { originalFileName: input.fileName } : {}),

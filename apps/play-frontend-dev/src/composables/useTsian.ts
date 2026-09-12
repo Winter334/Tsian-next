@@ -6,9 +6,11 @@ import type {
   RoundEnd,
   TurnEndResult,
   ToolEvent,
+  InjectionMessage,
 } from "@tsian/play-bridge"
 import type { TurnPhase } from "../types"
 import { triggerSyncAfterTurn, useSyncAfterTurn } from "./useSyncAfterTurn"
+import { buildStorySourceMaterial } from "../lib/story-source"
 import { buildContextInjection } from "../lib/context-injection"
 import type { BuildInjectionBlockedReason } from "../lib/context-injection"
 
@@ -60,7 +62,7 @@ const turnOptions = ref<string[]>([])
 // 最近一次 send 被阻断的原因（design §5 / §9）。
 // - blocked 分支：不推 user StreamItem、不切 turnPhase、不发 tsian.send，仅置此 ref。
 // - 下次 send 进入前置检查前清空。UI（StoryView）v-if 渲染 banner。
-const lastSendError = ref<{ reason: BuildInjectionBlockedReason; detail?: string } | null>(null)
+const lastSendError = ref<{ reason: BuildInjectionBlockedReason | "source-load-failed"; detail?: string } | null>(null)
 
 // 订阅是否已注册（只注册一次，避免多组件重复订阅）
 let subscribed = false
@@ -292,6 +294,12 @@ export function useTsian() {
         lastSendError.value = { reason: result.reason, detail: result.detail }
         return
       }
+      let sourceMaterial: InjectionMessage[]
+      try { sourceMaterial = await buildStorySourceMaterial(tsian.workspace) }
+      catch (error) {
+        lastSendError.value = { reason: "source-load-failed", detail: error instanceof Error ? error.message : "原著材料读取失败，请重试。" }
+        return
+      }
       // 不清空 stream（镜像 legacy：所有内容按顺序累积，跨轮保留）
       // 只重置流式累积器 + 选项
       streamingText.value = ""
@@ -307,7 +315,7 @@ export function useTsian() {
       try {
         await tsian.send(
           text,
-          result.messages.length > 0 ? { injection: result.messages } : undefined,
+          { injection: [...result.messages, ...sourceMaterial] },
         )
       } catch (err) {
         const msg = err && typeof err === "object" && "message" in err

@@ -6,7 +6,6 @@ import type {
   ConversationMessageRecord,
   DiagnosticAiRequestRecord,
   GameCardManifest,
-  WorkspaceOperationRequest,
   WorkspaceFile,
 } from "@tsian/contracts"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -26,7 +25,6 @@ import { assembleAgentContext } from "../agent-runtime/context"
 import {
   parseAgentInvocationTranscript,
 } from "../platform-host/history-turns"
-import { projectAssistantReply } from "../platform-host/reply-projection"
 import {
   applyTaskToolMemoryRetention,
   projectToolMemoryForContext,
@@ -44,11 +42,8 @@ import {
   TEXT_TOOL_CALLS_OPEN_TAG,
 } from "../agent-runtime/text-tool-protocol"
 import { mergeConsecutiveRoleMessages } from "../agent-runtime/orchestration/message-formatting"
-import { executeWorkspaceOperation } from "../agent-runtime/workspace-operations"
-import { executeRunScript, parseActionDeclarations } from "../agent-runtime/workspace-tools/skill-actions"
+import { executeRunScript } from "../agent-runtime/workspace-tools/skill-actions"
 import type { RuntimeChatMessage } from "../runtime-host/ai"
-import cardReplyProjection from "../../../../cards/沉浸阅读器.tsian-card/workspace/config/reply-projection.json?raw"
-import cardStorytellerAgent from "../../../../cards/沉浸阅读器.tsian-card/workspace/agents/storyteller/agent.json?raw"
 import {
   createBrowserAiModelConfig,
   createBrowserAiProviderPreset,
@@ -56,7 +51,6 @@ import {
   saveBrowserPlatformConfigDraft,
 } from "../config/ai"
 import { markPlatformHostReady } from "../platform-host/host-state"
-import { toBrowserScriptReplyProjection } from "../platform-host/browser-skill-script-executor"
 import { invokeAgent } from "../platform-host/ai-invocation"
 import { runAssistantChat } from "../platform-host/assistant-chat"
 import { sendMessage } from "../platform-host/runtime-turn"
@@ -77,26 +71,6 @@ import {
   writeWorkspaceFileForSave,
 } from "../storage"
 import { localDb } from "../storage/db"
-import {
-  createOpeningControl,
-  openingContinueMarker,
-  isRecoverableOpeningModelState,
-  parseOpeningAssistant,
-  parseOpeningUser,
-} from "../../../play-frontend-dev/src/lib/opening-interview"
-import { formatTimelineBlock } from "../../../play-frontend-dev/src/lib/context-injection"
-import { parseFrontier } from "../../../play-frontend-dev/src/lib/parse-frontier"
-import { sourceSummaryState } from "../../../play-frontend-dev/src/lib/timeline-summary"
-import type { SourceAnchor } from "../../../play-frontend-dev/src/lib/frontier-types"
-import type { Runtime } from "../../../play-frontend-dev/src/lib/runtime-types"
-
-const worldArchitectSources = import.meta.glob(
-  "../../../../cards/沉浸阅读器.tsian-card/workspace/agents/world-architect/**/*",
-  { eager: true, query: "?raw", import: "default" },
-) as Record<string, string>
-const worldArchitectFiles = Object.entries(worldArchitectSources).map(([path, content]) => ({
-  path: path.slice(path.indexOf("workspace/") + "workspace/".length), content,
-}))
 
 const CARD_ID = "assistant-runtime-smoke"
 const MODEL_ID = "assistant-smoke-model"
@@ -856,370 +830,7 @@ describe("Agent context contracts smoke", () => {
     })).toBeNull()
   })
 
-  it("validates the distributed world architect assets and their resident context", () => {
-    const agentFile = worldArchitectFiles.find((file) => file.path === "agents/world-architect/agent.json")
-    const config = JSON.parse(agentFile?.content ?? "null") as { contextPaths?: Array<{ path?: string }> }
-    expect(config.contextPaths?.map((entry) => entry.path)).toEqual([
-      "save/source/manifest.json",
-      "save/schema/current.md",
-      "save/playthrough/frontier.json",
-    ])
-    expect(worldArchitectFiles.map((file) => file.path)).toEqual(expect.arrayContaining([
-      "agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js",
-      "agents/world-architect/skills/开局建模/scripts/read-opening-slice.js",
-      "agents/world-architect/skills/开局建模/scripts/commit-opening-entities.js",
-      "agents/world-architect/skills/开局建模/scripts/commit-opening-graph.js",
-      "agents/world-architect/skills/开局建模/scripts/commit-opening-state.js",
-      "agents/world-architect/skills/开局建模/scripts/publish-opening.js",
-    ]))
-    const openingTemplatePaths = worldArchitectFiles.map((file) => file.path)
-    expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/_progress.js")
-    expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/read-opening-progress.js")
-    expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/advance-opening-progress.js")
-    const openingSkill = worldArchitectFiles.find((file) => file.path.endsWith("开局建模/SKILL.md"))?.content ?? ""
-    expect(openingTemplatePaths).not.toContain("agents/world-architect/skills/开局建模/scripts/commit-opening.js")
-    expect(openingSkill).toContain("run_script.inputRefs.openingReply")
-    expect(openingSkill).toContain("responseRef")
-    expect(openingSkill).toContain("opening-interview:continue:<sessionId>")
-    expect(openingSkill).toContain("不复制已在 workspace 中的实体、场景、关系或 runtime 全文")
-    expect(openingSkill).not.toContain("阶段 7 成功前")
-    expect(openingSkill).not.toContain("完整 storyteller brief")
-    const openingActions = parseActionDeclarations(openingSkill)
-    expect(openingActions.errors).toEqual([])
-    expect(openingActions.actions.map(action => action.name)).toEqual([
-      "inspect_source_opening",
-      "read_opening_slice",
-      "commit_opening_entities",
-      "commit_opening_graph",
-      "commit_opening_state",
-      "publish_opening",
-    ])
-    const publishAction = openingActions.actions.find(action => action.name === "publish_opening")
-    expect(Object.keys(publishAction?.inputSchema?.properties ?? {})).toEqual(["openingReply"])
-    const storytellerConfig = JSON.parse(cardStorytellerAgent) as {
-      enabledModules?: string[]
-      platformTools?: { enabled?: string[] }
-      workspaceAccess?: { level?: number }
-    }
-    expect(storytellerConfig.platformTools?.enabled).toContain("workspace_read")
-    expect(storytellerConfig.platformTools?.enabled).toContain("workspace_write")
-    expect(storytellerConfig.workspaceAccess?.level).toBe(2)
-  })
 
-  it("keeps staged opening recovery, publication, and source summaries executable", async () => {
-    expect(parseOpeningAssistant("你想从哪里开始？\n[[开局选项]]\n- 城门\n- 客栈")).toEqual({
-      displayContent: "你想从哪里开始？",
-      choices: ["城门", "客栈"],
-      openingContinue: false,
-    })
-    expect(parseOpeningAssistant("资料已保存。\n[[开局继续]]")).toEqual({
-      displayContent: "资料已保存。",
-      choices: [],
-      openingContinue: true,
-    })
-    expect(parseOpeningAssistant("资料已保存。", { openingContinue: "[[开局继续]]" })).toMatchObject({ openingContinue: true })
-    const projectedContinuation = projectAssistantReply("资料已保存。\n[[开局继续]]", [
-      { path: "config/reply-projection.json", content: cardReplyProjection, createdAt: 0, updatedAt: 0 },
-    ])
-    expect(projectedContinuation.content).not.toContain("[[开局继续]]")
-    expect(projectedContinuation.displayContent ?? projectedContinuation.content).not.toContain("[[开局继续]]")
-    expect(projectedContinuation.projections).toEqual({ openingContinue: "[[开局继续]]" })
-    expect(parseOpeningAssistant(projectedContinuation.content, projectedContinuation.projections)).toMatchObject({
-      displayContent: "资料已保存。",
-      openingContinue: true,
-    })
-    expect(parseOpeningUser(openingContinueMarker("opening-1234abcd"))).toEqual({
-      kind: "continue",
-      sessionId: "opening-1234abcd",
-    })
-    const recoveryManifest = {
-      version: 1,
-      status: "ready",
-      title: "测试小说",
-      sourceFormat: "txt",
-      importMode: "paste",
-      recommendedExtractionMode: "frontier",
-      chapterDetection: "heuristic",
-      chapterDetectionConfidence: "strong",
-      importedAt: "2026-08-12T00:00:00.000Z",
-      normalizationVersion: "test-v1",
-      totalCharacters: 20,
-      chapterCount: 2,
-      files: { chaptersIndex: "save/source/chapters.index.json" },
-    } as const
-    const recoveryControl = createOpeningControl(recoveryManifest, "canon")
-    expect(isRecoverableOpeningModelState({
-      manifest: recoveryManifest,
-      control: recoveryControl,
-      setupStatus: "pending",
-      hasOpeningNotes: true,
-      runtimeRecoverable: true,
-      frontierRecoverable: true,
-    })).toBe(true)
-    expect(isRecoverableOpeningModelState({
-      manifest: recoveryManifest,
-      control: recoveryControl,
-      setupStatus: "pending",
-      hasOpeningNotes: false,
-      runtimeRecoverable: true,
-      frontierRecoverable: true,
-    })).toBe(false)
-    expect(parseOpeningAssistant("问题\n[[开局选项]]\n- A\n[[/开局选项]]\n[[开局选项]]\n- B")).toBeNull()
-
-    const parsedFrontier = parseFrontier({
-      sourceWindow: { start: 1, end: 2 },
-      extractedThrough: "source:chapter-0002",
-      timeline: [
-        { kind: "source", order: 1, chapter: 1, time: "清晨", label: "醒来", summary: "主角在客栈醒来并确认处境。" },
-        { kind: "source", order: 2, chapter: 2, time: "午后", label: "出门" },
-      ],
-    })
-    const runtimeForTimeline = {
-      turn: 0,
-      worldTime: "清晨",
-      plotOrder: 1,
-      location: null,
-      weather: "",
-      activeSceneRefs: [],
-      protagonistRef: null,
-      extensions: {},
-      updatedAtTurn: 0,
-      updatedBy: null,
-    } as Runtime
-    expect(formatTimelineBlock(runtimeForTimeline, parsedFrontier.frontier!)).toContain("梗概：主角在客栈醒来并确认处境。")
-    const currentSource = parsedFrontier.frontier!.timeline.find(anchor => anchor.kind === "source") as SourceAnchor
-    const futureSource: SourceAnchor = { kind: "source", order: 2, chapter: 2, time: "午后", label: "出门", summary: "主角离开客栈。" }
-    expect(sourceSummaryState(currentSource, 1, new Set())).toBe("visible")
-    expect(sourceSummaryState(futureSource, 1, new Set())).toBe("spoiler")
-    expect(sourceSummaryState(futureSource, 1, new Set([2]))).toBe("visible")
-    expect(sourceSummaryState({ ...futureSource, summary: undefined }, 1, new Set())).toBe("hidden")
-
-    const scriptContent = (suffix: string): string => {
-      const file = worldArchitectFiles.find((entry) => entry.path.endsWith(suffix))
-      if (!file) throw new Error(`Missing opening script: ${suffix}`)
-      return file.content
-    }
-    type OpeningRunner = (
-      input: Record<string, unknown>,
-      tsian: Record<string, unknown>,
-      signal: { throwIfAborted(): void },
-    ) => Promise<Record<string, unknown>>
-    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (...args: string[]) => OpeningRunner
-    const compileOpening = (script: string): OpeningRunner => new AsyncFunction(
-      "input",
-      "tsian",
-      "signal",
-      `${scriptContent("开局建模/scripts/_common.js")}\n${scriptContent("开局建模/scripts/_validation.js")}\n${scriptContent("开局建模/scripts/_opening-workflow.js")}\n${scriptContent(script)}`,
-    )
-    const runEntities = compileOpening("开局建模/scripts/commit-opening-entities.js")
-    const runGraph = compileOpening("开局建模/scripts/commit-opening-graph.js")
-    const runState = compileOpening("开局建模/scripts/commit-opening-state.js")
-    const runPublish = compileOpening("开局建模/scripts/publish-opening.js")
-
-    const hashText = (input: string): string => {
-      let hash = 0x811c9dc5
-      for (let index = 0; index < input.length; index += 1) {
-        hash ^= input.charCodeAt(index)
-        hash = Math.imul(hash, 0x01000193)
-      }
-      return (hash >>> 0).toString(16).padStart(8, "0")
-    }
-    const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
-    const makeFiles = (): Map<string, string> => {
-      const source = { importedAt: "2026-08-12T00:00:00.000Z", normalizationVersion: "test-v1", title: "测试小说", chapterCount: 2 }
-      const sourceHash = hashText(JSON.stringify(source))
-      return new Map<string, string>([
-        ["save/source/manifest.json", json({ ...source, status: "ready" })],
-        ["save/source/chapters.index.json", json({
-          version: 2,
-          chapters: [1, 2].map((index) => ({
-            index,
-            title: `第${index}章`,
-            ref: `source:chapter-${String(index).padStart(4, "0")}`,
-            source: { kind: "shard", shardId: "s1", path: "save/source/shards/s1.txt", start: 0, end: 10 },
-          })),
-        })],
-        ["save/playthrough/opening-interview.json", json({
-          schema: "novel-airp.opening-interview.v2",
-          source: { ...source, hash: sourceHash },
-          session: { id: `opening-${sourceHash}`, slot: `opening-interview-${sourceHash}` },
-          branch: "canon",
-        })],
-        ["save/playthrough/opening-notes.md", "# 开局建模工作笔记\n\n## 已确认\n- 主角与切入点\n"],
-        ["save/playthrough/runtime.json", json({ turn: 0, worldTime: "", plotOrder: 1, location: null, weather: "", activeSceneRefs: [], protagonistRef: null, extensions: {}, updatedAtTurn: 0, updatedBy: null })],
-        ["save/playthrough/frontier.json", json({ sourceWindow: { start: null, end: null }, extractedThrough: null, timeline: [{ kind: "source", order: 1, chapter: 1, time: "元年", label: "开局" }], notes: "" })],
-        ["save/playthrough/understanding-summary.json", json({ status: "pending", title: null, candidateCharacters: [] })],
-        ["save/playthrough/setup-summary.json", json({ status: "pending", summary: null })],
-        ["config/reply-projection.json", json({
-          schema: "tsian.reply-projection.v1",
-          rules: [{ id: "choices", match: "/\\[\\[选项\\]\\]([\\s\\S]*?)\\[\\[\\/选项\\]\\]/g", text: "", project: { choices: "$1|lines|stripList" } }],
-        })],
-        ["game-card.json", json({ runtime: { entrypoints: { playerTurn: "storyteller" } } })],
-        ["agents/storyteller/agent.json", json({ id: "storyteller" })],
-        ["agents/storyteller/AGENT.md", "# Storyteller\n"],
-      ])
-    }
-    const makeRuntime = (files = makeFiles(), options?: { exposeRead?: boolean }) => {
-      const writes: string[] = []
-      const workspaceFiles = (): WorkspaceFile[] =>
-        Array.from(files, ([path, content]): WorkspaceFile => ({ path, content, createdAt: 0, updatedAt: 0 }))
-      const project = vi.fn(async (content: string) => toBrowserScriptReplyProjection(projectAssistantReply(content, workspaceFiles())))
-      const read = vi.fn(async (request: Omit<WorkspaceOperationRequest, "operation">) =>
-        executeWorkspaceOperation(
-          { ...request, operation: "read" },
-          { workspaceFiles: workspaceFiles(), actorLevel: 1, exposedOperations: options?.exposeRead === false ? [] : ["read"] },
-        ))
-      const glob = vi.fn(async ({ pattern }: { pattern: string }) => {
-        const matches = Array.from(files.keys()).filter((path) => {
-          if (pattern === "save/entities/*/*.json") return path.startsWith("save/entities/") && path.split("/").length === 4 && path.endsWith(".json")
-          if (pattern === "save/scenes/*.json") return path.startsWith("save/scenes/") && path.split("/").length === 3 && path.endsWith(".json")
-          if (pattern === "save/relationships/*.json") return path.startsWith("save/relationships/") && path.split("/").length === 3 && path.endsWith(".json")
-          if (pattern === "save/history/turns/turn-*.json") return path.startsWith("save/history/turns/turn-") && path.endsWith(".json")
-          if (pattern.startsWith("save/agents/") && pattern.endsWith("/context*.json")) {
-            const prefix = pattern.slice(0, -14)
-            return path.startsWith(prefix + "/context") && path.endsWith(".json")
-          }
-          return false
-        })
-        return { matches: matches.sort(), truncated: false }
-      })
-      const tsian = {
-        workspace: {
-          read,
-          write: vi.fn(async ({ path, content }: { path: string; content: string }) => {
-            files.set(path, content)
-            writes.push(path)
-            return { path, content }
-          }),
-          glob,
-          list: vi.fn(async () => ({ entries: [] })),
-        },
-        reply: { project },
-        trace: vi.fn(),
-        memory: { set: vi.fn() },
-      }
-      return { files, writes, project, read, glob, tsian }
-    }
-    const entitiesPayload = {
-      entities: [
-        { id: "character:hero", name: "主角", brief: "测试主角" },
-        { id: "character:friend", name: "同伴", brief: "开局同伴" },
-        { id: "location:inn", name: "客栈", brief: "开局地点" },
-        { id: "container:bag", name: "行囊", brief: "主角的行囊" },
-      ],
-    }
-    const graphPayload = {
-      scenes: [{ id: "scene:opening", name: "客栈清晨", location: { ref: "location:inn" }, present: [{ ref: "character:hero" }] }],
-      relationships: [{ subject: "character:hero", edges: [{ to: "character:friend", type: "同伴" }] }],
-    }
-    const statePayload = {
-      runtime: { protagonistRef: { ref: "character:hero" }, location: { ref: "location:inn" }, activeSceneRefs: [{ ref: "scene:opening" }] },
-      frontier: {
-        sourceWindow: { startIndex: 1, endIndex: 2 },
-        timeline: [{ chapter: 1, time: "清晨", label: "醒来", summary: "主角在客栈醒来并确认处境。" }],
-      },
-      summary: "主角在客栈醒来。",
-    }
-    const openingReply = "晨光照进客栈。\n[[选项]]\n- 起身\n[[/选项]]"
-    const signal = { throwIfAborted() {} }
-    const stageModel = async (runtime: ReturnType<typeof makeRuntime>) => {
-      await expect(runEntities(entitiesPayload, runtime.tsian, signal)).resolves.toMatchObject({ status: "ready", phase: "entities" })
-      runtime.files.set("save/playthrough/opening-notes.md", "# 开局建模工作笔记\n\n## 已完成\n- 实体\n")
-      await expect(runGraph(graphPayload, runtime.tsian, signal)).resolves.toMatchObject({ status: "ready", phase: "graph" })
-      runtime.files.set("save/playthrough/opening-notes.md", "# 开局建模工作笔记\n\n## 已完成\n- 实体\n- 场景与关系\n")
-      await expect(runState(statePayload, runtime.tsian, signal)).resolves.toMatchObject({ status: "ready", phase: "state" })
-      runtime.files.set("save/playthrough/opening-notes.md", "# 开局建模工作笔记\n\n## 已完成\n- 世界模型\n\n## 下一步\n- 正文与发布\n")
-    }
-
-    const success = makeRuntime()
-    await stageModel(success)
-    expect(JSON.parse(success.files.get("save/entities/container/bag.json") ?? "null")).toMatchObject({
-      id: "container:bag",
-      type: "container",
-      contents: [],
-    })
-    expect(JSON.parse(success.files.get("save/playthrough/setup-summary.json") ?? "null")).toEqual({ status: "pending", summary: "主角在客栈醒来。" })
-    expect(JSON.parse(success.files.get("save/playthrough/runtime.json") ?? "null").protagonistRef).toEqual({ ref: "character:hero", name: "主角" })
-    expect(JSON.parse(success.files.get("save/playthrough/frontier.json") ?? "null").timeline[0]).toMatchObject({
-      kind: "source",
-      order: 1,
-      summary: "主角在客栈醒来并确认处境。",
-    })
-    await expect(runEntities(entitiesPayload, success.tsian, signal)).resolves.toMatchObject({ alreadyComplete: true })
-    await expect(runGraph(graphPayload, success.tsian, signal)).resolves.toMatchObject({ alreadyComplete: true })
-    const writesBeforeStateRepeat = success.writes.length
-    await expect(runState(statePayload, success.tsian, signal)).resolves.toMatchObject({ alreadyComplete: true, phase: "state" })
-    expect(success.writes).toHaveLength(writesBeforeStateRepeat)
-    await expect(runPublish({ openingReply }, success.tsian, signal)).resolves.toMatchObject({ status: "complete" })
-    const turn0Assistant = JSON.parse(success.files.get("save/history/turns/turn-000000.json") ?? "null").timeline[0]
-    expect(turn0Assistant).toEqual({ kind: "assistant", content: "晨光照进客栈。\n", projections: { choices: ["起身"] } })
-    expect(JSON.parse(success.files.get("save/agents/storyteller/context.json") ?? "null").recentTurns[0].content).toBe("晨光照进客栈。\n")
-    const writesBeforeRepeat = success.writes.length
-    await expect(runPublish({ openingReply }, success.tsian, signal)).resolves.toMatchObject({ alreadyComplete: true })
-    expect(success.writes).toHaveLength(writesBeforeRepeat)
-
-    const unsafeEntity = makeRuntime()
-    const unsafePayload = JSON.parse(JSON.stringify(entitiesPayload)) as typeof entitiesPayload
-    unsafePayload.entities[0]!.id = "character:../hero"
-    await expect(runEntities(unsafePayload, unsafeEntity.tsian, signal)).rejects.toMatchObject({ code: "OPENING_ENTITY_ID_INVALID" })
-    expect(unsafeEntity.writes).toEqual([])
-
-    const badGraph = makeRuntime()
-    await runEntities(entitiesPayload, badGraph.tsian, signal)
-    const entityWrites = badGraph.writes.slice()
-    const missingGraph = JSON.parse(JSON.stringify(graphPayload)) as typeof graphPayload
-    missingGraph.scenes[0]!.location.ref = "location:missing"
-    await expect(runGraph(missingGraph, badGraph.tsian, signal)).rejects.toMatchObject({ code: "OPENING_REF_UNKNOWN" })
-    expect(badGraph.writes).toEqual(entityWrites)
-    expect(badGraph.files.has("save/scenes/opening.json")).toBe(false)
-
-    const badState = makeRuntime()
-    await runEntities(entitiesPayload, badState.tsian, signal)
-    await runGraph(graphPayload, badState.tsian, signal)
-    const graphWrites = badState.writes.slice()
-    const missingState = JSON.parse(JSON.stringify(statePayload)) as typeof statePayload
-    missingState.runtime.activeSceneRefs[0]!.ref = "scene:missing"
-    await expect(runState(missingState, badState.tsian, signal)).rejects.toMatchObject({ code: "OPENING_REF_UNKNOWN" })
-    expect(badState.writes).toEqual(graphWrites)
-    expect(JSON.parse(badState.files.get("save/playthrough/setup-summary.json") ?? "null").summary).toBeNull()
-
-    const badPublish = makeRuntime()
-    await stageModel(badPublish)
-    const stagedModel = new Map(Array.from(badPublish.files).filter(([path]) =>
-      path.startsWith("save/entities/")
-      || path.startsWith("save/scenes/")
-      || path.startsWith("save/relationships/")
-      || path === "save/playthrough/runtime.json"
-      || path === "save/playthrough/frontier.json"))
-    const writesBeforePublish = badPublish.writes.length
-    await expect(runPublish({ openingReply: "晨光照进客栈。" }, badPublish.tsian, signal)).rejects.toMatchObject({
-      code: "OPENING_REPLY_PROJECTION_FAILED",
-      details: { issues: expect.arrayContaining([expect.objectContaining({ code: "choices.missing" })]) },
-    })
-    expect(badPublish.writes).toHaveLength(writesBeforePublish)
-    expect(badPublish.files.has("save/history/turns/turn-000000.json")).toBe(false)
-    for (const [path, content] of stagedModel) expect(badPublish.files.get(path)).toBe(content)
-
-    const readUnavailable = makeRuntime(makeFiles(), { exposeRead: false })
-    await expect(runEntities(entitiesPayload, readUnavailable.tsian, signal)).rejects.toMatchObject({ code: "WORKSPACE_OPERATION_NOT_EXPOSED" })
-    expect(readUnavailable.writes).toEqual([])
-
-    const startedFiles = makeFiles()
-    startedFiles.set("save/playthrough/setup-summary.json", json({ status: "complete", summary: "完成", enteredPlay: true }))
-    startedFiles.set("save/playthrough/runtime.json", json({ turn: 1, worldTime: "次日", weather: "晴", activeSceneRefs: [], extensions: {} }))
-    const started = makeRuntime(startedFiles)
-    await expect(runPublish({ openingReply }, started.tsian, signal)).rejects.toMatchObject({ code: "OPENING_PLAY_ALREADY_STARTED" })
-    expect(started.writes).toEqual([])
-
-    const oldAtomicHandoff = { ...entitiesPayload, ...graphPayload, ...statePayload, openingReply }
-    const publishHandoff = { skill: "开局建模", script: "publish_opening", input: {}, inputRefs: { openingReply: "tool-result-0" } }
-    const oldAtomicCharacters = JSON.stringify(oldAtomicHandoff).length
-    const publishCharacters = JSON.stringify(publishHandoff).length
-    expect(publishCharacters).toBeLessThan(oldAtomicCharacters * 0.25)
-    expect(Object.keys(publishHandoff.input)).toEqual([])
-    expect(JSON.stringify(publishHandoff)).not.toContain("entities")
-    expect(JSON.stringify(publishHandoff)).not.toContain("frontier")
-  })
 })
 
 describe("Assistant Runtime transaction smoke", () => {

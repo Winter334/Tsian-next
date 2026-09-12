@@ -254,7 +254,7 @@ function onNavigate(item: "story" | "character" | "timeline" | "settings") {
         <Transition name="view-soft">
           <CharacterView v-if="navCurrent === 'character'" class="view-layer" />
         </Transition>
-        <!-- 时间线视图：v-if 卸载/重挂——切走时释放 frontier 读取，回来时重新读 frontier.json。 -->
+        <!-- 时间线视图：v-if 卸载/重挂——每次进入重新读取本局历史摘要。 -->
         <Transition name="view-soft">
           <TimelineView v-if="navCurrent === 'timeline'" class="view-layer timeline-view" />
         </Transition>

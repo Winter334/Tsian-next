@@ -25,7 +25,11 @@ async function maintenanceCore(operation, input, tsian, signal) {
   }
   function parse(value) { return value === null ? null : JSON.parse(value); }
   const session = parse(await raw(SESSION));
-  if (!session || !Number.isSafeInteger(session.turn) || !session.token || !session.baselines) fail("本轮资料尚未准备好，请重新发起整理。");
+  if (!session || !Number.isSafeInteger(session.turn) || session.turn < 0 || !session.token || !session.baselines) fail("本轮资料尚未准备好，请重新发起整理。");
+  if (session.turn === 0) {
+    const opening = parse(await raw("save/playthrough/opening-state.json"));
+    if (!opening || !opening.approved || !opening.published) fail("开局正文尚未落定，不能维护。");
+  }
   const definitions = parse(await raw(FIELDS));
   // The platform's Skill validator checks top-level types only. Validate this
   // card's complete semantic protocol, using the declaration as the single source.
@@ -43,7 +47,7 @@ async function maintenanceCore(operation, input, tsian, signal) {
       : type === "integer" ? Number.isSafeInteger(value) : type === "number" ? typeof value === "number" && Number.isFinite(value) : typeof value === type;
     if (types.length && !types.some(matches)) fail(`${label} 的内容类型不合适。`);
     if (schema.enum && !schema.enum.includes(value)) fail(`${label} 的选项无效。`);
-    if (typeof value === "string" && schema.maxLength !== undefined && value.length > schema.maxLength) fail(`${label} 的文字过长。`);
+    if (typeof value === "string" && ((schema.minLength !== undefined && value.trim().length < schema.minLength) || (schema.maxLength !== undefined && value.length > schema.maxLength))) fail(`${label} 的文字过长。`);
     if (typeof value === "number" && ((schema.minimum !== undefined && value < schema.minimum) || (schema.maximum !== undefined && value > schema.maximum))) fail(`${label} 的数值超出范围。`);
     if (Array.isArray(value)) {
       if (schema.maxItems !== undefined && value.length > schema.maxItems) fail(`${label} 的条目过多。`);
@@ -88,6 +92,7 @@ async function maintenanceCore(operation, input, tsian, signal) {
     ]) result[name] = arr(entity[source]).map(value => Object.fromEntries(keys.filter(key => obj(value)[key] !== undefined).map(key => [key, obj(value)[key]])));
     result.experiences = arr(entity.history).map(value => typeof value === "string" ? value : obj(value).event).filter(value => typeof value === "string");
     result.attributes = obj(entity.attributes);
+    for (const [name, field] of [["tier", "powerTier"], ["level", "powerLevel"], ["ratings", "ratings"]]) if (entity[field] !== undefined) result[name] = clone(entity[field]);
     result.containers = arr(entity.containers).map(value => obj(value).ref);
     result.contents = arr(entity.contents).map(value => ({ ref: obj(value).ref, quantity: obj(value).count ?? 1 }));
     result.equipment = entity.id.startsWith("character:") ? Object.entries(obj(entity.equipment)).flatMap(([slot, entries]) => arr(entries).map((value, index) => ({ slot, index, item: obj(value).ref ?? null }))) : [];
@@ -95,35 +100,51 @@ async function maintenanceCore(operation, input, tsian, signal) {
     result.details = Object.fromEntries(Object.entries(obj(entity.extensions)).map(([name, value]) => [name, obj(value).value]));
     return result;
   }
-  if (operation === "lookup") {
-    const refs = new Set(arr(input.refs));
-    const names = arr(input.names);
-    let truncated = false;
-    if (!refs.size && !names.length) fail("请提供需要查询的对象或姓名。");
-    if (names.length) {
-      const listing = await tsian.workspace.glob({ scope: "effective", pattern: "save/entities/*/*.json", limit: 400 });
-      truncated = !!listing.truncated;
-      for (const path of arr(listing.matches)) {
-        const entity = parse(await raw(path));
-        if (!entity) continue;
-        if (names.some(name => entity.name === name || arr(entity.aliases).includes(name))) refs.add(entity.id);
+  const normalized = name => String(name || "").normalize("NFKC").trim().toLocaleLowerCase().replace(/\s+/g, "");
+  const namesOf = entity => [entity.name, ...arr(entity.aliases)].map(normalized).filter(Boolean);
+  // Complete, paged enumeration: an output page limit is never proof of absence.
+  async function inventory() {
+    const result = [];
+    for (const path of ["save/entities/character", "save/entities/item", "save/entities/container", "save/entities/location", "save/scenes"]) {
+      let offset = 0;
+      while (true) {
+        const page = await tsian.workspace.list({ scope: "effective", path, recursive: false, offset, limit: 200 });
+        for (const entry of arr(page.entries)) {
+          if (entry.kind !== "file" || !entry.path.endsWith(".json")) continue;
+          const entity = parse(await raw(entry.path));
+          if (entity?.id) result.push(entity);
+        }
+        if (!page.truncated) break;
+        if (!arr(page.entries).length) fail("无法完整检查名称候选；没有创建任何对象。请重试查询。");
+        offset += page.entries.length;
       }
     }
+    return result.sort((a, b) => a.id.localeCompare(b.id));
+  }
+  const sceneView = entity => ({ ref: entity.id, name: entity.name, aliases: arr(entity.aliases), location: obj(entity.location).ref, participants: arr(entity.present).map(value => value.ref), status: entity.status,
+    situation: obj(obj(entity.extensions)["来客"]).value, time: obj(obj(entity.extensions)["时间"]).value });
+  if (operation === "lookup") {
+    const refs = new Set(arr(input.refs)), names = arr(input.names);
+    if (!refs.size && !names.length) fail("请提供需要查询的对象或姓名。");
+    const matchedNames = new Set();
+    if (names.length) for (const entity of await inventory()) {
+      for (const name of names) if (namesOf(entity).includes(normalized(name))) { refs.add(entity.id); matchedNames.add(name); }
+    }
+    const ordered = [...refs], offset = input.offset || 0, limit = input.limit || 20;
     const entities = [], scenes = [], relationships = [], missing = [];
-    for (const ref of [...refs].slice(0, 20)) {
+    for (const ref of ordered.slice(offset, offset + limit)) {
       const entity = await tracked(pathFor(ref), false);
       if (!entity) { missing.push(ref); continue; }
-      if (ref.startsWith("scene:")) {
-        scenes.push({ ref: entity.id, name: entity.name, location: obj(entity.location).ref, participants: arr(entity.present).map(value => value.ref), status: entity.status,
-          situation: obj(obj(entity.extensions)["来客"]).value, time: obj(obj(entity.extensions)["时间"]).value });
-      } else entities.push(project(entity));
+      if (ref.startsWith("scene:")) scenes.push(sceneView(entity));
+      else entities.push(project(entity));
       if (ref.startsWith("character:")) {
         const relation = await tracked(`save/relationships/character-${ref.slice(10)}.json`, false);
         for (const edge of arr(obj(relation).edges)) relationships.push({ from: ref, to: edge.to, kind: edge.type, description: edge.description || edge.note || "" });
       }
     }
     await tsian.workspace.write({ scope: "save-runtime", path: SESSION, content: JSON.stringify(session), mediaType: "application/json" });
-    return { entities, scenes, relationships, missing, unmatchedNames: names.filter(name => !entities.some(entity => entity.name === name || arr(entity.aliases).includes(name))), truncated: truncated || refs.size > 20 };
+    const nextOffset = offset + limit < ordered.length ? offset + limit : null;
+    return { entities, scenes, relationships, missing, unmatchedNames: names.filter(name => !matchedNames.has(name)), searchComplete: true, truncated: nextOffset !== null, nextOffset, total: ordered.length };
   }
   if (operation !== "submit") fail("未知的维护动作。");
   // Verify the evidence before staging any business mutation. The runner also
@@ -174,6 +195,28 @@ async function maintenanceCore(operation, input, tsian, signal) {
     }
     entity[field] = values;
   }
+  const newObjects = [...arr(input.entities), ...arr(input.scenes)].filter(change => !change.ref);
+  if (newObjects.length) {
+    const existing = await inventory(), conflicts = [];
+    const newKeys = new Set();
+    for (const change of newObjects) {
+      const key = text(change.key, "新对象代号", 80);
+      if (key.startsWith("@") || newKeys.has(key)) fail("新对象代号重复或以 @ 开头。");
+      newKeys.add(key);
+      text(change.name, "名称", 150);
+    }
+    for (const change of newObjects) {
+      const names = namesOf(change);
+      const candidates = [...existing, ...newObjects.filter(other => other !== change).map(other => ({ ...other, id: "@" + other.key }))]
+        .filter(other => namesOf(other).some(name => names.includes(name)));
+      const decisions = arr(change.distinctFrom);
+      if (decisions.some(value => !candidates.some(other => other.id === value.ref))) fail("名称候选已变化，请重新查询后确认区别。");
+      if (candidates.some(other => !decisions.some(value => value.ref === other.id && text(value.reason, "身份区别", 500)))) {
+        conflicts.push({ key: change.key, candidates: candidates.slice(0, 20).map(other => ({ ref: other.id, name: other.name, aliases: arr(other.aliases).slice(0, 8), summary: String(other.brief || other.summary || "").slice(0, 400) })), total: candidates.length, truncated: candidates.length > 20 });
+      }
+    }
+    if (conflicts.length) return { status: "candidates", conflicts: conflicts.slice(0, 1), remainingConflicts: Math.max(0, conflicts.length - 1), message: "整批未应用。请 lookup 并区分候选；同一对象用 ref，不同对象明确 distinctFrom。" };
+  }
   // Allocate all new entities/scenes first, so @keys can reference each other.
   for (const [kind, changes] of [["entity", arr(input.entities)], ["scene", arr(input.scenes)]]) {
     for (const change of changes) {
@@ -192,16 +235,83 @@ async function maintenanceCore(operation, input, tsian, signal) {
     }
   }
   const runtime = await doc(RUNTIME);
+  const worldSchema = await doc("save/schema/world.json", false);
+  const attributeRefreshRefs = new Set();
+  function completeCharacterAttributes(entity, change) {
+    if (!worldSchema || !arr(worldSchema.dimensions).length) fail("人物属性需要已提交的世界维度与规则，不能猜测缺失的 schema。");
+    const dimensions = worldSchema.dimensions, tiers = worldSchema.power.tiers;
+    const previousTier = entity.powerTier, previousLevel = entity.powerLevel;
+    const tier = change.tier ?? previousTier;
+    if (change.tier !== undefined && !tiers.includes(change.tier)) fail("请使用世界规则中明确的力量阶梯。");
+    // A new tier does not inherit the previous tier's intra-tier level.
+    const level = change.level ?? (tier === previousTier ? previousLevel : undefined);
+    if (level && level.current > level.total) fail("阶内等级超过总级数。");
+    const positionChanged = tier !== previousTier || level?.current !== previousLevel?.current || level?.total !== previousLevel?.total;
+    const previousRatings = obj(entity.ratings), ratings = { ...previousRatings };
+    for (const name of Object.keys(obj(change.ratings))) if (!dimensions.some(d => d.name === name)) fail("人物评价包含未定义的属性。");
+    const q = tiers.length > 1 ? Math.pow({ gentle: 4, moderate: 30, steep: 1000 }[worldSchema.power.scale], 1 / (tiers.length - 1)) : 1;
+    function factor(dimension, atTier, atLevel) {
+      if (dimension.kind === "talent" || !tiers.length) return 1;
+      const index = tiers.indexOf(atTier);
+      if (index < 0) fail(`${entity.name} 缺少属性换算所需的 tier；请依据已知境界或身份表现明确估档，不会默认最低阶。`);
+      const fraction = atLevel && atLevel.total > 1 ? (atLevel.current - 1) / (atLevel.total - 1) : 0;
+      return Math.pow(q, (index + fraction) * (dimension.kind === "hybrid" ? 0.5 : 1));
+    }
+    entity.attributes = { ...obj(entity.attributes) };
+    for (const dimension of dimensions) {
+      const name = dimension.name, current = entity.attributes[name];
+      if (current !== undefined && !Number.isSafeInteger(current)) fail("已有属性不是可用的安全整数。");
+      const supplied = own(obj(change.ratings), name), previousRating = previousRatings[name];
+      const rating = supplied ? change.ratings[name] : previousRating ?? 5;
+      const reestimate = supplied && rating !== previousRating;
+      const rescale = positionChanged && dimension.kind !== "talent" && (previousTier !== undefined || !tiers.length);
+      // Normal updates, repeated estimates and unrelated ratings preserve accepted values.
+      if (current !== undefined && !reestimate && !rescale) continue;
+      const scale = factor(dimension, tier, level), projected = Math.round(rating * scale);
+      const applied = Object.values(obj(entity.equipment)).flatMap(arr).reduce((sum, slot) => sum + (obj(slot.applied)[name] || 0), 0);
+      let next = projected + applied;
+      if (current !== undefined) {
+        const oldScaleKnown = dimension.kind === "talent" || !tiers.length || tiers.includes(previousTier);
+        if (previousRating !== undefined && oldScaleKnown) {
+          // Apply the change of the rating/tier projection, not a replacement of
+          // the accepted stat: persistent training deltas and worn effects survive.
+          next = current + projected - Math.round(previousRating * factor(dimension, previousTier, previousLevel));
+        } else if (!supplied && oldScaleKnown) {
+          // Existing numerical facts with no relative rating remain authoritative.
+          next = Math.round((current - applied) * scale / factor(dimension, previousTier, previousLevel)) + applied;
+        }
+      }
+      if (!Number.isSafeInteger(next)) fail("属性计算超出可用范围。");
+      entity.attributes[name] = next;
+      if (current === undefined || supplied || previousRating !== undefined) ratings[name] = rating;
+      if (current !== next) attributeRefreshRefs.add(entity.id);
+    }
+    if (tier !== undefined) entity.powerTier = tier;
+    if (level !== undefined) entity.powerLevel = clone(level);
+    else if (tier !== previousTier) delete entity.powerLevel;
+    // Internal game estimates are not a replacement for an explicit identity.realm.
+    entity.ratings = ratings;
+  }
   for (const change of arr(input.entities)) {
     const ref = resolve(change.ref || `@${change.key}`);
     requireKnown(ref);
     if (ref.startsWith("scene:")) fail("场景变化请使用场景资料分类。");
     const entity = await doc(pathFor(ref));
+    const previousName = entity.name;
     if (change.name !== undefined) entity.name = text(change.name, "名称", 150);
     for (const [key, source] of Object.entries(definitions.entityFields)) {
       if (!own(change, key)) continue;
-      if (["identity", "goals"].includes(key)) entity[source] = { ...obj(entity[source]), ...change[key] };
+      if (key === "aliases") entity[source] = [...new Set([...arr(entity[source]), ...change[key]])];
+      else if (["identity", "goals"].includes(key)) entity[source] = { ...obj(entity[source]), ...change[key] };
       else entity[source] = clone(change[key]);
+    }
+    if (previousName !== entity.name) entity.aliases = [...new Set([...arr(entity.aliases), previousName])];
+    const hasNumericInput = change.tier !== undefined || change.ratings !== undefined || change.level !== undefined;
+    if (ref.startsWith("character:")) completeCharacterAttributes(entity, change);
+    else if (hasNumericInput) fail("人物评价只适用于人物。");
+    if (ref.startsWith("character:") && !change.ref) {
+      entity.containers = [];
+      entity.equipment = Object.fromEntries(Object.entries(worldSchema?.equipmentSlots || {}).map(([slot, count]) => [slot, Array.from({ length: count }, () => ({ ref: null }))]));
     }
     if (own(change, "itemType") && !ref.startsWith("item:")) fail("物品种类只适用于物品。");
     applyItems(entity, "status", "status", change.states);
@@ -258,7 +368,9 @@ async function maintenanceCore(operation, input, tsian, signal) {
     if (!ref.startsWith("scene:")) fail("场景变化需要场景对象。");
     requireKnown(ref);
     const scene = await doc(pathFor(ref));
+    const previousName = scene.name;
     if (change.name !== undefined) scene.name = text(change.name, "场景名称", 150);
+    scene.aliases = [...new Set([...arr(scene.aliases), ...arr(change.aliases), ...(previousName !== scene.name ? [previousName] : [])])];
     if (change.location !== undefined) scene.location = await pointer(change.location, ["location"]);
     if (change.participants) scene.present = await Promise.all([...new Set(change.participants)].map(async value => ({ ref: await requireRef(value, ["character", "item", "container"]) })));
     if (change.status) scene.status = change.status;
@@ -291,6 +403,11 @@ async function maintenanceCore(operation, input, tsian, signal) {
     }
   }
   const world = obj(input.world);
+  if (world.protagonist !== undefined) {
+    const protagonist = await pointer(world.protagonist, ["character"]);
+    if (session.turn !== 0 && protagonist.ref !== obj(runtime.protagonistRef).ref) fail("不能在普通维护中更换本局主角身份。");
+    runtime.protagonistRef = protagonist;
+  }
   if (world.time !== undefined) runtime.worldTime = world.time;
   if (world.weather !== undefined) runtime.weather = world.weather;
   if (world.location !== undefined) runtime.location = world.location === null ? null : await pointer(world.location, ["location"]);
@@ -309,14 +426,20 @@ async function maintenanceCore(operation, input, tsian, signal) {
       else runtime.extensions[name] = { render: typeof value === "number" ? "number" : Array.isArray(value) ? "list" : "text", value };
     }
   }
-  if (world.plotOrder !== undefined) {
-    if (world.plotOrder < (runtime.plotOrder || 0)) fail("剧情进度不能倒退；回溯应恢复此前状态。");
-    runtime.plotOrder = world.plotOrder;
-  }
   // Keep denormalized display names attached to the authoritative refs.
   if (obj(runtime.location).ref) runtime.location = await pointer(runtime.location.ref, ["location"]);
   if (obj(runtime.protagonistRef).ref) runtime.protagonistRef = await pointer(runtime.protagonistRef.ref, ["character"]);
   runtime.activeSceneRefs = await Promise.all(arr(runtime.activeSceneRefs).map(entry => pointer(entry.ref, ["scene"])));
+  if (session.turn === 0) {
+    if (!obj(runtime.protagonistRef).ref || !obj(runtime.location).ref || !runtime.activeSceneRefs.length) fail("首次建档必须明确主角、当前地点与活跃场景。");
+    let present = false;
+    for (const entry of runtime.activeSceneRefs) {
+      const scene = await doc(pathFor(entry.ref));
+      if (scene.status !== "active") fail("起始场景必须活跃。");
+      if (arr(scene.present).some(value => value.ref === runtime.protagonistRef.ref) && obj(scene.location).ref === runtime.location.ref) present = true;
+    }
+    if (!present) fail("首次建档中主角应在当前地点的活跃场景内。");
+  }
   runtime.turn = session.turn + 1;
   runtime.updatedAtTurn = session.turn;
   runtime.updatedBy = "stage-manager";
@@ -347,6 +470,10 @@ async function maintenanceCore(operation, input, tsian, signal) {
     },
     write: async request => { stage(request.path, JSON.parse(request.content)); return { path: request.path }; },
   } };
+  for (const ref of attributeRefreshRefs) {
+    try { await equipmentManagementCore("refresh", { characterRef: ref, attributeChanges: {} }, equipmentSdk, signal, { actionMode: false }); }
+    catch (error) { fail(error.message || "人物属性计算失败。"); }
+  }
   for (const change of arr(input.equipment)) {
     const ref = await requireRef(change.character, ["character"]);
     const character = await doc(pathFor(ref));
@@ -414,19 +541,6 @@ async function maintenanceCore(operation, input, tsian, signal) {
     }
     stage(SEEDS, lines.join("\n") + "\n");
   }
-  if (arr(input.milestones).length) {
-    const path = "save/playthrough/frontier.json";
-    const frontier = await doc(path);
-    const sourceOrders = new Set(arr(frontier.timeline).filter(node => node.kind === "source").map(node => node.order));
-    for (const milestone of input.milestones) {
-      if ((milestone.sourceOrder !== null && !sourceOrders.has(milestone.sourceOrder)) || (milestone.alignment !== "diverged" && milestone.sourceOrder === null)) fail("请明确这个显著事件与已有原著节点的关系；原创事件只能标记为偏离。");
-      const node = { kind: "player", order: milestone.plotOrder ?? runtime.plotOrder, turn: session.turn, time: runtime.worldTime || "", label: text(milestone.label, "显著事件", 240), alignment: milestone.alignment, sourceRef: milestone.sourceOrder };
-      frontier.timeline = arr(frontier.timeline);
-      if (!frontier.timeline.some(previous => previous.kind === "player" && previous.turn === node.turn && previous.order === node.order && previous.label === node.label && previous.alignment === node.alignment && previous.sourceRef === node.sourceRef)) frontier.timeline.push(node);
-    }
-    frontier.updatedAt = new Date().toISOString(); frontier.updatedBy = "stage-manager";
-    stage(path, frontier);
-  }
   const recall = input.recall;
   const summary = text(recall.summary, "回合摘要", 240);
   if (recall.events.some(value => !definitions.eventTypes.includes(value))) fail("回合事件类别无效。");
@@ -435,7 +549,7 @@ async function maintenanceCore(operation, input, tsian, signal) {
   history.meta = { ...obj(history.meta), recall: {
     schema: "沉浸阅读器.turn-recall.v1", "摘要": summary,
     "涉及实体": [...new Set(involved)], "事件类型": [...new Set(recall.events)], "标签": [...new Set(recall.tags)],
-    "剧情坐标": runtime.plotOrder, "时间": String(runtime.worldTime || "").slice(0, 80),
+    "重要节点": recall.important === true, "时间": String(runtime.worldTime || "").slice(0, 80),
   }, maintenance: { token: session.token, source: session.source } };
   // Recheck all documents read by the planner/validators before the first write.
   for (const [path, before] of Object.entries(session.baselines)) if (await raw(path) !== before) fail("相关资料已经变化，请重新发起整理。");

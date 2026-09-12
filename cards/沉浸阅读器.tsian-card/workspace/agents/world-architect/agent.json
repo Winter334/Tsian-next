@@ -1,52 +1,51 @@
 {
   "id": "world-architect",
   "title": "世界架构师",
-  "summary": "主持开局访谈并分阶段落成首回合世界模型；后续负责 schema/world model 与 frontier 素材。",
-  "contacts": [
-    "stage-manager",
-    "storyteller"
-  ],
-  "contextPaths": [
-    {
-      "path": "save/source/manifest.json",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
-      "path": "save/schema/current.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
-      "path": "save/playthrough/frontier.json",
-      "role": "user",
-      "position": "runtime"
-    }
-  ],
+  "summary": "世界概念、schema 属性含义与规则的语义适配；不预建实体或规划剧情。",
+  "contacts": [],
+  "contextPaths": [],
   "skills": {
     "enabled": [
       "agents/world-architect/skills/开局建模/SKILL.md",
-      "agents/world-architect/skills/frontier推进/SKILL.md"
+      "skills/原著阅读/SKILL.md"
     ],
     "disabled": []
   },
   "tools": {
-    "enabled": [
-      "tools/json_edit/tool.json",
-      "tools/text_edit/tool.json"
-    ],
+    "enabled": [],
     "disabled": [
-      "roll_dice"
+      "commit_turn_recall",
+      "copy",
+      "delete",
+      "diff",
+      "edit",
+      "glob",
+      "json_edit",
+      "list",
+      "move",
+      "query_entities",
+      "read",
+      "read_entities",
+      "read_entity",
+      "read_maintenance_context",
+      "read_relationships",
+      "read_scene",
+      "roll_dice",
+      "search",
+      "semantic_search",
+      "text_edit",
+      "write"
     ]
   },
   "platformTools": {
     "enabled": [
       "workspace_read",
-      "workspace_write",
-      "workspace_semantic_search",
-      "agent_call"
+      "workspace_write"
     ],
-    "disabled": []
+    "disabled": [
+      "agent_call",
+      "workspace_semantic_search"
+    ]
   },
   "workspaceAccess": {
     "level": 1

@@ -337,6 +337,11 @@ function assertBrowserRegressions(summary) {
     fail("Browser importer did not verify semantic maintenance execution and rollback.")
   }
   console.log("Verified imported semantic Skill in a real browser Worker: receipt, idempotency, write/output rollback; no AI calls.")
+  const opening = summary?.semanticOpeningRegression
+  if (!opening || ["realWorkers", "sourceRead", "modelAtomicity", "actionAtomicity", "turnZeroMaintenance", "idempotency", "noPrebuiltEntities", "sourceInjection", "candidateProtection", "historicalTimeline", "firstFormalTurn", "attributeBaselines", "stableAttributeUpdates"].some(key => opening[key] !== true)) {
+    fail("Browser importer did not verify semantic opening and turn-zero maintenance.")
+  }
+  console.log("Verified imported opening Skill and Frontend Action in real Workers: world-only adaptation, source injection, atomic publication/retries, turn-zero initialization, namesake protection, settled history and stable attribute baselines; no AI calls.")
   const initial = summary?.initialSaveRegression
   if (!Number.isInteger(initial?.templateFileCount) || initial.templateFileCount <= 0
     || initial.savedFileCount !== initial.templateFileCount + 1

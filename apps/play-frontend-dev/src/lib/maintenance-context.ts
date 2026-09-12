@@ -32,6 +32,9 @@ export function projectMaintenanceEntity(entity: Document, fields: MaintenanceFi
   }
   view.experiences = array(entity.history).map(value => typeof value === "string" ? value : object(value).event).filter(value => typeof value === "string")
   view.attributes = object(entity.attributes)
+  for (const [name, field] of [["tier", "powerTier"], ["level", "powerLevel"], ["ratings", "ratings"]] as const) {
+    if (entity[field] !== undefined) view[name] = entity[field]
+  }
   view.containers = array(entity.containers).map(value => object(value).ref)
   view.contents = array(entity.contents).map(value => ({ ref: object(value).ref, quantity: object(value).count ?? 1 }))
   view.equipment = String(entity.id).startsWith("character:") ? Object.entries(object(entity.equipment)).flatMap(([slot, entries]) => array(entries).map((value, index) => ({ slot, index, item: object(value).ref ?? null }))) : []
@@ -54,7 +57,7 @@ export function maintenanceWorldRules(text: string, fields: MaintenanceFields): 
 export interface PreparedMaintenance { turn: number; token: string; alreadyApplied: boolean }
 
 export async function prepareMaintenanceContext(workspace: Workspace, turn: number): Promise<PreparedMaintenance> {
-  if (!Number.isSafeInteger(turn) || turn < 1) throw new Error("正文回合编号无效。")
+  if (!Number.isSafeInteger(turn) || turn < 0) throw new Error("正文回合编号无效。")
   const baselines: Record<string, string | null> = {}
   async function read(path: string, required = false): Promise<string | null> {
     const file = await workspace.read(path, "effective")
@@ -66,6 +69,10 @@ export async function prepareMaintenanceContext(workspace: Workspace, turn: numb
   async function json(path: string, required = false): Promise<Document> {
     const text = await read(path, required)
     return text === null ? {} : object(JSON.parse(text))
+  }
+  if (turn === 0) {
+    const opening = await json("save/playthrough/opening-state.json", true)
+    if (opening.published !== true || opening.approved !== true) throw new Error("开局正文尚未落定，不能维护。")
   }
   const turnPath = `save/history/turns/turn-${String(turn).padStart(6, "0")}.json`
   const history = await json(turnPath, true)
@@ -80,7 +87,8 @@ export async function prepareMaintenanceContext(workspace: Workspace, turn: numb
   }
   const fields = JSON.parse((await read(FIELDS_PATH, true))!) as MaintenanceFields
   const runtime = await json("save/playthrough/runtime.json", true)
-  const frontier = await json("save/playthrough/frontier.json")
+  const opening = turn === 0 ? await json("save/playthrough/opening-state.json", true) : null
+  const worldSchema = await json("save/schema/world.json")
   const rules = maintenanceWorldRules(await read("save/schema/current.md") ?? "", fields)
   const refs = new Set<string>()
   const protagonist = object(runtime.protagonistRef).ref
@@ -114,16 +122,12 @@ export async function prepareMaintenanceContext(workspace: Workspace, turn: numb
   })
   const context = {
     playerInput: timeline.filter(value => object(value).kind === "user").map(value => object(value).content),
+    confirmedPremises: opening?.proposal ?? null, worldSchema,
     prose, world: { time: runtime.worldTime, weather: runtime.weather, location: object(runtime.location).ref,
-      protagonist, activeScenes: scenes.map(scene => scene.ref), plotOrder: runtime.plotOrder,
+      protagonist, activeScenes: scenes.map(scene => scene.ref),
       details: Object.fromEntries(Object.entries(object(runtime.extensions)).map(([name, value]) => [name, object(value).value])) },
     scenes, entities, relationships, recentRecords: records, seeds,
-    recentMilestones: array(frontier.timeline).filter(value => object(value).kind === "player").slice(-10).map(value => {
-      const node = object(value); return { plotOrder: node.order, label: node.label, alignment: node.alignment, sourceOrder: node.sourceRef }
-    }),
-    plotNodes: array(frontier.timeline).filter(value => object(value).kind === "source").map(value => {
-      const node = object(value); return { order: node.order, label: node.label, summary: node.summary }
-    }),
+
   }
   const token = crypto.randomUUID()
   await workspace.write(MAINTENANCE_SESSION_PATH, JSON.stringify({ turn, token, source, baselines }), "save-runtime")

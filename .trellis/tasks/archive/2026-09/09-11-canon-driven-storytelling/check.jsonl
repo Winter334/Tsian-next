@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/archive/2026-09/09-11-canon-driven-storytelling/prd.md", "reason": "最终范围、明确取消的功能和验收；覆盖旧讨论中的中间建议"}
+{"file": ".trellis/tasks/archive/2026-09/09-11-canon-driven-storytelling/design.md", "reason": "职责划分、保留底座与最小闭环，不恢复旧 frontier 或通用预设工程"}
+{"file": ".trellis/tasks/archive/2026-09/09-11-canon-driven-storytelling/research.md", "reason": "用户实测证据与当前实现问题；紫星塔并非名称查询失败"}
+{"file": ".trellis/spec/guides/validation-strategy.md", "reason": "按真实改动选择工程验证，不以真实 AI 调用作为本地门槛"}

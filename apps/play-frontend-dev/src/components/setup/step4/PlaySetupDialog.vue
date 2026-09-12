@@ -20,6 +20,8 @@ const {
   playSetupStreamingText: streamingText,
   sendPlaySetupMessage,
   retryPlaySetupDialog,
+  playSetupProposal: proposal,
+  confirmOpeningPlan,
 } = useSetupState()
 
 const scrollRef = ref<HTMLDivElement | null>(null)
@@ -93,6 +95,16 @@ onUnmounted(() => {
           streaming-variant="quiet"
         />
 
+        <section v-if="proposal && status === 'ready'" class="proposal-card">
+          <h3>确认开局方案</h3>
+          <p><strong>玩家角色：</strong>{{ proposal.protagonist }}</p>
+          <p><strong>切入点：</strong>{{ proposal.startingPoint }}</p>
+          <p><strong>开局情境：</strong>{{ proposal.openingFocus }}</p>
+          <ul v-if="proposal.constraints.length"><li v-for="item in proposal.constraints" :key="item">{{ item }}</li></ul>
+          <button class="retry-btn" @click="confirmOpeningPlan">确认方案并生成开局</button>
+          <p class="proposal-hint">仍想调整？可以继续在下方说明。</p>
+        </section>
+
         <!-- 错误态 -->
         <div v-if="status === 'failed' || status === 'recovering'" class="error-card">
           <div class="failed-mark">✕</div>
@@ -114,6 +126,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.proposal-card { padding: 20px; margin: 20px 0; border: 1px solid var(--gold-dim); border-radius: 6px; }
+.proposal-card p { margin: 10px 0; line-height: 1.7; }
+.proposal-hint { opacity: .65; font-size: .85em; }
 .play-setup-dialog {
   display: flex;
   flex-direction: column;

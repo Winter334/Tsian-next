@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import type { CharacterEntity, CharacterEquipmentSlot, RelationshipFile } from "../../lib/character-types"
 import type { ItemEntity } from "../../lib/item-types"
 import { loadInventoryEntity } from "../../lib/load-inventory-entity"
+import { characterIdentityLine } from "../../lib/character-identity"
 import AttributeCard from "./AttributeCard.vue"
 import CharacterPortrait from "./CharacterPortrait.vue"
 import CharacterStageHighlights from "./CharacterStageHighlights.vue"
@@ -52,10 +53,7 @@ const rightAttributes = computed(() => attributes.value.filter((_, index) => ind
 const leftEquipment = computed(() => equipment.value.filter((_, index) => index % 2 === 0))
 const rightEquipment = computed(() => equipment.value.filter((_, index) => index % 2 === 1))
 
-const identityLine = computed(() => {
-  const identity = props.entity.identity
-  return [identity?.role, identity?.affiliation, identity?.realm].filter(Boolean).join(" · ")
-})
+const identityLine = computed(() => characterIdentityLine(props.entity.identity))
 
 const hasTracks = computed(() => props.activeMode === "character"
   ? attributes.value.length > 0
@@ -188,9 +186,8 @@ function onTrackScroll(): void {
 
       <div class="stage-center">
         <div class="stage-identity">
-          <h1>{{ entity.name }}</h1>
-          <p v-if="identityLine">{{ identityLine }}</p>
-          <p v-else>{{ entity.brief }}</p>
+          <h1 :title="entity.name">{{ entity.name }}</h1>
+          <p v-if="identityLine" :title="identityLine">{{ identityLine }}</p>
         </div>
 
         <CharacterPortrait
@@ -287,6 +284,7 @@ function onTrackScroll(): void {
   max-height: min(84%, 760px);
   transform: translateX(-50%);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, auto) auto;
   justify-items: center;
   gap: 8px;
@@ -299,6 +297,8 @@ function onTrackScroll(): void {
 }
 
 .stage-identity {
+  min-width: 0;
+  width: 100%;
   max-width: 100%;
   text-align: center;
   text-shadow: 0 2px 16px rgba(6, 6, 8, 0.94);
@@ -306,6 +306,9 @@ function onTrackScroll(): void {
 
 .stage-identity h1 {
   margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-family: var(--font-display);
   font-size: clamp(1.45rem, 2.5vw, 2.1rem);
   line-height: 1.05;
@@ -413,8 +416,8 @@ function onTrackScroll(): void {
     font-size: clamp(1.55rem, 8vw, 2.15rem);
   }
 
-  .stage-identity p {
-    max-width: 82vw;
+  .stage-identity {
+    width: min(100%, 82vw);
   }
 
   .stage-center :deep(.portrait-stack) {

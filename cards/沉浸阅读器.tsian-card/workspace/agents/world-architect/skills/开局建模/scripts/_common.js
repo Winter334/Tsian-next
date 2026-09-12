@@ -53,6 +53,8 @@ function compactSourceChapter(chapter) {
   return compact;
 }
 async function readSourceChapter(tsian, chapter, cache) {
+  const sourcePath = chapter.source?.path || chapter.path;
+  if (typeof sourcePath !== 'string' || !sourcePath.startsWith('save/source/') || /[\\\0]/.test(sourcePath) || sourcePath.split('/').some(part => part === '.' || part === '..')) fail('SOURCE_PATH_INVALID', '原著章节引用无效。');
   if (isRecord(chapter.source) && chapter.source.kind === 'shard') {
     const path = chapter.source.path;
     let shard = cache.get(path);
@@ -70,4 +72,11 @@ async function readSourceChapterWindow(tsian, chapters) {
   const result = [];
   for (const chapter of chapters) result.push({ chapter, content: await readSourceChapter(tsian, chapter, cache) });
   return result;
+}
+
+function normalizeString(value, code, label, maxLength) {
+  if (typeof value !== 'string' || !value.trim()) fail(code, label + ' must be a non-empty string.');
+  const normalized = value.trim();
+  if (maxLength && normalized.length > maxLength) fail(code + '_TOO_LONG', label + ' is too long.', { maxLength, length: normalized.length });
+  return normalized;
 }

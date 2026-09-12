@@ -113,7 +113,6 @@ function scenePresentRefs(scene) {
 }
 async function readMaintenanceContext(input, tsian, signal) {
   if (!isRecord(input)) input = {};
-  const includeTimeline = input.includeTimeline === true || input.timeline === true;
   const includeMemory = input.memory !== false;
   const requestedTurn = typeof input.turn === 'number' && input.turn > 0 ? Math.floor(input.turn) : 0;
   let turn = requestedTurn;
@@ -208,24 +207,6 @@ async function readMaintenanceContext(input, tsian, signal) {
     sceneCleanupCandidates.push({ ref: sceneObj.id, path: p, status: status, reason: status === 'resolved' ? 'scene 已 resolved 且不在 activeSceneRefs' : 'scene 不在当前 activeSceneRefs（非 background）' });
   }
 
-  var timeline = null;
-  if (includeTimeline) {
-    const frontier = await readJsonFile(tsian, 'save/playthrough/frontier.json', signal, true);
-    if (isRecord(frontier)) {
-      uniquePushDoc(docs, seenPaths, 'save/playthrough/frontier.json', frontier, 'save/playthrough/frontier.json');
-    }
-    if (isRecord(frontier) && Array.isArray(frontier.timeline)) {
-      var sourceAnchors = [];
-      var playerAnchors = [];
-      for (var a of frontier.timeline) {
-        if (!isRecord(a) || typeof a.kind !== 'string') continue;
-        if (a.kind === 'source') sourceAnchors.push(a);
-        else if (a.kind === 'player') playerAnchors.push(a);
-      }
-      timeline = { sourceAnchors: sourceAnchors, playerAnchors: playerAnchors, sourceWindow: isRecord(frontier.sourceWindow) ? frontier.sourceWindow : null };
-    }
-  }
-
   var output = {
     requestedTurn: requestedTurn || turn,
     turn: turn,
@@ -239,9 +220,8 @@ async function readMaintenanceContext(input, tsian, signal) {
     relationships: relationships,
     memory: memory,
     sceneCleanupCandidates: sceneCleanupCandidates,
-    timeline: timeline,
   };
-  tsian.trace('read_maintenance_context', { requestedTurn: requestedTurn || turn, turn: turn, turnFallbackReason: turnFallbackReason, docCount: docs.length, textCount: texts.length, cleanupCandidates: sceneCleanupCandidates.length, includeTimeline: includeTimeline });
+  tsian.trace('read_maintenance_context', { requestedTurn: requestedTurn || turn, turn: turn, turnFallbackReason: turnFallbackReason, docCount: docs.length, textCount: texts.length, cleanupCandidates: sceneCleanupCandidates.length });
   return output;
 }
 return readMaintenanceContext(input, tsian, signal);

@@ -71,9 +71,6 @@ const actions = computed<ActionConfig>(() => {
   if (subView.value === "opening-confirm") {
     return { secondaryLabel: "开局已提交", secondaryDisabled: true, onSecondary: null, primaryLabel: "进入故事", primaryDisabled: false, onPrimary: () => emit("enterPlay") }
   }
-  if (subView.value === "legacy-state") {
-    return { secondaryLabel: "旧进度不支持升级", secondaryDisabled: true, onSecondary: null, primaryLabel: "请使用新存档", primaryDisabled: true, onPrimary: null }
-  }
   return { secondaryLabel: "状态读取失败", secondaryDisabled: true, onSecondary: null, primaryLabel: "请重新进入或使用新存档", primaryDisabled: true, onPrimary: null }
 })
 
@@ -129,13 +126,8 @@ onMounted(() => {
             <div v-else-if="subView === 'opening-confirm'" key="opening-confirm" class="stage-content">
               <OpeningConfirm />
             </div>
-            <section v-else-if="subView === 'legacy-state'" key="legacy-state" class="legacy-state">
-              <span class="legacy-mark" aria-hidden="true">!</span>
-              <h2>旧开局进度无法继续</h2>
-              <p>{{ playSetupError || "当前存档来自测试期旧流程，请创建新存档后重新导入小说。" }}</p>
-            </section>
-            <section v-else key="fatal-state" class="legacy-state">
-              <span class="legacy-mark" aria-hidden="true">!</span>
+            <section v-else key="fatal-state" class="fatal-state">
+              <span class="fatal-mark" aria-hidden="true">!</span>
               <h2>无法安全继续开局</h2>
               <p>{{ playSetupError || "读取存档状态失败。请重新进入；若问题持续，请使用新存档重新导入小说。" }}</p>
             </section>
@@ -217,7 +209,7 @@ onMounted(() => {
 }
 .error-fade-enter-active, .error-fade-leave-active { transition: opacity 0.2s ease; }
 .error-fade-enter-from, .error-fade-leave-to { opacity: 0; }
-.legacy-state {
+.fatal-state {
   max-width: 560px;
   margin: auto;
   padding: 32px;
@@ -227,9 +219,9 @@ onMounted(() => {
   color: var(--prose-muted);
   text-align: center;
 }
-.legacy-state h2 { color: var(--prose); font-family: var(--font-display, serif); }
-.legacy-state p { line-height: 1.7; }
-.legacy-mark {
+.fatal-state h2 { color: var(--prose); font-family: var(--font-display, serif); }
+.fatal-state p { line-height: 1.7; }
+.fatal-mark {
   display: inline-flex;
   width: 34px;
   height: 34px;

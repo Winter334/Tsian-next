@@ -20,6 +20,10 @@ export async function verifySemanticMaintenance(resources: WorkspaceFile[]) {
   async function setup(fault?: "write" | "output") {
     const fixture = [
       { path: turnPath, value: { timeline: [{ kind: "user", content: "请医师诊脉" }, { kind: "assistant", content: "诊脉结束，旧伤未愈。" }], meta: {} } },
+      { path: "save/schema/world.json", value: { title: "诊脉世界", power: { tiers: [], scale: "gentle" }, dimensions: [
+        { name: "力量", kind: "growth", meaning: "体力" }, { name: "身法", kind: "hybrid", meaning: "步法" },
+        { name: "悟性", kind: "talent", meaning: "领悟" }, { name: "根骨", kind: "talent", meaning: "资质" },
+      ], rules: [] } },
       { path: heroPath, value: { id: "character:hero", name: "患者", brief: "待诊", attributes: {}, status: [{ id: "old", name: "旧伤" }] } },
       { path: "save/playthrough/runtime.json", value: { turn: 2, plotOrder: 3, worldTime: "上午", protagonistRef: { ref: "character:hero" }, activeSceneRefs: [] } },
     ].map(entry => ({ path: entry.path, content: JSON.stringify(entry.value), createdAt: 0, updatedAt: 0 }))
@@ -57,6 +61,8 @@ export async function verifySemanticMaintenance(resources: WorkspaceFile[]) {
   const valid = await setup()
   await valid.run(changes)
   await verifyMaintenance(valid.workspace, valid.prepared)
+  const completedHero = JSON.parse(valid.tx.workspaceFiles.find(file => file.path === heroPath)!.content)
+  if (Object.keys(completedHero.attributes).length !== 4 || Object.values(completedHero.attributes).some(value => value !== 5)) throw new Error("Missing character attributes were not filled from ordinary baselines")
   const applied = JSON.stringify(valid.tx.workspaceFiles)
   await valid.run(changes)
   if (JSON.stringify(valid.tx.workspaceFiles) !== applied) throw new Error("Repeated semantic submission is not idempotent.")

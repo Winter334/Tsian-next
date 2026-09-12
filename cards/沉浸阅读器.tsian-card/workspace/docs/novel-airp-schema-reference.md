@@ -161,13 +161,12 @@ retired      # 已退出当前游玩，除非刻意重新引入
 
 ## Runtime 变量
 
-`save/playthrough/runtime.json` 存放高频访问、玩家面向或界面需要高频读取的摘要。`worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台墙钟时间，也不用于日历运算。`plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记根据语义节点材料判断并提交进度变化，由卡内提交脚本维护，用于判断是否触发 frontier 推进（`plotOrder > 最后 source 锚点 order` 时触发）。未知或尚未建立时写空字符串/0。
+`save/playthrough/runtime.json` 存放高频访问、玩家面向或界面需要高频读取的摘要。`worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台墙钟时间，也不用于日历运算。时间未知或尚未建立时写空字符串。
 
 ```json
 {
   "turn": 6,
   "worldTime": "赤明纪十二年三月初七，黄昏",
-  "plotOrder": 3,
   "weather": "阴云聚拢",
   "location": { "ref": "location:青玄门山门", "name": "青玄门山门" },
   "activeSceneRefs": [{ "ref": "scene:山门冲突", "name": "山门冲突" }],
@@ -181,59 +180,12 @@ retired      # 已退出当前游玩，除非刻意重新引入
 }
 ```
 
-`activeSceneRefs` 是当前活跃场景指针数组（每项 `{ ref, name }`）；场景内容权威在 `save/scenes/<id>.json`，runtime 只存指针。`protagonistRef` 是当前主角指针（`{ ref, name }`），主角实体权威仍在 `save/entities/character/<localId>.json`。`location` 是当前地点指针 `{ ref, name } | null`。`weather` 是当前天气字符串。`plotOrder` 是数字，单调递增，表示玩家当前走到哪个 source order；场记根据语义节点材料判断并提交进度变化，由卡内提交脚本维护，用于判断是否触发 frontier 推进。`extensions` 仍用于月相、倒计时、诅咒周期、节气规则等新增/临时时间机制；当前世界/剧情时间本身写 `worldTime`，剧情进度坐标写 `plotOrder`。
+`activeSceneRefs` 是当前活跃场景指针数组（每项 `{ ref, name }`）；场景内容权威在 `save/scenes/<id>.json`，runtime 只存指针。`protagonistRef` 是当前主角指针（`{ ref, name }`），主角实体权威仍在 `save/entities/character/<localId>.json`。`location` 是当前地点指针 `{ ref, name } | null`。`weather` 是当前天气字符串。`extensions` 仍用于月相、倒计时、诅咒周期、节气规则等新增/临时时间机制；当前世界/剧情时间本身写 `worldTime`。
 
-## frontier.json
+## 原著阅读与本局历史
 
-`save/playthrough/frontier.json` 记录源文本抽取进度与时间标记锚点，供场记维护剧情坐标，并供界面与正文上下文展示原著剧情节点。
-
-```json
-{
-  "sourceWindow": { "start": 1, "end": 8, "chapters": [{ "index": 1, "title": "第 1 章", "ref": "source:chapter-0001" }] },
-  "extractedThrough": "source:chapter-0008",
-  "timeline": [
-    { "kind": "source", "order": 1, "chapter": 1, "time": "元年", "label": "开局", "summary": "主角在山门醒来并确认当前处境。" },
-    { "kind": "source", "order": 2, "chapter": 4, "time": "二年春", "label": "离山历练", "summary": "主角奉命离山，在途中首次遭遇宗门之外的势力冲突。" },
-    { "kind": "player", "order": 2, "turn": 8, "time": "二年春", "label": "提前离山", "alignment": "diverged", "sourceRef": 2 }
-  ],
-  "notes": "Track how far the imported source has been normalized, chunked, and extracted.",
-  "updatedAt": "2026-07-07T00:00:00.000Z",
-  "updatedBy": "world-architect"
-}
-```
-
-字段：
-
-- `sourceWindow`：已读章节窗口。`start`/`end` 为章节号（闭区间），`chapters` 为窗口章节元信息数组（每项 `{ index, title, ref }`）。推进 frontier 时移动。
-- `extractedThrough`：已抽取到的最远源章节引用；缺省取窗口末章 ref。
-- `timeline`：时间标记锚点数组，用 `kind` 字段区分两类锚点：
-  - source 锚点：`{ kind: "source", order, chapter, time, label, summary? }`。world-architect 推进时建立，标记原著剧情节点。
-    - `order`：单调递增整数，是我们建立的线性坐标轴，表示剧情事件先后顺序，与原著精确时间标记无关。即使原著写“回到过去”，`order` 也严格递增——`time` 字段可能变化，但 `order` 只向前。source 锚点 order 由 world-architect 推进时递增赋值。
-    - `chapter`：原著章节号，与 `sourceWindow` 同一坐标。
-    - `time`：游戏时间字符串，自由粒度（默认年+季/月）。原文无明确时间词时从剧情推断估计；开局第一个锚点 `time` 固定 `"元年"`。
-    - `label`：一句话客观标签，不是剧情摘要。
-    - `summary`：可选的 1～3 句已读原著客观梗概。旧锚点可缺省；不写未读内容、创作指令或玩家尚未经历的事件。
-  - player 锚点：`{ kind: "player", order, turn, time, label, alignment, sourceRef }`。场记提交语义显著事件后由脚本追加，标记玩家视角显著事件。
-    - `order`：等于玩家当前所在 source 区间的起始 source 锚点 order。同一 source 区间内的多个 player 锚点共享相同 order，按 turn 排序展开。
-    - `turn`：游戏回合号，分支内排序与后续精确找 turn 正文用。
-    - `time`：游戏时间字符串（显示用）。
-    - `label`：一句话客观描述。
-    - `alignment`：标记与原著关系，取值 `diverged` / `rejoined` / `aligned`。
-    - `sourceRef`：关联的 source order（number 或 null）。语义见下表。
-
-  `alignment` 三值语义：
-
-  | 值 | 含义 | sourceRef | 建立时机 |
-  |---|---|---|---|
-  | `diverged` | 玩家偏离原著 | 分叉自的 source order，或 null（原创区间） | 玩家从 source 事件分叉，或在原创区间发生显著事件 |
-  | `rejoined` | 从分支并回主干 | 并回的 source order | 玩家重新遇到 source 事件且结果相近 |
-  | `aligned` | 经历 source 事件且结果相近 | 该 source order | 可选——完美跟随时不需要建，source 锚点本身代表那段故事 |
-
-  stage-manager 只在有意义的时刻建 player 锚点：偏离、并回、或经历 source 事件但结果不同（此时用 `diverged` + sourceRef，表示遇到了同一事件但走了不同方向）。
-- `notes`：抽取进度备注。
-- `updatedAt` / `updatedBy`：维护锚点。
-
-`timeline` 与 `sourceWindow` 独立：`sourceWindow` 记录已读窗口，`timeline` 记录锚点。推进时 `sourceWindow` 移动、`timeline` 追加新 source 锚点。两者通过 `chapter` 字段关联。`runtime.plotOrder` 是判断是否触发 frontier 推进的剧情进度坐标，等于玩家当前走到的 source 锚点 order。
+`skills/原著阅读/` 提供章节定位与连续原文读取，路径/分片由程序处理。写手的 `save/agents/storyteller/source-bookmark.json` 只记录检索起点（startIndex/offset/importedAt），不限制阅读或推进故事。
+本局重要历史直接从已提交的 turn.meta.recall 派生，使用“重要节点”布尔标记和现有“摘要”，不另建原著节点或偏离图。未来计划不进入历史。旧 frontier、plotOrder 和 alignment 已退出，无旧存档迁移。
 
 ## Turn recall metadata
 
@@ -244,7 +196,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
   "meta": {
     "recall": {
       "schema": "沉浸阅读器.turn-recall.v1",
-      "剧情坐标": 42,
+      "重要节点": true,
       "时间": "翌日清晨",
       "涉及实体": ["character:沈璃", "item:碎玉簪"],
       "事件类型": ["冲突争执", "关系变化", "承诺亏欠"],
@@ -258,7 +210,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
 字段：
 
 - `schema`：固定 `沉浸阅读器.turn-recall.v1`。
-- `剧情坐标`：对应当前 `runtime.plotOrder`，能判断时填写；可省略。
+- `重要节点`：仅本局已经发生的重要剧情为 true，前端时间线复用同一摘要；普通回合为 false。
 - `时间`：世界/剧情时间可读文本；可省略。
 - `涉及实体`：实体 ref 数组（`<type>:<localId>`），只放未来召回最有价值的实体；通常不写主角，除非召回目标是主角重大选择、承诺、身份或伤害。未知非实体概念放 `标签`，不要硬猜 ref。
 - `事件类型`：受控枚举：`对话交流`、`玩家选择`、`冲突争执`、`关系变化`、`承诺亏欠`、`秘密揭露`、`发现线索`、`物品变化`、`状态变化`、`场景变化`、`战斗危险`、`计划目标`、`交易谈判`、`亲密暧昧`、`伏笔回收`。

@@ -1,7 +1,7 @@
 {
   "name": "read_maintenance_context",
   "title": "读取维护上下文",
-  "description": "回合后维护首选入口：聚合目标回合正文、runtime、active scene JSON、相关 entity/relationship JSON、memory 文本行、scene 清理候选和 optional timeline。只做 AIRP 导航聚合，不做字段级 schema 投影；普通回合优先用本工具，缺必要事实时再定向补读。",
+  "description": "已停用的旧资料聚合工具；当前场记使用回合后维护 Skill 与程序准备的语义材料。",
   "parameters": {
     "type": "object",
     "additionalProperties": false,
@@ -9,10 +9,6 @@
       "turn": {
         "type": "number",
         "description": "目标回合号。省略时默认取当前 max turn。"
-      },
-      "includeTimeline": {
-        "type": "boolean",
-        "description": "是否包含 frontier.json timeline 摘要并把 frontier JSON 加入 docs。默认 false。"
       },
       "memory": {
         "type": "boolean",

@@ -1,8 +1,8 @@
 import { readonly, ref } from "vue"
 import { getTsianClient } from "./useTsian"
+import { readOpeningState, runOpeningPipeline, type OpeningProposal } from "../lib/opening-flow"
 import {
   CHAPTER_INDEX_PATH,
-  FRONTIER_PATH,
   INITIAL_SUMMARY_PATH,
   RUNTIME_PATH,
   SETUP_SUMMARY_PATH,
@@ -29,12 +29,10 @@ import {
   createOpeningControl,
   openingAnswerMarker,
   openingBootstrapMarker,
-  openingContinueMarker,
   openingControlMatchesManifest,
   openingControlMatchesSession,
   openingSession,
   openingSourceIdentity,
-  isRecoverableOpeningModelState,
   parseOpeningAssistant,
   parseOpeningControl,
   parseOpeningTranscript,
@@ -55,7 +53,6 @@ export type SetupSubView =
   | "branch-choice"
   | "opening-interview"
   | "opening-confirm"
-  | "legacy-state"
   | "fatal-state"
 
 const step = ref<SetupStep>(1)
@@ -74,6 +71,9 @@ const playSetupMessages = ref<DialogMessage[]>([])
 const playSetupError = ref("")
 const playSetupStreamingText = ref("")
 const playSetupSummary = ref<string | null>(null)
+const playSetupProposal = ref<OpeningProposal | null>(null)
+let playSetupProposalId: string | null = null
+let openingVersion = 0
 
 const initializing = ref(true)
 const initialized = ref(false)
@@ -83,12 +83,6 @@ let rawStreamingText = ""
 let dialogMessageSeq = 0
 let openingStartPending = false
 let pendingOpeningInput: string | null = null
-let pendingOpeningContinuation = false
-let automaticContinuationCount = 0
-
-const MAX_AUTOMATIC_OPENING_CONTINUATIONS = 3
-
-const LEGACY_OPENING_PROGRESS_PATH = "save/playthrough/opening-progress.json"
 
 function nextDialogId(): string {
   dialogMessageSeq += 1
@@ -104,7 +98,7 @@ function ensureInvocationSubscription(tsian: ReturnType<typeof getTsianClient>):
   invocationSubscribed = true
   tsian.onAgentInvocation((event) => {
     if (!activeInvocationId || event.invocationId !== activeInvocationId) return
-    if (event.type === "delta" && event.kind === "content" && event.agentId === "world-architect") {
+    if (event.type === "delta" && event.kind === "content" && event.agentId === "storyteller") {
       rawStreamingText += event.delta
       playSetupStreamingText.value = sanitizeOpeningDisplay(rawStreamingText)
     }
@@ -228,124 +222,6 @@ async function writeOpeningControl(tsian: ReturnType<typeof getTsianClient>, con
   await tsian.workspace.write(OPENING_CONTROL_PATH, serializeOpeningControl(control))
 }
 
-function hasOnlyKeys(value: Record<string, unknown>, keys: string[]): boolean {
-  const expected = new Set(keys)
-  return Object.keys(value).length === expected.size && Object.keys(value).every((key) => expected.has(key))
-}
-
-function isInitialPendingRuntime(value: unknown): boolean {
-  return isRecord(value)
-    && hasOnlyKeys(value, ["turn", "worldTime", "plotOrder", "location", "weather", "activeSceneRefs", "protagonistRef", "extensions", "updatedAtTurn", "updatedBy"])
-    && value.turn === 0
-    && value.worldTime === ""
-    && value.plotOrder === 1
-    && value.location === null
-    && value.weather === ""
-    && Array.isArray(value.activeSceneRefs) && value.activeSceneRefs.length === 0
-    && value.protagonistRef === null
-    && isRecord(value.extensions) && Object.keys(value.extensions).length === 0
-    && value.updatedAtTurn === 0
-    && value.updatedBy === null
-}
-
-function isInitialPendingFrontier(value: unknown): boolean {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["sourceWindow", "extractedThrough", "timeline", "notes"])) return false
-  if (!isRecord(value.sourceWindow) || !hasOnlyKeys(value.sourceWindow, ["start", "end"])) return false
-  if (value.sourceWindow.start !== null || value.sourceWindow.end !== null || value.extractedThrough !== null) return false
-  if (typeof value.notes !== "string" || !Array.isArray(value.timeline) || value.timeline.length !== 1) return false
-  const anchor = value.timeline[0]
-  return isRecord(anchor)
-    && hasOnlyKeys(anchor, ["kind", "order", "chapter", "time", "label"])
-    && anchor.kind === "source"
-    && anchor.order === 1
-    && anchor.chapter === 1
-    && anchor.time === "元年"
-    && anchor.label === "开局"
-}
-
-function isInitialUnderstandingSummary(value: unknown): boolean {
-  return isRecord(value)
-    && value.status === "pending"
-    && value.title === null
-    && Array.isArray(value.candidateCharacters)
-    && value.candidateCharacters.length === 0
-}
-
-async function directoryContainsFormalData(tsian: ReturnType<typeof getTsianClient>, path: string): Promise<boolean> {
-  const entries = await tsian.workspace.list(path)
-  return entries.some((entry) => entry.name !== "README.md" && entry.name !== ".keep")
-}
-
-async function hasLegacyOpeningState(
-  tsian: ReturnType<typeof getTsianClient>,
-  currentManifest: SourceManifest | null = null,
-): Promise<boolean> {
-  const entrypoints = await tsian.card.entrypoints()
-  const playerTurnAgent = entrypoints.playerTurn
-  if (typeof playerTurnAgent !== "string" || !playerTurnAgent.trim()) {
-    throw new Error("当前卡缺少正式玩家回合入口。")
-  }
-  const [
-    understanding,
-    understandingContext,
-    playSetupContext,
-    runtimeFile,
-    frontierFile,
-    legacyOpeningNarrative,
-    legacyOpeningProgress,
-    openingControlFile,
-    openingNotes,
-    setupSummaryFile,
-    playerContext,
-    entityData,
-    sceneData,
-    relationshipData,
-    turnData,
-  ] = await Promise.all([
-    tsian.workspace.read(INITIAL_SUMMARY_PATH),
-    tsian.workspace.read("save/agents/world-architect/context-understanding.json"),
-    tsian.workspace.read("save/agents/world-architect/context-play-setup.json"),
-    tsian.workspace.read(RUNTIME_PATH),
-    tsian.workspace.read(FRONTIER_PATH),
-    tsian.workspace.read("save/playthrough/opening-narrative.json"),
-    tsian.workspace.read(LEGACY_OPENING_PROGRESS_PATH),
-    tsian.workspace.read(OPENING_CONTROL_PATH),
-    tsian.workspace.read("save/playthrough/opening-notes.md", "save-runtime"),
-    tsian.workspace.read(SETUP_SUMMARY_PATH, "save-runtime"),
-    tsian.workspace.read(`save/agents/${playerTurnAgent}/context.json`),
-    directoryContainsFormalData(tsian, "save/entities"),
-    directoryContainsFormalData(tsian, "save/scenes"),
-    directoryContainsFormalData(tsian, "save/relationships"),
-    directoryContainsFormalData(tsian, "save/history/turns"),
-  ])
-  const understandingData = understanding?.content ? safeJsonParse(understanding.content) : null
-  if (!isInitialUnderstandingSummary(understandingData)) return true
-  if (understandingContext || playSetupContext || legacyOpeningNarrative || legacyOpeningProgress || playerContext) return true
-  const control = openingControlFile?.content ? parseOpeningControl(safeJsonParse(openingControlFile.content)) : null
-  if (openingControlFile?.content && !control) return true
-  if (turnData) return true
-  const runtime = runtimeFile?.content ? safeJsonParse(runtimeFile.content) : null
-  const frontier = frontierFile?.content ? safeJsonParse(frontierFile.content) : null
-  const runtimeInitial = isInitialPendingRuntime(runtime)
-  const frontierInitial = isInitialPendingFrontier(frontier)
-  const hasPartialModel = entityData || sceneData || relationshipData || !runtimeInitial || !frontierInitial
-  if (!hasPartialModel) return false
-
-  const setupSummary = setupSummaryFile?.content ? safeJsonParse(setupSummaryFile.content) : null
-  const runtimeRecoverable = runtimeInitial
-    || (isRecord(runtime) && runtime.turn === 0 && Array.isArray(runtime.activeSceneRefs))
-  const frontierRecoverable = frontierInitial
-    || (isRecord(frontier) && isRecord(frontier.sourceWindow) && Array.isArray(frontier.timeline))
-  return !isRecoverableOpeningModelState({
-    manifest: currentManifest,
-    control,
-    setupStatus: isSetupSummary(setupSummary) ? setupSummary.status : null,
-    hasOpeningNotes: Boolean(openingNotes?.content.trim()),
-    runtimeRecoverable,
-    frontierRecoverable,
-  })
-}
-
 function showFatalState(message: string): void {
   playSetupStatus.value = "recovering"
   playSetupError.value = message
@@ -417,6 +293,7 @@ async function startImport(
 }
 
 function confirmReimport(): void {
+  if (characterBranch.value) { errorText.value = "已开始开局，换源请使用新存档。"; return }
   if (!window.confirm("重新导入会覆盖当前小说文本与章节目录。确定要换源吗？")) return
   manifest.value = null
   chapterIndex.value = null
@@ -435,11 +312,7 @@ async function showBranchChoice(): Promise<void> {
   if (!manifest.value) return
   const tsian = getTsianClient()
   try {
-    if (await hasLegacyOpeningState(tsian, manifest.value)) {
-      playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
-      setView("legacy-state")
-      return
-    }
+    if (await restoreOpeningInterviewV2(tsian, manifest.value)) return
     setView("branch-choice")
     statusText.value = "选择本局角色类型"
   } catch (error) {
@@ -448,98 +321,98 @@ async function showBranchChoice(): Promise<void> {
 }
 
 async function finishResolvedInvocation(
-  tsian: ReturnType<typeof getTsianClient>,
-  response: string,
-  control: OpeningInterviewControl,
-): Promise<"complete" | "continue" | "ready"> {
+  tsian: ReturnType<typeof getTsianClient>, response: string, control: OpeningInterviewControl,
+): Promise<void> {
   const parsed = parseOpeningAssistant(response)
   if (!parsed) throw new Error("访谈回复缺少可显示内容。")
-
-  playSetupStreamingText.value = ""
-  rawStreamingText = ""
   pendingOpeningInput = null
-  playSetupMessages.value.push({
-    id: nextDialogId(),
-    role: "agent",
-    content: parsed.displayContent,
-    ...(parsed.choices.length > 0 ? { options: parsed.choices } : {}),
-  })
-
-  const summary = await loadSetupSummary(tsian)
-  if (summary?.status === "complete") {
-    playSetupStatus.value = "complete"
-    playSetupSummary.value = summary.summary ?? null
-    characterBranch.value = control.branch
-    setView("opening-confirm")
-    statusText.value = "开局已准备完成"
-    pendingOpeningContinuation = false
-    return "complete"
-  }
-  if (parsed.openingContinue) {
-    pendingOpeningContinuation = true
-    playSetupStatus.value = "running"
-    playSetupError.value = ""
-    statusText.value = "正在继续准备开局…"
-    return "continue"
-  }
-  pendingOpeningContinuation = false
+  playSetupMessages.value.push({ id: nextDialogId(), role: "agent", content: parsed.displayContent, ...(parsed.choices.length ? { options: parsed.choices } : {}) })
+  const state = await readOpeningState(tsian.workspace, control.session.id)
+  playSetupProposal.value = state && !state.approved ? state.proposal : null
+  playSetupProposalId = state && !state.approved ? state.proposalId : null
   playSetupStatus.value = "ready"
-  playSetupError.value = ""
-  statusText.value = "等待你的回答"
-  return "ready"
+  statusText.value = state?.proposal ? "请确认方案，或继续提出修改" : "等待你的回答"
 }
 
-async function invokeOpening(
-  control: OpeningInterviewControl,
-  input: string,
-): Promise<void> {
-  const tsian = getTsianClient()
+async function invokeOpening(control: OpeningInterviewControl, input: string): Promise<void> {
+  const tsian = getTsianClient(), version = openingVersion
   playSetupStatus.value = "running"
   playSetupError.value = ""
+  playSetupProposal.value = null
+  playSetupProposalId = null
   rawStreamingText = ""
   playSetupStreamingText.value = ""
-  const invocationId = `opening-interview-${Date.now().toString(36)}`
+  const invocationId = crypto.randomUUID()
   activeInvocationId = invocationId
   ensureInvocationSubscription(tsian)
-
-  let response: string
   try {
-    const result = await tsian.invokeAgent("world-architect", input, {
-      invocationId,
-      purpose: "opening-interview",
-      contextSlot: control.session.slot,
-      persist: true,
-      transcript: { mode: "full", audience: "player" },
+    const result = await tsian.invokeAgent("storyteller", input, {
+      invocationId, purpose: "opening-interview", contextSlot: control.session.slot,
+      persist: true, includeRecentHistory: false, transcript: { mode: "full", audience: "player" },
       injection: [{ role: "user", position: "before-input", content: buildOpeningInjection(control) }],
     })
-    response = result.response
+    if (version === openingVersion) await finishResolvedInvocation(tsian, result.response, control)
   } catch (error) {
-    const invocationMessage = error instanceof Error ? error.message : "访谈调用失败，请重试。"
-    playSetupStatus.value = "failed"
-    playSetupError.value = invocationMessage
-    return
-  } finally {
-    activeInvocationId = null
-    playSetupStreamingText.value = ""
-    rawStreamingText = ""
-  }
-
-  try {
-    const outcome = await finishResolvedInvocation(tsian, response, control)
-    if (outcome === "continue") {
-      if (automaticContinuationCount >= MAX_AUTOMATIC_OPENING_CONTINUATIONS) {
-        playSetupStatus.value = "failed"
-        playSetupError.value = "开局资料已保存，但自动准备没有完成。请点击重试继续。"
-        statusText.value = "等待继续准备"
-        return
-      }
-      automaticContinuationCount += 1
-      await invokeOpening(control, openingContinueMarker(control.session.id))
+    if (version === openingVersion) {
+      playSetupStatus.value = "failed"
+      playSetupError.value = error instanceof Error ? error.message : "访谈调用失败，请重试。"
     }
+  } finally {
+    if (version === openingVersion) { activeInvocationId = null; playSetupStreamingText.value = ""; rawStreamingText = "" }
+  }
+}
+
+async function runConfirmedOpening(control: OpeningInterviewControl, retry = false): Promise<void> {
+  const tsian = getTsianClient(), version = openingVersion
+  playSetupStatus.value = "running"
+  playSetupError.value = ""
+  playSetupProposal.value = null
+  playSetupProposalId = null
+  clearLastOptions()
+  ensureInvocationSubscription(tsian)
+  try {
+    await runOpeningPipeline(tsian, control, {
+      retry, isCurrent: () => version === openingVersion,
+      onInvocation: id => { if (version === openingVersion) activeInvocationId = id },
+      onPhase: phase => {
+        if (version !== openingVersion) return
+        rawStreamingText = ""
+        playSetupStreamingText.value = ""
+        statusText.value = { model: "正在适配世界规则…", story: "正在创作开局正文…", maintenance: "正在整理开局资料…" }[phase]
+      },
+    })
+    if (version !== openingVersion) return
+    const summary = await loadSetupSummary(tsian, true)
+    if (summary?.status !== "complete") throw new Error("开局资料尚未整理完成。")
+    playSetupSummary.value = summary.summary ?? null
+    playSetupStatus.value = "complete"
+    statusText.value = "开局已准备完成"
+    setView("opening-confirm")
   } catch (error) {
-    pendingOpeningInput = null
-    playSetupStatus.value = "recovering"
-    playSetupError.value = error instanceof Error ? error.message : "访谈已提交，但界面恢复失败。"
+    if (version === openingVersion) {
+      playSetupStatus.value = "failed"
+      playSetupError.value = error instanceof Error ? error.message : "开局准备未完成，请重试。"
+    }
+  } finally {
+    if (version === openingVersion) { activeInvocationId = null; rawStreamingText = ""; playSetupStreamingText.value = "" }
+  }
+}
+
+async function confirmOpeningPlan(): Promise<void> {
+  if (playSetupStatus.value !== "ready" || !playSetupProposal.value || !playSetupProposalId) return
+  const observedProposalId = playSetupProposalId
+  playSetupStatus.value = "running"
+  const tsian = getTsianClient()
+  try {
+    const control = await loadOpeningControl(tsian)
+    if (!control || !manifest.value || !openingControlMatchesManifest(control, manifest.value)) throw new Error("当前方案已失效。")
+    const state = await readOpeningState(tsian.workspace, control.session.id)
+    if (!state || state.approved || state.proposalId !== observedProposalId) throw new Error("当前方案已发生变化，请重新检查。")
+    await tsian.card.runAction("opening", { operation: "confirm", sessionId: control.session.id, proposalId: observedProposalId })
+    await runConfirmedOpening(control)
+  } catch (error) {
+    playSetupStatus.value = "failed"
+    playSetupError.value = error instanceof Error ? error.message : "方案确认失败。"
   }
 }
 
@@ -548,17 +421,14 @@ async function startOpeningInterview(branch: CharacterBranch): Promise<void> {
   openingStartPending = true
   const tsian = getTsianClient()
   try {
-    if (await hasLegacyOpeningState(tsian, manifest.value)) {
-      playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
-      setView("legacy-state")
+    if (await loadOpeningControl(tsian)) {
+      await restoreOpeningInterviewV2(tsian, manifest.value)
       return
     }
     const control = createOpeningControl(manifest.value, branch)
     await writeOpeningControl(tsian, control)
     characterBranch.value = branch
     playSetupMessages.value = []
-    pendingOpeningContinuation = false
-    automaticContinuationCount = 0
     setView("opening-interview")
     statusText.value = "正在准备第一次问题…"
     await invokeOpening(control, openingBootstrapMarker(control.session.id))
@@ -600,60 +470,30 @@ async function sendPlaySetupMessage(input: string): Promise<void> {
   clearLastOptions()
   playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: normalized })
   pendingOpeningInput = normalized
-  pendingOpeningContinuation = false
-  automaticContinuationCount = 0
   await invokeOpening(current, openingAnswerMarker(normalized))
 }
 
 async function retryPlaySetupDialog(): Promise<void> {
   if (playSetupStatus.value === "running") return
-  const previousStatus = playSetupStatus.value
+  const tsian = getTsianClient()
   playSetupStatus.value = "running"
   playSetupError.value = ""
-  const tsian = getTsianClient()
   try {
-    const summary = await loadSetupSummary(tsian, true)
-    if (summary?.status === "complete") {
-      playSetupStatus.value = "complete"
-      playSetupSummary.value = summary.summary ?? null
-      setView("opening-confirm")
-      statusText.value = "开局已准备完成"
-      return
-    }
     const control = await loadOpeningControl(tsian)
-    if (!control) {
-      showInterviewRecovery("无法读取当前访谈状态。")
-      return
-    }
-    if (previousStatus === "recovering") {
-      await restoreOpeningInterviewV2(tsian, manifest.value)
-      if (pendingOpeningContinuation) {
-        automaticContinuationCount = 0
-        await invokeOpening(control, openingContinueMarker(control.session.id))
-      }
-      return
-    }
-    if (pendingOpeningContinuation) {
-      automaticContinuationCount = 0
-      await invokeOpening(control, openingContinueMarker(control.session.id))
-      return
-    }
-    if (pendingOpeningInput) {
-      await invokeOpening(control, openingAnswerMarker(pendingOpeningInput))
-      return
-    }
-    const restored = await restoreOpeningInterviewV2(tsian, manifest.value)
-    if (pendingOpeningContinuation) {
-      automaticContinuationCount = 0
-      await invokeOpening(control, openingContinueMarker(control.session.id))
-      return
-    }
-    if (!restored || playSetupMessages.value.length === 0) {
+    if (!control || !manifest.value || !openingControlMatchesManifest(control, manifest.value)) throw new Error("当前开局会话无效，请使用新存档。")
+    const state = await readOpeningState(tsian.workspace, control.session.id)
+    if (state?.approved) { await runConfirmedOpening(control, true); return }
+    const pending = pendingOpeningInput
+    const transcript = await tsian.workspace.read(openingSession(control.source).transcriptPath)
+    const entries = transcript ? parseOpeningTranscript(safeJsonParse(transcript.content), control.session.slot) : null
+    if (pending && entries?.slice(-1)[0]?.request !== openingAnswerMarker(pending)) {
+      await invokeOpening(control, openingAnswerMarker(pending))
+    } else if (!entries?.length) {
       await invokeOpening(control, openingBootstrapMarker(control.session.id))
+    } else {
+      await restoreOpeningInterviewV2(tsian, manifest.value)
     }
-  } catch (error) {
-    showInterviewRecovery(error instanceof Error ? error.message : "重新检查访谈状态失败。")
-  }
+  } catch (error) { showInterviewRecovery(error instanceof Error ? error.message : "恢复失败。") }
 }
 
 async function restoreOpeningInterviewV2(
@@ -674,6 +514,15 @@ async function restoreOpeningInterviewV2(
     return true
   }
   characterBranch.value = control.branch
+  const state = await readOpeningState(tsian.workspace, control.session.id)
+  playSetupProposal.value = state && !state.approved ? state.proposal : null
+  playSetupProposalId = state && !state.approved ? state.proposalId : null
+  if (state?.approved && !transcriptFile?.content) {
+    playSetupStatus.value = "failed"
+    playSetupError.value = "方案已确认，点击重试继续准备。"
+    setView("opening-interview")
+    return true
+  }
   if (!transcriptFile?.content) {
     setView("opening-interview")
     playSetupStatus.value = "failed"
@@ -687,7 +536,7 @@ async function restoreOpeningInterviewV2(
   }
   const parsedUsers = entries.map((entry) => parseOpeningUser(entry.request))
   if (parsedUsers.some((user) => !user)
-    || parsedUsers.some((user) => (user?.kind === "start" || user?.kind === "continue") && user.sessionId !== session.id)) {
+    || parsedUsers.some((user) => (user?.kind === "start" || user?.kind === "model") && user.sessionId !== session.id)) {
     showInterviewRecovery("玩家会话 transcript 包含无法识别的输入。")
     return true
   }
@@ -725,26 +574,22 @@ async function restoreOpeningInterviewV2(
     return true
   }
   pendingOpeningInput = null
-  const lastEntry = entries[entries.length - 1]
-  const lastAssistant = lastEntry
-    ? parseOpeningAssistant(lastEntry.assistant.content, lastEntry.assistant.projections)
-    : null
-  if (lastAssistant?.openingContinue) {
-    pendingOpeningContinuation = true
-    automaticContinuationCount = 0
+  if (state?.approved) {
     playSetupStatus.value = "failed"
-    playSetupError.value = "开局资料已保存，可以继续准备。"
+    playSetupError.value = "已保存的开局准备可以继续，点击重试。"
     statusText.value = "等待继续准备"
-    return true
+  } else {
+    playSetupStatus.value = "ready"
+    playSetupError.value = ""
+    statusText.value = state?.proposal ? "请确认方案，或继续提出修改" : "访谈已恢复"
   }
-  pendingOpeningContinuation = false
-  playSetupStatus.value = "ready"
-  playSetupError.value = ""
-  statusText.value = "访谈已恢复"
   return true
 }
 
 function resetOpeningMemory(): void {
+  openingVersion += 1
+  playSetupProposal.value = null
+  playSetupProposalId = null
   characterBranch.value = null
   playSetupStatus.value = "idle"
   playSetupMessages.value = []
@@ -754,8 +599,6 @@ function resetOpeningMemory(): void {
   activeInvocationId = null
   rawStreamingText = ""
   pendingOpeningInput = null
-  pendingOpeningContinuation = false
-  automaticContinuationCount = 0
 }
 
 async function initialize(): Promise<void> {
@@ -779,11 +622,6 @@ async function initialize(): Promise<void> {
     }
     const existingManifest = await loadSourceManifest(tsian)
     if (!existingManifest) {
-      if (await hasLegacyOpeningState(tsian)) {
-        playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
-        setView("legacy-state")
-        return
-      }
       setView("choose")
       return
     }
@@ -793,11 +631,6 @@ async function initialize(): Promise<void> {
       throw new Error("小说来源清单与章节索引数量不一致。")
     }
     chapterIndex.value = loadedChapterIndex
-    if (await hasLegacyOpeningState(tsian, existingManifest)) {
-      playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
-      setView("legacy-state")
-      return
-    }
     if (await restoreOpeningInterviewV2(tsian, existingManifest)) return
     setView("review")
     statusText.value = "已导入小说"
@@ -828,6 +661,8 @@ export function useSetupState() {
     playSetupError: readonly(playSetupError),
     playSetupStreamingText: readonly(playSetupStreamingText),
     playSetupSummary: readonly(playSetupSummary),
+    playSetupProposal: readonly(playSetupProposal),
+    confirmOpeningPlan,
     initialize,
     setView,
     goToStep,

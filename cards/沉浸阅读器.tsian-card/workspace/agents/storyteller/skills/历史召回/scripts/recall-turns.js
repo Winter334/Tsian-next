@@ -86,10 +86,8 @@ function normalizeRecall(raw) {
   const eventTypes = Array.isArray(raw['事件类型']) ? raw['事件类型'].map(cleanText).filter(function (item) { return EVENT_TYPE_SET.has(item); }) : [];
   const tags = Array.isArray(raw['标签']) ? raw['标签'].map(cleanText).filter(Boolean) : [];
   const time = cleanText(raw['时间']);
-  const plotCoordinate = typeof raw['剧情坐标'] === 'number' && Number.isFinite(raw['剧情坐标']) ? raw['剧情坐标'] : undefined;
   const recall = { schema: raw.schema, '涉及实体': entities, '事件类型': eventTypes, '标签': tags, '摘要': summary };
   if (time) recall['时间'] = time;
-  if (plotCoordinate !== undefined) recall['剧情坐标'] = plotCoordinate;
   return recall;
 }
 function extractTurnText(parsed) {
@@ -269,7 +267,6 @@ async function recallTurns(input, tsian, signal) {
       score: Number(result.score.toFixed(2)),
       matched: result.matched,
       '时间': candidate.recall['时间'] || '',
-      '剧情坐标': candidate.recall['剧情坐标'],
       '摘要': candidate.recall['摘要'],
       '涉及实体': candidate.recall['涉及实体'],
       '事件类型': candidate.recall['事件类型'],

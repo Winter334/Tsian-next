@@ -5,7 +5,7 @@ async function readOpeningSlice(input, tsian, signal) {
     const startIndex = normalizePositiveInt(input && input.startIndex, 1, 1, Math.max(1, source.chapters.length));
     const defaultEnd = Math.min(source.chapters.length, startIndex + 2);
     const endIndex = normalizePositiveInt(input && input.endIndex, defaultEnd, startIndex, source.chapters.length);
-    const maxCharacters = normalizePositiveInt(input && input.maxCharacters, 60000, 4000, 120000);
+    const maxCharacters = normalizePositiveInt(input && input.maxCharacters, 20000, 2000, 24000);
     let totalCharacters = 0;
     const selectedChapters = [];
     const parts = [];
@@ -18,7 +18,7 @@ async function readOpeningSlice(input, tsian, signal) {
       if (remaining <= 0) break;
       const used = cleaned.length > remaining ? cleaned.slice(0, remaining) : cleaned;
       totalCharacters += used.length;
-      selectedChapters.push({ ...compactSourceChapter(chapter), charactersRead: used.length, truncated: used.length < cleaned.length });
+      selectedChapters.push({ index: chapter.index, title: chapter.title, charactersRead: used.length, truncated: used.length < cleaned.length });
       var body = used;
       var nl = body.indexOf('\n');
       var firstLine = (nl === -1 ? body : body.slice(0, nl)).trim();
@@ -26,7 +26,7 @@ async function readOpeningSlice(input, tsian, signal) {
       parts.push('# ' + chapter.title + '\n\n' + body);
       if (totalCharacters >= maxCharacters) break;
     }
-    const result = { schema: OPENING_SCHEMA, window: { startIndex, endIndex: selectedChapters.length ? selectedChapters[selectedChapters.length - 1].index : startIndex, maxCharacters, totalCharacters, chapters: selectedChapters }, text: parts.join('\n\n') };
+    const result = { window: { startIndex, endIndex: selectedChapters.length ? selectedChapters[selectedChapters.length - 1].index : startIndex, maxCharacters, totalCharacters, chapters: selectedChapters }, text: parts.join('\n\n') };
     tsian.trace('opening_slice_read', { startIndex: result.window.startIndex, endIndex: result.window.endIndex, totalCharacters, chapterCount: selectedChapters.length });
     return result;
   } catch (error) {

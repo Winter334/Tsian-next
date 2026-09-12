@@ -6,6 +6,7 @@ import { listLocalGameCardContentFiles, putLocalGameCard, readLocalGameCardConte
 import { createLocalSaveFromGameCard } from "../src/storage/saves"
 import { localDb } from "../src/storage/db"
 import { verifySemanticMaintenance } from "./semantic-maintenance"
+import { verifySemanticOpening } from "./semantic-opening"
 
 interface EncodedFile {
   path: string
@@ -153,6 +154,7 @@ async function run(): Promise<void> {
       throw new Error("Imported initial save checkpoint is incomplete.")
     }
     const semanticMaintenanceRegression = await verifySemanticMaintenance((await listLocalGameCardContentFiles(imported.id)).map(file => ({ path: file.path, content: file.content, createdAt: 0, updatedAt: 0 } as WorkspaceFile)))
+    const semanticOpeningRegression = await verifySemanticOpening((await listLocalGameCardContentFiles(imported.id)).map(file => ({ path: file.path, content: file.content, createdAt: 0, updatedAt: 0 } as WorkspaceFile)))
     const summary = encodeURIComponent(JSON.stringify({
       entryHtmlPath: build.entryHtmlPath,
       distFileCount: build.distPaths.length,
@@ -160,6 +162,7 @@ async function run(): Promise<void> {
       byteSizeRegression,
       importRoundTrip: true,
       semanticMaintenanceRegression,
+      semanticOpeningRegression,
       initialSaveRegression: {
         templateFileCount: initialFiles.length,
         savedFileCount: savedFiles.length,

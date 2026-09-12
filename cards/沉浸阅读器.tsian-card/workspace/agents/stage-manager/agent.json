@@ -2,9 +2,7 @@
   "id": "stage-manager",
   "title": "场记",
   "summary": "根据已落定剧情与已有资料，提交本轮语义变化。",
-  "contacts": [
-    "world-architect"
-  ],
+  "contacts": [],
   "skills": {
     "enabled": [
       "agents/stage-manager/skills/回合后维护/SKILL.md"

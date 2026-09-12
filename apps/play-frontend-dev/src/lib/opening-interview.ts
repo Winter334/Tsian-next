@@ -6,11 +6,10 @@ export const OPENING_CONTROL_SCHEMA = "novel-airp.opening-interview.v2"
 const CLOSED_CHOICES_BLOCK_RE = /\[\[开局选项\]\]\s*([\s\S]*?)\s*\[\[\/开局选项\]\]/g
 const OPENING_CHOICE_START = "[[开局选项]]"
 const OPENING_CHOICE_END = "[[/开局选项]]"
-export const OPENING_CONTINUE_MARKER = "[[开局继续]]"
-const OPENING_HIDDEN_MARKERS = [OPENING_CHOICE_START, OPENING_CHOICE_END, OPENING_CONTINUE_MARKER] as const
+const OPENING_HIDDEN_MARKERS = [OPENING_CHOICE_START, OPENING_CHOICE_END] as const
 const START_MARKER_RE = /^opening-interview:start:([a-z0-9-]+)$/
 const ANSWER_MARKER_RE = /^opening-interview:answer\n([\s\S]*)$/
-const CONTINUE_MARKER_RE = /^opening-interview:continue:([a-z0-9-]+)$/
+const MODEL_MARKER_RE = /^opening-interview:model:([a-z0-9-]+)$/
 const SOURCE_HASH_RE = /^[a-f0-9]{8}$/
 const SESSION_ID_RE = /^opening-[a-f0-9]{8}$/
 const SESSION_SLOT_RE = /^opening-interview-[a-f0-9]{8}$/
@@ -44,7 +43,6 @@ export interface OpeningInterviewControl {
 export interface ParsedOpeningAssistant {
   displayContent: string
   choices: string[]
-  openingContinue: boolean
 }
 
 export interface OpeningTranscriptEntry {
@@ -62,7 +60,7 @@ export interface OpeningTranscriptEntry {
 export type ParsedOpeningUser =
   | { kind: "start"; sessionId: string }
   | { kind: "answer"; content: string }
-  | { kind: "continue"; sessionId: string }
+  | { kind: "model"; sessionId: string }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -104,7 +102,7 @@ export function openingSession(identity: OpeningSourceIdentity): { id: string; s
   return {
     id,
     slot,
-    transcriptPath: `save/agents/world-architect/transcripts/${slot}.json`,
+    transcriptPath: `save/agents/storyteller/transcripts/${slot}.json`,
   }
 }
 
@@ -127,8 +125,8 @@ export function openingAnswerMarker(input: string): string {
   return `opening-interview:answer\n${input}`
 }
 
-export function openingContinueMarker(sessionId: string): string {
-  return `opening-interview:continue:${sessionId}`
+export function openingModelMarker(sessionId: string): string {
+  return `opening-interview:model:${sessionId}`
 }
 
 export function parseOpeningUser(content: string): ParsedOpeningUser | null {
@@ -139,8 +137,8 @@ export function parseOpeningUser(content: string): ParsedOpeningUser | null {
     const answerContent = cleanString(answer[1], 4_000)
     if (answerContent) return { kind: "answer", content: answerContent }
   }
-  const continuation = CONTINUE_MARKER_RE.exec(content)
-  if (continuation?.[1]) return { kind: "continue", sessionId: continuation[1] }
+  const continuation = MODEL_MARKER_RE.exec(content)
+  if (continuation?.[1]) return { kind: "model", sessionId: continuation[1] }
   return null
 }
 
@@ -174,9 +172,7 @@ export function parseOpeningAssistant(content: string, projections?: Record<stri
   if (choices.length > 12 || choices.some((choice) => choice.length > 300)) return null
   const displayContent = sanitizeOpeningDisplay(content)
   if (displayContent.length > 12_000 || !displayContent) return null
-  const openingContinue = content.includes(OPENING_CONTINUE_MARKER)
-    || projections?.openingContinue === OPENING_CONTINUE_MARKER
-  return { displayContent, choices, openingContinue }
+  return { displayContent, choices }
 }
 
 export function sanitizeOpeningDisplay(content: string): string {
@@ -199,7 +195,7 @@ export function parseOpeningTranscript(value: unknown, expectedSlot: string): Op
   if (!isRecord(value)
     || !hasOnlyKeys(value, ["schema", "agentId", "slot", "lastSequence", "entries"])
     || value.schema !== "tsian.agent.invocation-transcript.v1"
-    || value.agentId !== "world-architect"
+    || value.agentId !== "storyteller"
     || value.slot !== expectedSlot
     || typeof value.lastSequence !== "number"
     || !Number.isSafeInteger(value.lastSequence)
@@ -280,39 +276,13 @@ export function openingControlMatchesSession(control: OpeningInterviewControl, m
   return control.session.id === expected.id && control.session.slot === expected.slot
 }
 
-export function isRecoverableOpeningModelState(input: {
-  manifest: SourceManifest | null
-  control: OpeningInterviewControl | null
-  setupStatus: "pending" | "complete" | null
-  hasOpeningNotes: boolean
-  runtimeRecoverable: boolean
-  frontierRecoverable: boolean
-}): boolean {
-  return Boolean(input.manifest
-    && input.control
-    && openingControlMatchesSession(input.control, input.manifest)
-    && input.setupStatus === "pending"
-    && input.hasOpeningNotes
-    && input.runtimeRecoverable
-    && input.frontierRecoverable)
-}
-
-export function buildOpeningInjection(control: OpeningInterviewControl): string {
-  const branchLabel = OPENING_BRANCH_LABELS[control.branch]
+export function buildOpeningInjection(control: OpeningInterviewControl, confirmedProposal?: { protagonist: string; startingPoint: string; openingFocus: string; constraints: string[] }): string {
   return [
-    "执行《开局建模》Skill，主持本次开局访谈。",
-    `玩家已确认角色类型：${branchLabel}（branch=${control.branch}）。将此选择视为当前会话不变量，第一次提问直接进入该分支。`,
-    "当前小说与会话如下：",
-    JSON.stringify({
-      sessionId: control.session.id,
-      sourceHash: control.source.hash,
-      source: {
-        importedAt: control.source.importedAt,
-        normalizationVersion: control.source.normalizationVersion,
-        title: control.source.title,
-        chapterCount: control.source.chapterCount,
-      },
-      branch: control.branch,
-    }),
+    "当前小说：" + control.source.title,
+    "玩家已选择：" + OPENING_BRANCH_LABELS[control.branch] + "。保留这一选择。",
+    "小说共有 " + control.source.chapterCount + " 章。作者可按需阅读前后文；角色认知与揭示时机另行约束。",
+    confirmedProposal
+      ? "玩家已通过界面确认以下方案。现在执行《开局建模》进行世界/schema 适配，不预建实体，不再访谈；成功提交后结束，不调度后续 Agent。\n" + JSON.stringify(confirmedProposal)
+      : "当前是剧情访谈，加载《开局访谈》和《原著阅读》。读相关原文后，需要玩家确认时用 propose_opening 提出方案，界面会提供确认按钮；不要把聊天回复当作已确认状态。",
   ].join("\n")
 }

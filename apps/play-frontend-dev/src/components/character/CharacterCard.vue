@@ -8,6 +8,7 @@ import type { DisplayItems } from "../../lib/runtime-types"
 import { emptyDisplayItems } from "../../lib/runtime-types"
 import { parseExtensionsOnly } from "../../lib/parse-entity"
 import { pickDefaultAvatarUrl } from "../../lib/character-avatar"
+import { characterIdentityLine } from "../../lib/character-identity"
 import CharacterListItem from "./CharacterListItem.vue"
 import CharacterStage, { type CharacterMode } from "./CharacterStage.vue"
 import InventoryPane from "./InventoryPane.vue"
@@ -46,6 +47,7 @@ const localId = computed(() => {
   return idx >= 0 ? props.entityRef.slice(idx + 1) : props.entityRef
 })
 
+const identityLine = computed(() => characterIdentityLine(props.entity?.identity))
 const defaultAvatarUrl = computed(() => pickDefaultAvatarUrl(props.entity ?? {}))
 const effectivePinRef = computed(() =>
   props.entityRef && props.entityRef === props.protagonistRef ? props.entityRef : null,
@@ -96,8 +98,8 @@ function updateTrackScroll(mode: CharacterMode, value: number): void {
         <span class="mode-kicker">SMOKE-INK DOSSIER</span>
         <span class="mode-title">角色卷宗</span>
         <span v-if="mobileHeroCollapsed && entity" class="mobile-character-copy">
-          <strong>{{ entity.name }}</strong>
-          <small>{{ [entity.identity?.role, entity.identity?.affiliation, entity.identity?.realm].filter(Boolean).join(' · ') || entity.brief }}</small>
+          <strong :title="entity.name">{{ entity.name }}</strong>
+          <small v-if="identityLine" :title="identityLine">{{ identityLine }}</small>
         </span>
       </div>
       <div class="mode-switch" role="group" aria-label="角色详情模式">
@@ -196,6 +198,7 @@ function updateTrackScroll(mode: CharacterMode, value: number): void {
 }
 
 .mode-heading {
+  min-width: 0;
   display: flex;
   align-items: baseline;
   gap: 10px;
@@ -384,6 +387,7 @@ function updateTrackScroll(mode: CharacterMode, value: number): void {
   .mode-bar.hero-collapsed .mobile-character-copy {
     min-width: 0;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 1px;
   }
 

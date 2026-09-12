@@ -1,13 +1,8 @@
 {
   "id": "storyteller",
   "title": "七月",
-  "summary": "玩家正式回合入口——为文学创作而生的人工智能，写沉浸式正文和选项。",
+  "summary": "阅读相关原著、访谈确认开局，并结合玩家输入与本局历史推进正文。",
   "contextPaths": [
-    {
-      "path": "agents/storyteller/prefill-accept.md",
-      "role": "assistant",
-      "position": "prelude"
-    },
     {
       "path": "agents/storyteller/creation-guide.md",
       "role": "system",
@@ -21,14 +16,14 @@
   ],
   "enabledModules": [
     "快捷回复",
-    "第二人称",
     "原作文风"
   ],
   "skills": {
     "enabled": [
       "agents/storyteller/skills/掷骰/SKILL.md",
       "agents/storyteller/skills/历史召回/SKILL.md",
-      "agents/storyteller/skills/NSFW场景指导/SKILL.md"
+      "skills/原著阅读/SKILL.md",
+      "agents/storyteller/skills/开局访谈/SKILL.md"
     ],
     "disabled": []
   },

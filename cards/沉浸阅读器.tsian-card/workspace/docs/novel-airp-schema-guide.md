@@ -1,6 +1,6 @@
 # Novel AIRP Schema 速查指南
 
-本默认卡支持小说 AIRP 流程：玩家导入小说，后台 Agent 团队渐进维护 schema、entities、runtime 与 frontier.timeline。完整字段手册见 `docs/novel-airp-schema-reference.md`。
+本卡支持小说 AIRP 流程。本文是卡脚本与前端维护者的存储/渲染参考，不是玩法 Agent 的工作协议。架构师只提交世界/schema 适配；写手阅读原著并创作，场记在正文后建立和维护本局资料。标识、引用和物理文件由卡程序维护。原著进度与偏离展示已退出。完整字段手册见 `docs/novel-airp-schema-reference.md`。
 
 ## 主路径
 
@@ -10,7 +10,7 @@ save/schema/         # 当前 schema、changelog、deprecated 笔记、Markdown 
 save/entities/       # 语义实体，存为 save/entities/<type>/<localId>.json
 save/scenes/         # 场景分片，存为 save/scenes/<localId>.json（一场景一文件）
 save/relationships/  # 人物关系分片，存为 save/relationships/<scope>.json（一角色 subject 一文件）
-save/playthrough/    # player、frontier、runtime、opening/setup 摘要
+save/playthrough/    # player、runtime、opening/setup 摘要
 save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回元数据
 ```
 
@@ -27,18 +27,16 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 - `runtime.protagonistRef` 是当前主角指针 `{ ref, name }`；主角实体权威仍在 `save/entities/character/<localId>.json`。
 - `runtime.location` 是当前地点指针 `{ ref, name } | null`。
 - `runtime.worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台时间，也不等同于 turn。未知或尚未建立时写空字符串。
-- `runtime.plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记判断语义进度、由卡内提交脚本维护，用于判断是否触发 frontier 推进。
 - `runtime.weather` 是当前天气字符串；未知时写空字符串。
 
 ## runtime.json
 
-当前世界/剧情时间写固定字段 `worldTime`，天气写 `weather`。`plotOrder` 是数字，单调递增，表示玩家当前走到哪个 source order；场记判断语义进度、由卡内提交脚本维护，用于判断是否触发 frontier 推进。月相、倒计时、诅咒周期等新增/临时时间机制仍可放在 `extensions`。
+当前世界/剧情时间写固定字段 `worldTime`，天气写 `weather`。月相、倒计时、诅咒周期等新增/临时时间机制仍可放在 `extensions`。
 
 ```json
 {
   "turn": 6,
   "worldTime": "赤明纪十二年三月初七，黄昏",
-  "plotOrder": 3,
   "weather": "阴云聚拢",
   "location": { "ref": "location:青玄门山门", "name": "青玄门山门" },
   "activeSceneRefs": [{ "ref": "scene:山门冲突", "name": "山门冲突" }],
@@ -51,43 +49,21 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 }
 ```
 
-## frontier.json
+## 原著阅读与本局历史
 
-`save/playthrough/frontier.json` 记录源文本抽取进度与时间标记锚点。
-
-```json
-{
-  "sourceWindow": { "start": 1, "end": 8, "chapters": [...] },
-  "extractedThrough": "source:chapter-0008",
-  "timeline": [
-    { "kind": "source", "order": 1, "chapter": 1, "time": "元年", "label": "开局", "summary": "主角醒来并确认当前处境。" },
-    { "kind": "player", "order": 2, "turn": 8, "time": "二年春", "label": "离开山门", "alignment": "diverged", "sourceRef": 2 }
-  ],
-  "notes": "...",
-  "updatedAt": "...",
-  "updatedBy": "world-architect"
-}
-```
-
-- `sourceWindow`：已读章节窗口（`start`/`end` 为章节号，`chapters` 为窗口章节元信息）。推进 frontier 时移动。
-- `extractedThrough`：已抽取到的最远源章节引用。
-- `timeline`：时间标记锚点数组，用 `kind` 区分 source/player：
-  - source 锚点 `{ kind: "source", order, chapter, time, label, summary? }`：world-architect 推进时建立，标记原著剧情节点；`summary` 用 1～3 句客观概括实际已读原著，旧锚点可缺省。
-  - player 锚点 `{ kind: "player", order, turn, time, label, alignment, sourceRef }`：场记提交语义显著事件后由脚本追加，标记玩家视角显著事件。
-  - `order`：单调递增整数，是我们建立的线性轴，表示剧情事件先后顺序，与原著精确时间标记无关（即使原著写“回到过去”，order 也只向前）。
-  - `alignment`（仅 player）：`diverged`（偏离原著，sourceRef=分叉自的 source order 或 null）、`rejoined`（从分支并回主干，sourceRef=并回的 source order）、`aligned`（经历 source 事件且结果相近，sourceRef=该 source order；可选，完美跟随时不建）。
-- `timeline` 与 `sourceWindow` 独立：`sourceWindow` 记录已读窗口，`timeline` 记录锚点；推进时 `sourceWindow` 移动、`timeline` 追加 source 锚点。
+`skills/原著阅读/` 提供章节定位与连续原文读取，路径/分片由程序处理。写手的 `save/agents/storyteller/source-bookmark.json` 只记录检索起点（startIndex/offset/importedAt），不限制阅读或推进故事。
+本局重要历史直接从已提交的 turn.meta.recall 派生，使用“重要节点”布尔标记和现有“摘要”，不另建原著节点或偏离图。未来计划不进入历史。旧 frontier、plotOrder 和 alignment 已退出，无旧存档迁移。
 
 ## turn recall metadata
 
-历史正文权威是 `save/history/turns/turn-NNNNNN.json` 的正文 timeline。场记提交本轮语义摘要后，脚本写入卡片私有派生导航层 `meta.recall`，成功重试不重复写入；它只服务正文 Agent 旧事召回，不改变历史正文语义。
+历史正文权威是 `save/history/turns/turn-NNNNNN.json` 的正文 timeline。场记提交本轮语义摘要后，脚本写入卡片私有派生导航层 `meta.recall`，成功重试不重复写入；它服务正文 Agent 旧事召回及本局重要历史展示，不改变历史正文语义。
 
 ```json
 {
   "meta": {
     "recall": {
       "schema": "沉浸阅读器.turn-recall.v1",
-      "剧情坐标": 42,
+      "重要节点": true,
       "时间": "翌日清晨",
       "涉及实体": ["character:沈璃", "item:碎玉簪"],
       "事件类型": ["冲突争执", "关系变化", "承诺亏欠"],
@@ -99,7 +75,7 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 ```
 
 - `schema` 固定为 `沉浸阅读器.turn-recall.v1`。
-- `剧情坐标` 对应当前 `runtime.plotOrder`，能判断时填写。
+- `重要节点`：仅本局已经发生的重要剧情为 true，前端时间线复用同一摘要；普通回合为 false。
 - `时间` 是世界/剧情时间可读文本，可省略。
 - `涉及实体` 直接写实体 ref（如 `character:沈璃` / `item:碎玉簪`），只写未来召回最有价值的实体；未知非实体概念不要伪造成 ref，放入 `标签`。
 - `事件类型` 枚举：`对话交流`、`玩家选择`、`冲突争执`、`关系变化`、`承诺亏欠`、`秘密揭露`、`发现线索`、`物品变化`、`状态变化`、`场景变化`、`战斗危险`、`计划目标`、`交易谈判`、`亲密暧昧`、`伏笔回收`。

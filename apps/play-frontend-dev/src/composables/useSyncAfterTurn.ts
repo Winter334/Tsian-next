@@ -27,7 +27,7 @@ let syncVersion = 0
 
 /** 注册"同步完成"回调（状态栏数据源刷新等）。幂等，只保留最后一个。
  *  回调支持 async（返回 Promise）——handleSynced 会 await 它，确保 runtime 刷新
- *  等下游依赖在 frontier 检查触发前完成。 */
+ *  等下游依赖完成。 */
 export function setOnSynced(cb: () => void | Promise<void>): void {
   onSyncedCallback = cb
 }
@@ -113,8 +113,8 @@ function ensureInvocationSubscription(tsian: ReturnType<typeof getTsianClient>):
 
 /**
  * 同步成功处理。async 以支持 onSynced 回调返回 Promise（如 useRuntime.refresh +
- * 链式 frontier 检查）。1.5s 淡出定时器在回调完成后启动，确保下游依赖
- * （runtime 刷新、frontier 触发）在 Toast 切到 idle 前跑完。
+ * 资料消费者刷新）。1.5s 淡出定时器在回调完成后启动，确保下游依赖
+ * （runtime 与历史刷新）在 Toast 切到 idle 前跑完。
  *
  * Toast 立即切 synced（视觉反馈），回调异步跑完后启动淡出计时。
  * 若回调异常只 log 不影响 Toast 状态轴。
@@ -122,7 +122,7 @@ function ensureInvocationSubscription(tsian: ReturnType<typeof getTsianClient>):
 async function handleSynced(version: number): Promise<void> {
   syncPhase.value = "synced"
   activeInvocationId = null
-  // 触发状态栏数据源刷新 + 链式 frontier 检查（useRuntime 注册的 async 回调）
+  // 触发状态栏数据源刷新 + 资料消费者刷新（useRuntime 注册的 async 回调）
   try {
     const result = onSyncedCallback?.()
     if (result instanceof Promise) {

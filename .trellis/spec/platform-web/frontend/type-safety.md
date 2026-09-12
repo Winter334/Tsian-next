@@ -667,7 +667,7 @@ type RunScriptArguments = {
 
 - Existing Assistant Runtime smoke: accepted `agent_call` registers one ref; two same-loop `run_script` calls receive the byte-identical multiline/quoted response.
 - In the same smoke transaction, an isolated session cannot consume the ref and an oversized rejected observation leaves the registry/sequence and staged Workspace unchanged.
-- Tool-memory projection excludes `responseRef`; the existing world-architect template smoke confirms the Skill uses `run_script.inputRefs.openingReply`.
+- Tool-memory projection excludes `responseRef`. The runtime smoke uses a fixture Skill to verify same-loop ref handoff; the official opening flow now uses separate frontend invocations and does not use this mechanism.
 - Do not add a dedicated result-ref test file; keep these assertions in the retained runtime transaction smoke.
 
 ### 7. Wrong vs Correct
@@ -676,8 +676,8 @@ type RunScriptArguments = {
 
 ```json
 {
-  "skill": "开局建模",
-  "script": "commit_opening",
+  "skill": "demo",
+  "script": "publish_reply",
   "input": { "openingReply": "<model reserialized long response>" }
 }
 ```
@@ -686,8 +686,8 @@ type RunScriptArguments = {
 
 ```json
 {
-  "skill": "开局建模",
-  "script": "commit_opening",
+  "skill": "demo",
+  "script": "publish_reply",
   "input": { "summary": "..." },
   "inputRefs": { "openingReply": "tool-result-0" }
 }
@@ -919,6 +919,10 @@ interface AgentInvocationTranscript {
 
 ### 3. Contracts
 
+- The immersive-reader opening is card-owned: storyteller interviews → player confirms → architect adapts world/schema only → storyteller reads canon and writes → stage-manager first creates playthrough facts. Empty protagonist/location pointers before turn-zero maintenance are intentional, not a reason to prebuild entities. Only a verified turn-zero maintenance receipt permits completion. `opening-flow.ts` supplies confirmed premises and `story-source.ts` prepares actual source text, also used before formal turns. `frontend-actions/opening/` publishes from a dedicated persisted storyteller transcript with platform projections; a lost UI response must not re-call a successfully recorded story. Do not carry loop-local `responseRef` across invocations or restore architect-side phase locks/agent scheduling. The internal opening `model` is a world-adaptation receipt, not an entity-library prerequisite.
+- Canon reading is a shared card Skill under `skills/原著阅读/`, explicitly enabled for storyteller and architect, not stage-manager. An Agent cannot expose another Agent's local Skill merely by adding its path to `skills.enabled`; use shared scope for shared capability. Source bookmarks are retrieval positions, not plot locks. Stage-manager creates/updates facts after settled prose, with name/alias candidate checks before any business writes; missing injection or paged output is not evidence of absence. History UI reuses important settled `meta.recall` summaries, not frontier/source alignment. See `.trellis/tasks/archive/2026-09/09-11-canon-driven-storytelling/` for implementation evidence.
+- The immersive card's character attributes are gameplay estimates, not claims that canon states exact numbers. Stage-manager uses the shared relative baseline 5; the card script fills missing dimensions, but must not infer the lowest tier from an omitted tier. Normal updates retain accepted numerical values (including zero), and repeated ratings/tier submissions must not erase persistent training changes or duplicate worn effects. Keep the internal estimate (`powerTier`/`ratings`) separate from factual `identity.realm`, and project existing estimates into the semantic context/lookup. Detailed invariants and UI follow-up evidence are in `.trellis/tasks/archive/2026-09/09-11-canon-driven-storytelling/follow-up.md`.
+- Skill declarations, scripts, generated material and actual macro expansion must evolve together; setting `enabledModules` alone does not inject a module without a corresponding macro/context path. Check assembled context and the real `use_skill` observation, not only static Markdown. The generic platform injector remains schema-agnostic.
 - Context v2 separates monotonic Agent interaction `sequence` from optional domain `gameTurn`. Every successful persistent invocation or formal turn allocates `snapshot.sequence + 1`; game turn is correlation only and may stay unchanged across multiple opening interviews.
 - Parsers accept legacy agent/assistant v1 snapshots by mapping each entry/memory `turn` to both `sequence` and `gameTurn`, mapping top-level `turn` to `sequence`, and mapping `lastCompressedTurn` to `lastCompressedSequence`. Invalid entries are rejected defensively. Writers always emit v2 names/schema; no v1 field is written back.
 - Context-slot paths use the canonical normalized slot for the file path, transcript identity, and same-slot invocation queue key. Two raw slots that normalize to the same path must serialize through one queue; paths cannot escape `save/agents/<agentId>/`.
